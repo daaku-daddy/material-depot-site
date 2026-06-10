@@ -95,6 +95,24 @@
   .btn:disabled{opacity:.45;cursor:not-allowed;}
   .scrim{position:fixed;inset:0;background:rgba(15,25,45,.42);opacity:0;pointer-events:none;transition:.2s;z-index:50;}
   .scrim.show{opacity:1;pointer-events:auto;}
+  .moverlay{position:fixed;inset:0;background:rgba(15,25,45,.55);z-index:80;display:none;align-items:center;justify-content:center;padding:20px;}
+  .moverlay.show{display:flex;}
+  .mcard{background:#fff;border-radius:16px;width:100%;max-width:520px;max-height:92vh;overflow:auto;box-shadow:0 24px 64px rgba(0,0,0,.28);}
+  .mhead{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;position:sticky;top:0;background:#fff;z-index:1;}
+  .mhead h3{font-size:16px;font-weight:800;color:var(--navy);}
+  .mclose{margin-left:auto;background:none;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:0 4px;}
+  .mbody{padding:20px;display:grid;gap:14px;}
+  .mfoot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:#fff;}
+  .mfield label{display:block;font-size:11px;font-weight:800;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px;}
+  .mfield input,.mfield select,.mfield textarea{width:100%;padding:10px 12px;border:2px solid var(--line);border-radius:9px;font-size:14px;color:var(--ink);background:#fff;font-family:inherit;}
+  .mfield input:focus,.mfield select:focus,.mfield textarea:focus{outline:none;border-color:var(--blue);}
+  .mfield textarea{resize:vertical;min-height:70px;}
+  .mrow{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .merr{background:var(--redbg);color:var(--red);border-radius:8px;padding:9px 12px;font-size:12.5px;font-weight:600;display:none;}
+  .merr.show{display:block;}
+  .cbgroup{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;}
+  .cbgroup label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer;}
+  .cbgroup input[type=checkbox]{width:15px;height:15px;accent-color:var(--navy);}
   .drawer{position:fixed;top:0;right:0;height:100vh;width:580px;max-width:94vw;background:#fff;box-shadow:-12px 0 40px rgba(10,20,40,.18);transform:translateX(100%);transition:transform .26s cubic-bezier(.4,0,.2,1);z-index:55;display:flex;flex-direction:column;}
   .drawer.show{transform:none;}
   .dhead{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px;position:sticky;top:0;background:#fff;}
@@ -222,6 +240,64 @@
 </aside>
 
 <div class="toast" id="toast"></div>
+
+<div class="moverlay" id="addOrderOverlay">
+  <div class="mcard">
+    <div class="mhead">
+      <h3>Add New Audit Order</h3>
+      <button class="mclose" onclick="closeAddOrder()">×</button>
+    </div>
+    <div class="mbody">
+      <div class="mrow">
+        <div class="mfield">
+          <label>PI Number *</label>
+          <input id="ao-pi" placeholder="PI-2026-00XXX">
+        </div>
+        <div class="mfield">
+          <label>PO Numbers</label>
+          <input id="ao-po" placeholder="PO-WF-1234, PO-ACC-1235">
+        </div>
+      </div>
+      <div class="mrow">
+        <div class="mfield">
+          <label>Customer Name *</label>
+          <input id="ao-name" placeholder="Full name">
+        </div>
+        <div class="mfield">
+          <label>Customer Phone *</label>
+          <input id="ao-phone" placeholder="98XXX XXXXX" inputmode="tel">
+        </div>
+      </div>
+      <div class="mfield">
+        <label>Address *</label>
+        <textarea id="ao-addr" placeholder="Full address with city and pincode"></textarea>
+      </div>
+      <div class="mrow">
+        <div class="mfield">
+          <label>BM / Sales Person</label>
+          <input id="ao-bm" placeholder="Name">
+        </div>
+        <div class="mfield">
+          <label>SKU Codes</label>
+          <input id="ao-skus" placeholder="WF-OAK-12MM, WP-STD-441">
+        </div>
+      </div>
+      <div class="mfield">
+        <label>Audit Categories</label>
+        <div class="cbgroup">
+          <label><input type="checkbox" id="ao-fl"> Wooden Flooring</label>
+          <label><input type="checkbox" id="ao-wp"> Standard Wallpapers</label>
+          <label><input type="checkbox" id="ao-cwp"> Custom Wallpapers</label>
+        </div>
+      </div>
+      <div class="merr" id="ao-err"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeAddOrder()">Cancel</button>
+      <button class="btn navy" id="ao-submit" onclick="submitAddOrder()">Add Order</button>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ============== CONFIG / MOCK DATA ============== */
@@ -383,7 +459,7 @@ function ordersView(){
   }).join("");
   return `<div class="crumbs">Site Audit / Orders</div>
   <div class="pagehead"><div><h1>Audit orders</h1><p>Every confirmed order containing the Site Audit SKU (${AUDIT_SKU}). Click a row to manage.</p></div>
-    <div class="actions"><button class="btn gray sm" id="pushDemo">Simulate new order</button></div></div>
+    <div class="actions"><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <div class="filt">${fbtns}</div></div>
@@ -712,6 +788,60 @@ $("#scrim").onclick=closeDrawer;
 $("#vInstall").onclick=()=>{window.location.href="SM_Install_Dashboard.html";};
 
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
+
+/* ---- Add New Order modal ---- */
+function openAddOrder(){
+  document.getElementById("addOrderOverlay").classList.add("show");
+  document.getElementById("ao-pi").focus();
+}
+function closeAddOrder(){
+  document.getElementById("addOrderOverlay").classList.remove("show");
+  ["ao-pi","ao-po","ao-name","ao-phone","ao-addr","ao-bm","ao-skus"].forEach(id=>{document.getElementById(id).value="";});
+  ["ao-fl","ao-wp","ao-cwp"].forEach(id=>{document.getElementById(id).checked=false;});
+  document.getElementById("ao-err").classList.remove("show");
+}
+function submitAddOrder(){
+  const pi    = document.getElementById("ao-pi").value.trim();
+  const poRaw = document.getElementById("ao-po").value.trim();
+  const name  = document.getElementById("ao-name").value.trim();
+  const phone = document.getElementById("ao-phone").value.trim();
+  const addr  = document.getElementById("ao-addr").value.trim();
+  const bm    = document.getElementById("ao-bm").value.trim() || "—";
+  const skuRaw= document.getElementById("ao-skus").value.trim();
+  const err   = document.getElementById("ao-err");
+  err.classList.remove("show");
+
+  if(!pi){err.textContent="PI Number is required.";err.classList.add("show");return;}
+  if(!name){err.textContent="Customer name is required.";err.classList.add("show");return;}
+  if(!phone){err.textContent="Customer phone is required.";err.classList.add("show");return;}
+  if(!addr){err.textContent="Address is required.";err.classList.add("show");return;}
+  if(ORDERS.find(o=>o.pi===pi)){err.textContent="An order with this PI number already exists.";err.classList.add("show");return;}
+
+  const po = poRaw ? poRaw.split(",").map(s=>s.trim()).filter(Boolean) : [];
+  const skus = skuRaw ? skuRaw.split(",").map(s=>s.trim()).filter(Boolean).map(c=>({c,n:c,audit:false})) : [];
+  skus.push({c:AUDIT_SKU,n:"Site Audit",audit:true});
+
+  const ticked=[];
+  if(document.getElementById("ao-fl").checked)ticked.push("Wooden Flooring");
+  if(document.getElementById("ao-wp").checked)ticked.push("Standard Wallpapers");
+  if(document.getElementById("ao-cwp").checked)ticked.push("Custom Wallpapers");
+
+  const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  ORDERS.unshift({
+    pi,po,skus,auditTicked:ticked,bm,
+    status:"pending",name,phone,addr,
+    service:null,slot:null,date:null,auditor:null,
+    log:[{t:"Order added manually by Service Manager",d:"Today "+now}]
+  });
+
+  document.getElementById("ao-submit").disabled=true;
+  closeAddOrder();
+  render();
+  toast("✓ Audit order "+pi+" added");
+  document.getElementById("ao-submit").disabled=false;
+}
+document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
+
 render();
 </script>
 </body>
