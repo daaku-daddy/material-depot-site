@@ -480,7 +480,16 @@ function setRoleView(k){activeRoleView=k;renderRoleViewer(document.getElementByI
 
 /* ---- JOBS OVERVIEW ---- */
 let jobsFilter='all';
-function renderJobs(m){
+let jobsTeam=[];
+async function renderJobs(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  const users=await sbGet('profiles?select=name,role&role=neq.admin&order=name.asc');
+  jobsTeam=Array.isArray(users)?users.filter(u=>u.role!=='admin'):[];
+  const fieldNames=jobsTeam.map(u=>u.name);
+  MOCK_JOBS.forEach((j,i)=>{if(j.assignee)j.assignee=fieldNames[i%fieldNames.length]||j.assignee;});
+  drawJobs(m);
+}
+function drawJobs(m){
   const jc={total:MOCK_JOBS.length,active:0,done:0,unassigned:0};
   MOCK_JOBS.forEach(j=>{
     if(['onway','atsite','scheduled'].includes(j.status))jc.active++;
@@ -529,29 +538,38 @@ function renderJobs(m){
       </table>
     </div>`;
 }
-function setJobFilter(f){jobsFilter=f;renderJobs(document.getElementById('main'));}
+function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));}
 
 /* ---- PERFORMANCE ---- */
-function renderPerf(m){
+async function renderPerf(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  const users=await sbGet('profiles?select=*&role=neq.admin&order=name.asc');
+  const field=Array.isArray(users)?users.filter(u=>u.role!=='admin'):[];
+  if(!field.length){
+    m.innerHTML=`<div class="page-head"><h1>Performance</h1></div><div class="card"><div class="empty"><div class="e-ico">📊</div><div class="e-msg">No field staff found. Add users with Site Auditor or Installer roles first.</div></div></div>`;
+    return;
+  }
   m.innerHTML=`
     <div class="page-head"><h1>Performance</h1><p>Jobs completed, pending and on-time rate per team member.</p></div>
-    <div class="notice">⚡ Based on sample data — will reflect live data once job sync is enabled.</div>
+    <div class="notice">⚡ Job numbers are sample data — will reflect live data once job sync is enabled. Names are live from your team.</div>
     <div class="perf-grid">
-      ${MOCK_PERF.map(p=>{
-        const color=ROLES[p.role]?.color||'#999';
-        const pctColor=p.pct>=90?'var(--green)':p.pct>=80?'var(--amber)':'var(--red)';
+      ${field.map((u,i)=>{
+        const color=ROLES[u.role]?.color||'#999';
+        const stats=MOCK_PERF[i%MOCK_PERF.length];
+        const pct=stats.pct;
+        const pctColor=pct>=90?'var(--green)':pct>=80?'var(--amber)':'var(--red)';
         return `<div class="perf-card">
           <div class="pc-head">
-            <div class="pc-av" style="background:${color}">${initials(p.name)}</div>
-            <div><div class="pc-name">${p.name}</div><div class="pc-role">${ROLES[p.role]?.label||p.role}</div></div>
+            <div class="pc-av" style="background:${color}">${initials(u.name)}</div>
+            <div><div class="pc-name">${u.name}</div><div class="pc-role">${ROLES[u.role]?.label||u.role}</div></div>
           </div>
-          <div class="perf-row"><span>Total Jobs</span><span class="pr-val">${p.total}</span></div>
-          <div class="perf-row"><span>Completed</span><span class="pr-val" style="color:var(--green)">${p.done}</span></div>
-          <div class="perf-row"><span>Pending</span><span class="pr-val" style="color:var(--amber)">${p.pending}</span></div>
-          <div class="perf-row"><span>This Month</span><span class="pr-val">${p.monthly}</span></div>
-          <div class="perf-row"><span>On-Time Rate</span><span class="pr-val" style="color:${pctColor}">${p.pct}%</span></div>
+          <div class="perf-row"><span>Total Jobs</span><span class="pr-val">${stats.total}</span></div>
+          <div class="perf-row"><span>Completed</span><span class="pr-val" style="color:var(--green)">${stats.done}</span></div>
+          <div class="perf-row"><span>Pending</span><span class="pr-val" style="color:var(--amber)">${stats.pending}</span></div>
+          <div class="perf-row"><span>This Month</span><span class="pr-val">${stats.monthly}</span></div>
+          <div class="perf-row"><span>On-Time Rate</span><span class="pr-val" style="color:${pctColor}">${pct}%</span></div>
           <div style="height:5px;background:var(--line);border-radius:5px;margin-top:10px;overflow:hidden">
-            <div style="height:100%;width:${p.pct}%;background:${pctColor};border-radius:5px;transition:width .5s"></div>
+            <div style="height:100%;width:${pct}%;background:${pctColor};border-radius:5px;transition:width .5s"></div>
           </div>
         </div>`;}).join('')}
     </div>`;
