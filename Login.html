@@ -59,28 +59,20 @@
 </div>
 
 <script>
-/* ============== BACKEND STAND-IN ==============
-   In production this lookup is the real backend approval response.
-   Here it's a mock table: email -> {name, role, file, extra}
-*/
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+
 const ROLE_FILES={
-  admin:        {label:"Admin",            file:null,                         color:"#5b3aa6", note:"Admin console"},
-  service_mgr:  {label:"Service Manager",  file:"SM_Audit_Dashboard.html",    color:"#1F3A5F", note:"Site Audit + Installations"},
-  site_auditor: {label:"Site Auditor",     file:"Site_Auditor_App.html",      color:"#2E6CA8", note:"Field audit app"},
-  installer:    {label:"Site Installer",   file:"Site_Installer_App.html",    color:"#1f7a3f", note:"Field installation app"},
-};
-const USERS={
-  "priya.nair@materialdepot.in":   {name:"Priya Nair",    role:"service_mgr"},
-  "admin@materialdepot.in":        {name:"Anita Desai",   role:"admin"},
-  "rakesh.kumar@materialdepot.in": {name:"Rakesh Kumar",  role:"site_auditor"},
-  "mahesh.pawar@materialdepot.in": {name:"Mahesh Pawar",  role:"installer"},
-  "faisal.khan@materialdepot.in":  {name:"Faisal Khan",   role:"installer"},
+  admin:       {label:"Admin",           file:"Admin.html",             color:"#5b3aa6", note:"Admin console"},
+  service_mgr: {label:"Service Manager", file:"SM_Audit_Dashboard.html",color:"#1F3A5F", note:"Site Audit + Installations"},
+  site_auditor:{label:"Site Auditor",    file:"Site_Auditor_App.html",  color:"#2E6CA8", note:"Field audit app"},
+  installer:   {label:"Site Installer",  file:"Site_Installer_App.html",color:"#1f7a3f", note:"Field installation app"},
 };
 const DEMO=[
-  {email:"priya.nair@materialdepot.in",   role:"service_mgr"},
-  {email:"admin@materialdepot.in",        role:"admin"},
-  {email:"rakesh.kumar@materialdepot.in", role:"site_auditor"},
-  {email:"mahesh.pawar@materialdepot.in", role:"installer"},
+  {email:"priya.nair@materialdepot.com",   name:"Priya Nair",   role:"service_mgr"},
+  {email:"admin@materialdepot.com",        name:"Anita Desai",  role:"admin"},
+  {email:"rakesh.kumar@materialdepot.com", name:"Rakesh Kumar", role:"site_auditor"},
+  {email:"mahesh.pawar@materialdepot.com", name:"Mahesh Pawar", role:"installer"},
 ];
 
 const $=s=>document.querySelector(s);
@@ -94,16 +86,16 @@ function emailScreen(){
     <h1>Sign in</h1>
     <p class="sub">Enter your Material Depot email. We'll send a one-time code to verify it's you.</p>
     <label>Work email</label>
-    <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@materialdepot.in" value="${state.email}">
+    <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@materialdepot.com" value="${state.email}">
     <div class="err" id="err"></div>
     <button class="btn" id="send">Send code</button>
     <div class="demo">
       <div class="dt">Demo accounts — tap to use</div>
       <div class="demolist">
-        ${DEMO.map(d=>{const u=USERS[d.email];const r=ROLE_FILES[d.role];
+        ${DEMO.map(d=>{const r=ROLE_FILES[d.role];
           return `<button class="demobtn" data-email="${d.email}">
-            <div class="av" style="background:${r.color}">${initials(u.name)}</div>
-            <div><div class="nm">${u.name}</div><div class="rl">${r.label}</div></div>
+            <div class="av" style="background:${r.color}">${initials(d.name)}</div>
+            <div><div class="nm">${d.name}</div><div class="rl">${r.label}</div></div>
             <div class="em">${d.email.split('@')[0]}</div></button>`;}).join("")}
       </div>
     </div>`;
@@ -112,14 +104,26 @@ function emailScreen(){
   $("#email").onkeydown=e=>{if(e.key==='Enter')trySend();};
   document.querySelectorAll("[data-email]").forEach(b=>b.onclick=()=>{state.email=b.dataset.email;$("#email").value=state.email;trySend();});
 }
-function trySend(){
+async function trySend(){
   const err=$("#err");err.classList.remove("show");
   const email=(state.email||"").toLowerCase();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent="Enter a valid email address.";err.classList.add("show");return;}
-  const user=USERS[email];
-  if(!user){err.innerHTML="This email isn't approved for access yet. Ask an Admin to add you.";err.classList.add("show");return;}
-  state.user=user;state.sentCode=genCode();state.otp="";
-  otpScreen();
+  if(!email.endsWith("@materialdepot.com")){err.textContent="Please use your @materialdepot.com work email.";err.classList.add("show");return;}
+  const btn=$("#send");btn.disabled=true;btn.textContent="Checking…";
+  try{
+    const res=await fetch(`${SB_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=*`,
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    const rows=await res.json();
+    if(!Array.isArray(rows)||rows.length===0){
+      err.innerHTML="This email isn't approved for access yet. Ask an Admin to add you.";err.classList.add("show");
+      btn.disabled=false;btn.textContent="Send code";return;
+    }
+    state.user=rows[0];state.sentCode=genCode();state.otp="";
+    otpScreen();
+  }catch(e){
+    err.textContent="Network error — please try again.";err.classList.add("show");
+    btn.disabled=false;btn.textContent="Send code";
+  }
 }
 
 /* ---- Screen 2: OTP ---- */
@@ -156,26 +160,13 @@ function tryVerify(){
 /* ---- Screen 3: success + route ---- */
 function successScreen(){
   const r=ROLE_FILES[state.user.role];
+  sessionStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role}));
   $("#card").innerHTML=`
     <h1>Welcome, ${state.user.name.split(' ')[0]}</h1>
     <p class="sub">You're signed in. Taking you to your dashboard…</p>
     <div class="roleline"><span class="ic">&#10003;</span> Role: ${r.label} <span style="margin-left:auto;font-weight:600;color:var(--muted)">${r.note}</span></div>
     <button class="btn" id="go"><span class="spin"></span> Opening…</button>`;
-  const go=()=>{
-    if(!r.file){
-      // Admin not built yet — graceful stub
-      $("#card").innerHTML=`
-        <button class="back" id="back2">&#8592; Sign out</button>
-        <h1>${r.label} console</h1>
-        <p class="sub">Signed in as <b>${state.user.name}</b> (${state.email}).</p>
-        <div class="roleline" style="background:#efeaf8;color:#5b3aa6"><span class="ic">&#128679;</span> The Admin console isn't built yet — coming next.</div>
-        <p class="meta">When ready, this role will open the Admin console for access management and data overview.</p>`;
-      $("#back2").onclick=()=>{state={email:"",otp:"",sentCode:"",user:null};emailScreen();};
-      return;
-    }
-    // route to the role's dashboard file (kept as separate files)
-    window.location.href=r.file;
-  };
+  const go=()=>{ window.location.href=r.file; };
   setTimeout(go,900);
   $("#go").onclick=go;
 }
