@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Material Depot — Service Manager · Installations</title>
+<style>
+  :root{
+    --navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;
+    --ink:#1b2230;--muted:#67748a;--line:#e2e7ef;--bg:#eef1f6;--card:#fff;
+    --lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;
+    --red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;--teal:#0f6e74;--tealbg:#e1f1f1;
+    --shadow:0 1px 2px rgba(20,40,80,.05),0 6px 18px rgba(20,40,80,.04);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;}
+  header{background:var(--navy);color:#fff;padding:0 18px;display:flex;align-items:center;gap:14px;height:56px;position:sticky;top:0;z-index:40;}
+  header .logo{width:34px;height:34px;border-radius:8px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:15px;}
+  header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
+  header .h{font-size:15px;font-weight:700;line-height:1.1;}
+  .vtoggle{margin-left:18px;display:flex;background:var(--navy2);border-radius:9px;padding:3px;}
+  .vtoggle button{border:0;background:transparent;color:#9fb2cd;font-weight:700;font-size:13px;padding:7px 14px;border-radius:7px;cursor:pointer;}
+  .vtoggle button.active{background:var(--yellow);color:#222;}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:14px;}
+  header .who{font-size:12px;color:#cdd8e8;text-align:right;line-height:1.2;}
+  header .who b{color:#fff;font-size:13px;}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;}
+  .layout{display:flex;min-height:calc(100vh - 56px);}
+  .rail{width:212px;background:#fff;border-right:1px solid var(--line);padding:14px 10px;flex:0 0 auto;}
+  .rail .grp{font-size:10px;letter-spacing:.8px;color:var(--muted);font-weight:800;margin:14px 8px 6px;}
+  .rail a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px;cursor:pointer;margin:2px 0;}
+  .rail a .ico{width:18px;text-align:center;opacity:.8;}
+  .rail a:hover{background:var(--lighter);}
+  .rail a.active{background:var(--navy);color:#fff;}
+  .rail a .ct{margin-left:auto;font-size:11px;background:var(--lighter);color:var(--navy);border-radius:20px;padding:1px 8px;font-weight:800;}
+  .rail a.active .ct{background:rgba(255,255,255,.18);color:#fff;}
+  .rail a .ct.alert{background:var(--redbg);color:var(--red);}
+  main{flex:1;min-width:0;padding:18px 22px 60px;}
+  .crumbs{font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+  .pagehead{display:flex;align-items:flex-end;gap:14px;margin-bottom:14px;}
+  .pagehead h1{font-size:21px;margin:0;color:var(--navy);letter-spacing:-.3px;}
+  .pagehead p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+  .pagehead .actions{margin-left:auto;display:flex;gap:8px;}
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);cursor:pointer;}
+  .stat:hover{border-color:var(--blue);}
+  .stat .n{font-size:24px;font-weight:800;color:var(--navy);letter-spacing:-.5px;}
+  .stat .l{font-size:11.5px;color:var(--muted);font-weight:700;margin-top:1px;}
+  .stat .b{height:3px;border-radius:3px;margin-top:8px;background:var(--line);}
+  .callbanner{background:#fff;border:1px solid var(--line);border-left:5px solid var(--amber);border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);}
+  .callbanner .ttl{font-weight:800;color:var(--amber);font-size:14px;}
+  .callbanner .sub{font-size:12.5px;color:var(--muted);margin-top:1px;}
+  .callbanner .btn{margin-left:auto;}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+  .search{flex:1;min-width:200px;position:relative;}
+  .search input{width:100%;padding:9px 11px 9px 32px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:#fff;}
+  .search .ico{position:absolute;left:10px;top:9px;color:var(--muted);}
+  .filt{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap;}
+  .filt button{border:0;background:transparent;padding:6px 11px;border-radius:7px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .filt button.active{background:var(--navy);color:#fff;}
+  .tablecard{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:auto;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{background:#f7f9fc;text-align:left;font-size:10.5px;letter-spacing:.5px;color:var(--muted);font-weight:800;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;text-transform:uppercase;}
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:0;}
+  tbody tr[data-pi]{cursor:pointer;}
+  tbody tr[data-pi]:hover{background:#f9fbfd;}
+  .pi{font-weight:800;color:var(--navy);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;}
+  .po{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
+  .pill-list{display:flex;gap:4px;flex-wrap:wrap;}
+  .skupill{font-size:10.5px;background:var(--lighter);color:var(--navy);border-radius:6px;padding:2px 7px;font-weight:700;white-space:nowrap;}
+  .skupill.inst{background:#d9efe0;color:#15663a;}
+  .skupill.cust{background:#fde2cf;color:#8a4516;}
+  .cust b{color:var(--ink);} .cust div{color:var(--muted);font-size:11.5px;}
+  .maplink{color:var(--blue);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px;}
+  .maplink:hover{text-decoration:underline;}
+  .subjobs{display:flex;flex-direction:column;gap:4px;}
+  .sjtag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;}
+  .sjtag .ty{border-radius:5px;padding:1px 6px;font-weight:800;font-size:10px;}
+  .sjtag .ty.fl{background:#fff4d6;color:#7a5800;} .sjtag .ty.wp{background:#e9e3fb;color:#5b3aa6;}
+  .deliv{font-weight:700;font-size:12.5px;} .deliv.delayed{color:var(--red);} .deliv.ontime{color:var(--green);}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .c-pending{background:#eef1f6;color:#5a6b86;}
+  .c-deliv_ontime{background:var(--greenbg);color:var(--green);}
+  .c-deliv_delayed{background:var(--redbg);color:var(--red);}
+  .c-created{background:var(--purplebg);color:var(--purple);}
+  .c-call_na{background:var(--redbg);color:var(--red);}
+  .c-scheduled{background:#e4f0fb;color:var(--blue);}
+  .c-assigned{background:var(--amberbg);color:var(--amber);}
+  .c-reschedule{background:var(--redbg);color:var(--red);}
+  .c-onway{background:#e8f0ff;color:#2b54c2;}
+  .c-atsite{background:#e9e3fb;color:#5b3aa6;}
+  .c-completed{background:var(--greenbg);color:var(--green);}
+  .c-partial{background:var(--tealbg);color:var(--teal);}
+  .autobadge{font-size:9px;font-weight:800;letter-spacing:.5px;background:#dfeafd;color:#2b54c2;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle;}
+  .auditbadge{font-size:10px;font-weight:800;border-radius:5px;padding:2px 7px;}
+  .auditbadge.ok{background:var(--greenbg);color:var(--green);} .auditbadge.miss{background:var(--redbg);color:var(--red);}
+  .btn{border:0;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .btn.primary{background:var(--blue);color:#fff;} .btn.navy{background:var(--navy);color:#fff;}
+  .btn.green{background:var(--green);color:#fff;} .btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--blue);}
+  .btn.gray{background:#fff;color:var(--muted);border:1px solid var(--line);} .btn.danger{background:#fff;color:var(--red);border:1px solid #e3b4ad;}
+  .btn.amber{background:var(--amber);color:#fff;}
+  .btn.sm{padding:6px 11px;font-size:12px;} .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .scrim{position:fixed;inset:0;background:rgba(15,25,45,.42);opacity:0;pointer-events:none;transition:.2s;z-index:50;}
+  .scrim.show{opacity:1;pointer-events:auto;}
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:600px;max-width:95vw;background:#fff;box-shadow:-12px 0 40px rgba(10,20,40,.18);transform:translateX(100%);transition:transform .26s cubic-bezier(.4,0,.2,1);z-index:55;display:flex;flex-direction:column;}
+  .drawer.show{transform:none;}
+  .dhead{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px;position:sticky;top:0;background:#fff;}
+  .dhead h2{margin:0;font-size:17px;color:var(--navy);}
+  .dhead .sub{color:var(--muted);font-size:12px;margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .dhead .x{margin-left:auto;border:0;background:#f0f3f8;width:30px;height:30px;border-radius:8px;font-size:16px;cursor:pointer;color:var(--muted);}
+  .dbody{padding:18px 20px;overflow:auto;flex:1;}
+  .sec{margin-bottom:20px;}
+  .sec h3{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin:0 0 9px;}
+  .kv{display:grid;grid-template-columns:135px 1fr;gap:7px 14px;font-size:13px;}
+  .kv .k{color:var(--muted);font-weight:600;} .kv .v{font-weight:600;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+  .field input,.field select{width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:#fff;}
+  .field input:disabled{background:#f5f7fa;color:#56627a;}
+  .autofill{font-size:10.5px;color:var(--green);font-weight:800;background:var(--greenbg);border-radius:5px;padding:1px 6px;margin-left:6px;}
+  .note{background:var(--lighter);border-left:4px solid var(--blue);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--navy);margin:10px 0;}
+  .note.red{border-color:var(--red);background:var(--redbg);color:var(--red);}
+  .note.amber{border-color:var(--amber);background:var(--amberbg);color:var(--amber);}
+  .note.green{border-color:var(--green);background:var(--greenbg);color:var(--green);}
+  .sjcard{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;}
+  .sjcard .sjh{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
+  .sjcard .sjh .ty{border-radius:6px;padding:3px 9px;font-weight:800;font-size:11px;}
+  .sjcard .sjh .ty.fl{background:#fff4d6;color:#7a5800;} .sjcard .sjh .ty.wp{background:#e9e3fb;color:#5b3aa6;}
+  .sjcard .sjh .sk{font-weight:700;font-size:13px;} .sjcard .sjh .st{margin-left:auto;}
+  .skugroup{border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:12px;}
+  .skugroup .gh{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .skugroup .gh .gt{font-weight:800;font-size:13px;color:var(--navy);}
+  .switch{position:relative;width:38px;height:22px;border-radius:20px;background:#cfd6e0;cursor:pointer;transition:.15s;flex:0 0 auto;margin-left:auto;}
+  .switch.on{background:var(--green);}
+  .switch:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s;}
+  .switch.on:after{left:18px;}
+  .skurow{display:flex;gap:8px;margin-bottom:7px;align-items:center;}
+  .skurow input{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;}
+  .skurow input.rolls{flex:0 0 110px;}
+  .skurow .del{border:0;background:#fbeae8;color:var(--red);border-radius:8px;width:34px;height:34px;cursor:pointer;font-weight:800;flex:0 0 auto;}
+  .addsku{border:1px dashed var(--blue);background:#fff;color:var(--blue);border-radius:8px;padding:7px;font-weight:700;font-size:12.5px;cursor:pointer;width:100%;}
+  .rollhint{font-size:11px;color:var(--muted);margin-top:4px;}
+  .slotgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+  .slot{border:1px solid var(--line);border-radius:9px;padding:9px;text-align:center;cursor:pointer;background:#fff;}
+  .slot.on{border-color:var(--blue);background:#f3f8fd;} .slot.full{opacity:.45;cursor:not-allowed;background:#f6f7f9;}
+  .slot .w{font-weight:800;font-size:12.5px;color:var(--navy);} .slot .cap{font-size:10.5px;color:var(--muted);margin-top:2px;}
+  .installerlist{display:flex;flex-direction:column;gap:8px;}
+  .installerrow{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff;}
+  .installerrow.on{border-color:var(--blue);background:#f3f8fd;} .installerrow.full{opacity:.5;cursor:not-allowed;}
+  .installerrow .av{width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;}
+  .installerrow .nm{font-weight:700;font-size:13.5px;} .installerrow .mt{font-size:11.5px;color:var(--muted);}
+  .installerrow .load{margin-left:auto;font-size:11.5px;font-weight:800;}
+  .statusmenu{display:flex;flex-wrap:wrap;gap:7px;}
+  .statusmenu button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;color:var(--muted);}
+  .statusmenu button:hover{border-color:var(--blue);color:var(--blue);}
+  .statusmenu button.cur{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .timeline{border-left:2px solid var(--line);margin-left:6px;padding-left:16px;}
+  .tl{position:relative;padding-bottom:14px;}
+  .tl:before{content:"";position:absolute;left:-22px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--blue);}
+  .tl.auto:before{background:#2b54c2;} .tl.manual:before{background:var(--amber);}
+  .tl .tt{font-weight:700;font-size:13px;} .tl .td{font-size:11.5px;color:var(--muted);}
+  .dfoot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:9px;background:#fff;flex-wrap:wrap;}
+  .dfoot .btn{flex:1;justify-content:center;min-width:120px;}
+  .calwrap{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
+  .daycell{border:1px solid var(--line);border-radius:10px;padding:9px;min-height:104px;}
+  .daycell .dn{font-size:11px;color:var(--muted);font-weight:700;}
+  .daycell.past{opacity:.5;background:#f7f8fa;}
+  .daycell .row{margin-top:6px;font-size:11px;font-weight:700;}
+  .daycell .row.fl{color:#7a5800;} .daycell .row.wp{color:#5b3aa6;}
+  .dow{font-size:10px;color:var(--muted);font-weight:800;text-align:center;padding-bottom:4px;letter-spacing:.5px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted);}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:12px 20px;border-radius:30px;font-size:13.5px;opacity:0;transition:.25s;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.3);font-weight:600;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .hide{display:none!important;}
+  @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">MD</div>
+  <div><div class="t">MATERIAL DEPOT</div><div class="h">Service Manager</div></div>
+  <div class="vtoggle">
+    <button id="vSiteAudit">Site Audit</button>
+    <button class="active" id="vInstall">Installations</button>
+  </div>
+  <div class="right">
+    <div class="who"><b>Priya Nair</b><br>Service Manager · Bengaluru</div>
+    <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer">PN</div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="rail" id="rail">
+    <div class="grp">INSTALLATIONS</div>
+    <a class="active" data-view="orders"><span class="ico">&#9638;</span>Orders<span class="ct" id="cOrders">0</span></a>
+    <a data-view="calls"><span class="ico">&#9742;</span>Call Operations today<span class="ct alert" id="cCalls">0</span></a>
+    <a data-view="schedule"><span class="ico">&#9719;</span>Today's installs<span class="ct" id="cToday">0</span></a>
+    <a data-view="reschedule"><span class="ico">&#8635;</span>To reschedule<span class="ct" id="cResched">0</span></a>
+    <a data-view="calendar"><span class="ico">&#9636;</span>Installer calendar</a>
+    <div class="grp">SETUP</div>
+    <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
+    <a data-view="installers"><span class="ico">&#9673;</span>Installers</a>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead">
+    <div><h2 id="dwTitle">Order</h2><div class="sub" id="dwSub"></div></div>
+    <button class="x" id="dwClose">&#10005;</button>
+  </div>
+  <div class="dbody" id="dwBody"></div>
+  <div class="dfoot" id="dwFoot"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============== CONFIG ============== */
+const INSTALL_SKU="SVC-INSTALL-001";
+const CUSTOM_WP_SKU="WP-CUST"; // prefix marking customised wallpaper -> 3-day Ops call
+let SLOTS=[{id:"s1",label:"9 AM – 12 PM"},{id:"s2",label:"12 PM – 3 PM"},{id:"s3",label:"3 PM – 6 PM"}];
+
+const today=new Date();today.setHours(0,0,0,0);
+function dstr(d){return d.toISOString().slice(0,10);}
+function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
+
+// typed installers: flooring cap = 1 job/day; wallpaper cap = 2 SLOTS/day (>=5 rolls uses 2, <5 uses 1)
+const INSTALLERS=[
+  {id:"f1",type:"flooring",name:"Mahesh Pawar",zone:"South",phone:"98861 30011"},
+  {id:"f2",type:"flooring",name:"Ganesh Iyer",zone:"East",phone:"98861 30022"},
+  {id:"w1",type:"wallpaper",name:"Faisal Khan",zone:"Central",phone:"98861 30033"},
+  {id:"w2",type:"wallpaper",name:"Deepak Joshi",zone:"North",phone:"98861 30044"},
+];
+const FLOOR_DAY_CAP=1;       // jobs/installer/day
+const WP_DAY_SLOTS=2;        // slots/installer/day
+const slotsForWp=rolls=>(Number(rolls)>=5?2:1);
+
+const STATUS={
+  pending:{l:"Pending",c:"c-pending"},
+  deliv_ontime:{l:"Delivery on time",c:"c-deliv_ontime"},
+  deliv_delayed:{l:"Delivery Delayed",c:"c-deliv_delayed"},
+  created:{l:"Service Created",c:"c-created"},
+  call_na:{l:"Call not picked",c:"c-call_na"},
+  scheduled:{l:"Site Installation Scheduled",c:"c-scheduled"},
+  assigned:{l:"Site Installer Assigned",c:"c-assigned"},
+  reschedule:{l:"To Reschedule",c:"c-reschedule"},
+  onway:{l:"On The Way",c:"c-onway"},
+  atsite:{l:"At Site",c:"c-atsite"},
+  partial:{l:"Partially Completed",c:"c-partial"},
+  completed:{l:"Site Installation Completed",c:"c-completed"},
+};
+const AUTO_STATUSES=["onway","atsite","completed"];
+function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
+
+/* ============== ORDERS ==============
+  Each order can have multiple installable items across two types.
+  After service creation, order.subjobs = [{type, items:[{sku,num,rolls}], date, slot, installer, status}]
+  matchedAudit: simulated prior-audit lookup by phone+address.
+*/
+let ORDERS=[
+  {pi:"PI-2026-00520",po:["PO-WF-8811","PO-ACC-8812"],
+   skus:[{c:"WF-OAK-12MM",n:"Oak Laminate 12mm",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Karthik R",name:"Meera Iyer",phone:"98450 11234",addr:"12, Brigade Rd, Bengaluru 560001",
+   matchedAudit:true, deliveryDate:dstr(addDays(1)), customWp:false,
+   status:"pending", subjobs:null, service:null,
+   log:[{t:"Order confirmed (POs generated)",d:"Today 09:14"},{t:"Matched to completed Site Audit (phone+address)",d:"Today 09:14",by:"auto"}]},
+
+  {pi:"PI-2026-00515",po:["PO-WP-8790"],
+   skus:[{c:"WP-CUST-902",n:"Custom Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Sneha P",name:"Arjun Rao",phone:"99000 55671",addr:"48, Indiranagar 100ft Rd, Bengaluru 560038",
+   matchedAudit:true, deliveryDate:dstr(addDays(3)), customWp:true,
+   status:"pending", subjobs:null, service:null,
+   log:[{t:"Order confirmed",d:"Yesterday 16:40"},{t:"Matched to completed Site Audit",d:"Yesterday 16:40",by:"auto"}]},
+
+  {pi:"PI-2026-00508",po:["PO-WF-8770","PO-WP-8771"],
+   skus:[{c:"WF-WAL-8MM",n:"Walnut Laminate",type:"flooring",audit:false},{c:"WP-STD-441",n:"Standard Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Karthik R",name:"Divya Menon",phone:"98800 33445",addr:"7th Block, Koramangala, Bengaluru 560095",
+   matchedAudit:true, deliveryDate:dstr(addDays(1)), customWp:false,
+   status:"deliv_ontime", subjobs:null, service:null,
+   log:[{t:"Order confirmed",d:"2 days ago"},{t:"Operations confirmed delivery on time",d:"Today 10:10",by:"manual"}]},
+
+  {pi:"PI-2026-00499",po:["PO-WP-8740"],
+   skus:[{c:"WP-STD-220",n:"Standard Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Mohan L",name:"Rohit Shetty",phone:"97400 88112",addr:"Whitefield, Bengaluru 560066",
+   matchedAudit:true, deliveryDate:dstr(today), customWp:false,
+   status:"created", subjobs:null,
+   service:{wallpaper:[{sku:"WP-STD-220",num:"WP-5521",rolls:"3"}],flooring:[]},
+   log:[{t:"Order confirmed",d:"3 days ago"},{t:"Delivery confirmed on time",d:"Yesterday",by:"manual"},{t:"Service created",d:"Yesterday 14:00",by:"manual"}]},
+
+  {pi:"PI-2026-00488",po:["PO-WF-8701"],
+   skus:[{c:"WF-OAK-10MM",n:"Oak Laminate 10mm",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Sneha P",name:"Kavya Reddy",phone:"99016 44550",addr:"HSR Layout, Bengaluru 560102",
+   matchedAudit:true, deliveryDate:dstr(addDays(-1)), customWp:false,
+   status:"scheduled", subjobs:[{id:"sj1",type:"flooring",items:[{sku:"WF-OAK-10MM",num:"FL-3310",rolls:""}],date:dstr(addDays(1)),slot:"s1",installer:null,status:"scheduled"}],
+   service:{flooring:[{sku:"WF-OAK-10MM",num:"FL-3310",rolls:""}],wallpaper:[]},
+   log:[{t:"Delivery on time",d:"2 days ago",by:"manual"},{t:"Service created",d:"2 days ago",by:"manual"},{t:"Install slot booked: "+fmtDateRaw(addDays(1))+" · 9AM–12PM",d:"Yesterday",by:"manual"}]},
+
+  {pi:"PI-2026-00477",po:["PO-WP-8688"],
+   skus:[{c:"WP-CUST-880",n:"Custom Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Mohan L",name:"Sanjay Gupta",phone:"98453 77881",addr:"JP Nagar, Bengaluru 560078",
+   matchedAudit:true, deliveryDate:dstr(addDays(-2)), customWp:true,
+   status:"assigned", subjobs:[{id:"sj1",type:"wallpaper",items:[{sku:"WP-CUST-880",num:"WP-8810",rolls:"6"}],date:dstr(today),slot:"s2",installer:"w1",status:"assigned"}],
+   service:{flooring:[],wallpaper:[{sku:"WP-CUST-880",num:"WP-8810",rolls:"6"}]},
+   log:[{t:"Delivery on time",d:"4 days ago",by:"manual"},{t:"Service created",d:"3 days ago",by:"manual"},{t:"Install slot booked",d:"2 days ago",by:"manual"},{t:"Installer assigned: Faisal Khan · SMS sent to customer",d:"Yesterday",by:"manual"}]},
+
+  {pi:"PI-2026-00466",po:["PO-WF-8651","PO-WP-8652"],
+   skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",type:"flooring",audit:false},{c:"WP-STD-301",n:"Standard Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Karthik R",name:"Lakshmi N",phone:"98860 22119",addr:"Jayanagar 4th Block, Bengaluru 560011",
+   matchedAudit:true, deliveryDate:dstr(addDays(-3)), customWp:false,
+   status:"partial",
+   subjobs:[
+     {id:"sj1",type:"flooring",items:[{sku:"WF-OAK-12MM",num:"FL-1102",rolls:""}],date:dstr(addDays(-1)),slot:"s1",installer:"f1",status:"completed"},
+     {id:"sj2",type:"wallpaper",items:[{sku:"WP-STD-301",num:"WP-3011",rolls:"4"}],date:dstr(today),slot:"s2",installer:"w2",status:"onway"}],
+   service:{flooring:[{sku:"WF-OAK-12MM",num:"FL-1102",rolls:""}],wallpaper:[{sku:"WP-STD-301",num:"WP-3011",rolls:"4"}]},
+   log:[{t:"Delivery on time",d:"5 days ago",by:"manual"},{t:"Service created",d:"4 days ago",by:"manual"},{t:"Flooring installed (Mahesh Pawar)",d:"Yesterday",by:"auto"},{t:"Wallpaper installer on the way (Deepak Joshi)",d:"Today 09:30",by:"auto"}]},
+
+  {pi:"PI-2026-00455",po:["PO-WP-8640"],
+   skus:[{c:"WP-CUST-770",n:"Custom Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
+   bm:"Sneha P",name:"Vikram Singh",phone:"97391 66220",addr:"Marathahalli, Bengaluru 560037",
+   matchedAudit:false, deliveryDate:dstr(addDays(5)), customWp:true,
+   status:"pending", subjobs:null, service:null,
+   log:[{t:"Order confirmed",d:"Today 08:20"},{t:"WARNING: no matching completed Site Audit found for this customer",d:"Today 08:20",by:"auto"}]},
+];
+
+/* ============== HELPERS ============== */
+const $=s=>document.querySelector(s);
+function fmtDateRaw(d){return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return fmtDateRaw(d);};
+const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
+const installerById=id=>INSTALLERS.find(a=>a.id===id);
+const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>&#128205;</span>${addr}</a>`;}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
+
+// Ops-call window: custom WP -> 3 days prior; else -> 1 day prior
+function opsCallDue(o){
+  if(o.status!=="pending")return false;
+  const dd=new Date(o.deliveryDate+"T00:00");
+  const daysToDelivery=Math.round((dd-today)/(86400000));
+  return o.customWp? daysToDelivery<=3 : daysToDelivery<=1;
+}
+// installer load on a date
+function flLoad(id,date){let n=0;ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.installer===id&&sj.date===date&&["assigned","onway","atsite","completed"].includes(sj.status))n++;}));return n;}
+function wpSlotLoad(id,date){let n=0;ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.installer===id&&sj.date===date&&["assigned","onway","atsite","completed"].includes(sj.status))n+=slotsForWp(sj.items[0]&&sj.items[0].rolls);}));return n;}
+
+let activeView="orders",filterStatus="all",searchQ="",currentPI=null;
+
+/* ============== COUNTS ============== */
+function counts(){
+  $("#cOrders").textContent=ORDERS.length;
+  $("#cCalls").textContent=ORDERS.filter(opsCallDue).length;
+  $("#cToday").textContent=ORDERS.filter(o=>(o.subjobs||[]).some(sj=>sj.date===dstr(today))).length;
+  $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule"||(o.subjobs||[]).some(sj=>sj.status==="reschedule")).length;
+}
+
+/* ============== RENDER ============== */
+function render(){
+  counts();
+  document.querySelectorAll("#rail a").forEach(a=>a.classList.toggle("active",a.dataset.view===activeView));
+  const m=$("#main");
+  if(activeView==="orders")m.innerHTML=ordersView();
+  else if(activeView==="calls")m.innerHTML=callsView();
+  else if(activeView==="schedule")m.innerHTML=scheduleView();
+  else if(activeView==="reschedule")m.innerHTML=reschedView();
+  else if(activeView==="calendar")m.innerHTML=calendarView();
+  else if(activeView==="slots")m.innerHTML=slotsView();
+  else if(activeView==="installers")m.innerHTML=installersView();
+  wire();
+}
+function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
+
+function subjobSummary(o){
+  if(!o.subjobs)return '<span style="color:var(--muted)">—</span>';
+  return `<div class="subjobs">`+o.subjobs.map(sj=>{
+    const inst=sj.installer?installerById(sj.installer).name:"unassigned";
+    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span>${fmtDate(sj.date)} · ${inst} · ${STATUS[sj.status].l}</span>`;
+  }).join("")+`</div>`;
+}
+
+function ordersView(){
+  const c={};Object.keys(STATUS).forEach(k=>c[k]=0);ORDERS.forEach(o=>c[o.status]++);
+  const opsDue=ORDERS.filter(opsCallDue).length;
+  const stats=`<div class="stats">
+    ${statTile(ORDERS.length,"Installation orders","#1F3A5F","all")}
+    ${statTile(opsDue,"Ops calls due today","#9a6200","opsdue")}
+    ${statTile(c.deliv_delayed,"Delivery delayed","#b3261e","deliv_delayed")}
+    ${statTile(c.scheduled+c.assigned+c.partial,"Scheduled / in progress","#2E6CA8","live")}
+    ${statTile(c.completed,"Completed","#1f7a3f","completed")}</div>`;
+  const banner=opsDue?`<div class="callbanner"><div><div class="ttl">&#9742; ${opsDue} order${opsDue>1?'s':''} need an Operations call today</div>
+    <div class="sub">Custom wallpaper: 3 days before delivery · everything else: 1 day before. Confirm delivery before creating the service.</div></div>
+    <button class="btn amber" data-goto="calls">Review calls</button></div>`:"";
+  const filters=["all","pending","deliv_delayed","created","scheduled","assigned","partial","completed"];
+  const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":STATUS[f]?STATUS[f].l:f}</button>`).join("");
+  const rows=ORDERS.filter(o=>{
+    if(filterStatus!=="all"){
+      if(filterStatus==="opsdue")return opsCallDue(o);
+      if(filterStatus==="live")return ["scheduled","assigned","partial","onway","atsite"].includes(o.status);
+      if(o.status!==filterStatus)return false;
+    }
+    if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
+    return true;
+  }).map(o=>{
+    const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c}</span>`).join("");
+    const dd=new Date(o.deliveryDate+"T00:00");const delayed=o.status==="deliv_delayed";
+    const delivCls=delayed?"delayed":(o.status==="deliv_ontime"||["created","scheduled","assigned","partial","completed"].includes(o.status)?"ontime":"");
+    const auditBadge=o.matchedAudit?'<span class="auditbadge ok">Audit ✓</span>':'<span class="auditbadge miss">No audit!</span>';
+    const opsFlag=opsCallDue(o)?' <span class="auditbadge miss">Call Ops</span>':'';
+    return `<tr data-pi="${o.pi}">
+      <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
+      <td><div class="pill-list">${skupills}</div><div style="margin-top:4px">${auditBadge}</div></td>
+      <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+      <td style="max-width:170px">${mapLink(o.addr)}</td>
+      <td><span class="deliv ${delivCls}">${fmtDate(o.deliveryDate)}</span>${opsFlag}</td>
+      <td>${subjobSummary(o)}</td>
+      <td>${chip(o.status)}</td></tr>`;
+  }).join("");
+  return `<div class="crumbs">Installations / Orders</div>
+  <div class="pagehead"><div><h1>Installation orders</h1><p>Every confirmed order containing the Installation SKU (${INSTALL_SKU}). Delivery is confirmed before service creation.</p></div>
+    <div class="actions"><button class="btn gray sm" id="pushDemo">Simulate new order</button></div></div>
+  ${stats}${banner}
+  <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
+    <div class="filt">${fbtns}</div></div>
+  <div class="tablecard"><table>
+    <thead><tr><th>PI / PO</th><th>SKUs (audit match)</th><th>Customer</th><th>Address</th><th>Delivery date</th><th>Install sub-jobs</th><th>Status</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">No orders match.</td></tr>`}</tbody>
+  </table></div>`;
+}
+
+function callsView(){
+  const list=ORDERS.filter(opsCallDue);
+  const rows=list.map(o=>{
+    const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
+    return `<tr data-pi="${o.pi}">
+      <td><div class="pi">${o.pi}</div></td>
+      <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+      <td>${o.customWp?'<span class="skupill cust">Custom wallpaper</span>':'<span class="skupill">Standard</span>'}</td>
+      <td>${fmtDate(o.deliveryDate)} <span style="color:var(--muted)">(${dleft<=0?'today/overdue':'in '+dleft+'d'})</span></td>
+      <td>${o.customWp?'3 days prior':'1 day prior'}</td>
+      <td><button class="btn green sm" data-open="${o.pi}">Open &amp; confirm</button></td></tr>`;
+  }).join("");
+  return `<div class="crumbs">Installations / Call Operations today</div>
+  <div class="pagehead"><div><h1>Call Operations today</h1><p>Confirm delivery status with Operations within the call window. Custom wallpaper needs the call 3 days out; everything else 1 day out.</p></div></div>
+  <div class="tablecard"><table>
+    <thead><tr><th>PI</th><th>Customer</th><th>Type</th><th>Delivery date</th><th>Call window</th><th></th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">No Operations calls due today.</td></tr>`}</tbody>
+  </table></div>`;
+}
+
+function scheduleView(){
+  const items=[];
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.date===dstr(today))items.push({o,sj});}));
+  items.sort((a,b)=>(a.sj.slot||"").localeCompare(b.sj.slot||""));
+  const rows=items.map(({o,sj})=>`<tr data-pi="${o.pi}">
+    <td><b>${slotLabel(sj.slot)}</b></td>
+    <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
+    <td><div class="pi">${o.pi}</div></td>
+    <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+    <td style="max-width:160px">${mapLink(o.addr)}</td>
+    <td>${sj.installer?installerById(sj.installer).name:'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
+    <td>${chip(sj.status)}</td></tr>`).join("");
+  return `<div class="crumbs">Installations / Today's installs</div>
+  <div class="pagehead"><div><h1>Today — ${fmtDate(dstr(today))}</h1><p>Live view of today's install sub-jobs and installer progress.</p></div></div>
+  <div class="tablecard"><table>
+   <thead><tr><th>Slot</th><th>Type</th><th>PI</th><th>Customer</th><th>Address</th><th>Installer</th><th>Live status</th></tr></thead>
+   <tbody>${rows||`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">No installs scheduled today.</td></tr>`}</tbody></table></div>`;
+}
+
+function reschedView(){
+  const items=[];
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.status==="reschedule")items.push({o,sj});}));
+  const rows=items.map(({o,sj})=>`<tr data-pi="${o.pi}">
+    <td><div class="pi">${o.pi}</div></td>
+    <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
+    <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+    <td>${fmtDate(sj.date)} · ${slotLabel(sj.slot)}</td>
+    <td><button class="btn primary sm" data-open="${o.pi}">Call &amp; rebook</button></td></tr>`).join("");
+  return `<div class="crumbs">Installations / To reschedule</div>
+  <div class="pagehead"><div><h1>To reschedule</h1><p>Auto-flagged when an installer marks a sub-job To Reschedule. Call the customer and rebook.</p></div></div>
+  <div class="tablecard"><table>
+   <thead><tr><th>PI</th><th>Type</th><th>Customer</th><th>Was booked</th><th></th></tr></thead>
+   <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nothing to reschedule.</td></tr>`}</tbody></table></div>`;
+}
+
+function calendarView(){
+  const dows=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  let cells="";const startDow=today.getDay();
+  for(let i=0;i<startDow;i++)cells+=`<div></div>`;
+  const flInst=INSTALLERS.filter(i=>i.type==="flooring").length;
+  const wpInst=INSTALLERS.filter(i=>i.type==="wallpaper").length;
+  for(let i=0;i<28;i++){
+    const d=addDays(i);const ds=dstr(d);const past=d<today;
+    let flUsed=0,wpUsed=0;
+    ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.date===ds&&["assigned","onway","atsite","completed"].includes(sj.status)){if(sj.type==="flooring")flUsed++;else wpUsed+=slotsForWp(sj.items[0]&&sj.items[0].rolls);}}));
+    cells+=`<div class="daycell ${past?'past':''}">
+      <div class="dn">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
+      <div class="row fl">FL ${flUsed}/${flInst*FLOOR_DAY_CAP}</div>
+      <div class="row wp">WP ${wpUsed}/${wpInst*WP_DAY_SLOTS} slots</div></div>`;
+  }
+  return `<div class="crumbs">Installations / Installer calendar</div>
+  <div class="pagehead"><div><h1>Installer calendar</h1><p>Daily capacity by type. Flooring: 1 job per installer. Wallpaper: 2 slots per installer (≥5 rolls = 2 slots, &lt;5 rolls = 1 slot).</p></div></div>
+  <div class="calwrap"><div class="calgrid">${dows.map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>
+   <div class="legend"><span>FL = flooring jobs booked / capacity · WP = wallpaper slots used / capacity.</span></div></div>`;
+}
+
+function slotsView(){
+  const rows=SLOTS.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
+    <td><input class="slotedit" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
+    <td><button class="btn danger sm" data-delslot="${i}">Delete</button></td></tr>`).join("");
+  return `<div class="crumbs">Setup / Slots &amp; timings</div>
+  <div class="pagehead"><div><h1>Slots &amp; timings</h1><p>Add, rename, or delete install windows.</p></div>
+   <div class="actions"><button class="btn ghost sm" id="addSlot">+ Add window</button><button class="btn navy sm" id="saveSlots">Save</button></div></div>
+  <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function installersView(){
+  const rows=INSTALLERS.map(a=>{
+    const load=a.type==="flooring"?flLoad(a.id,dstr(today))+"/"+FLOOR_DAY_CAP+" job":wpSlotLoad(a.id,dstr(today))+"/"+WP_DAY_SLOTS+" slots";
+    return `<tr><td><div class="cust"><b>${a.name}</b><div>${a.phone}</div></div></td>
+      <td><span class="skupill ${a.type==='wallpaper'?'cust':''}">${a.type==='wallpaper'?'Wallpaper':'Flooring'}</span></td>
+      <td>${a.zone}</td>
+      <td>${a.type==="flooring"?"1 job/day":"2 slots/day"}</td>
+      <td>${load} today</td></tr>`;
+  }).join("");
+  return `<div class="crumbs">Setup / Installers</div>
+  <div class="pagehead"><div><h1>Installers</h1><p>Typed installers. Flooring jobs go only to flooring installers; wallpaper only to wallpaper installers.</p></div></div>
+  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>2 slots per installer per day</b>, where an order with <b>≥5 rolls uses 2 slots</b> and <b>&lt;5 rolls uses 1 slot</b>.</div>
+  <div class="tablecard"><table><thead><tr><th>Installer</th><th>Type</th><th>Zone</th><th>Capacity</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ============== DRAWER ============== */
+function openOrder(pi){
+  currentPI=pi;const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  $("#dwTitle").textContent=o.name;
+  $("#dwSub").innerHTML=`${o.pi} · BM ${o.bm} ${chip(o.status)}`;
+  $("#dwBody").innerHTML=drawerBody(o);
+  $("#dwFoot").innerHTML=drawerFoot(o);
+  $("#scrim").classList.add("show");$("#drawer").classList.add("show");
+  wireDrawer(o);
+}
+function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;}
+
+function drawerBody(o){
+  let html="";
+  const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c} · ${s.n}</span>`).join(" ");
+  html+=`<div class="sec"><h3>Order</h3><div class="kv">
+    <div class="k">PI ID</div><div class="v">${o.pi}</div>
+    <div class="k">PO numbers</div><div class="v">${o.po.join(", ")}</div>
+    <div class="k">SKUs in cart</div><div class="v"><div class="pill-list">${skupills}</div></div>
+    <div class="k">BM</div><div class="v">${o.bm}</div>
+    <div class="k">Prior audit</div><div class="v">${o.matchedAudit?'<span class="auditbadge ok">Matched ✓</span>':'<span class="auditbadge miss">None found — cannot install</span>'}</div>
+  </div></div>`;
+  html+=`<div class="sec"><h3>Customer</h3><div class="kv">
+    <div class="k">Name</div><div class="v">${o.name}</div>
+    <div class="k">Phone</div><div class="v">${o.phone}</div>
+    <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div></div></div>`;
+
+  if(!o.matchedAudit){
+    html+=`<div class="note red"><b>Blocked.</b> No completed Site Audit matches this customer (phone + address). Installation can't proceed until a prior audit exists. Escalate to the BM / auditor.</div>`;
+  }
+
+  // ---- DELIVERY stage (first) ----
+  const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
+  html+=`<div class="sec"><h3>Delivery — confirm with Operations first</h3><div class="kv">
+    <div class="k">Scheduled delivery</div><div class="v">${fmtDate(o.deliveryDate)} (${dleft<=0?'today/past':'in '+dleft+'d'})</div>
+    <div class="k">Type</div><div class="v">${o.customWp?'Custom wallpaper — call 3 days prior':'Standard — call 1 day prior'}</div></div>`;
+  if(o.status==="pending"){
+    html+=`<div class="note ${opsCallDue(o)?'amber':''}">${opsCallDue(o)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
+      <div class="field"><label>If delayed — new delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
+  } else {
+    html+=`<div class="note ${o.status==='deliv_delayed'?'red':'green'}">${o.status==='deliv_delayed'?'Delivery delayed — BM asked to inform client. Update the date when Operations gives a new one.':'Delivery confirmed on time.'}</div>`;
+  }
+  html+=`</div>`;
+
+  // ---- manual status override ----
+  html+=`<div class="sec"><h3>Set status <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— manual override</span></h3>
+    <div class="note">Installer steps (On the way / At site / Completed) update automatically per sub-job. You can also set any status manually here.</div>
+    <div class="statusmenu" id="statusMenu">
+      ${Object.keys(STATUS).map(k=>`<button data-setstatus="${k}" class="${o.status===k?'cur':''}">${STATUS[k].l}${AUTO_STATUSES.includes(k)?'<span class="autobadge">AUTO</span>':''}</button>`).join("")}
+    </div></div>`;
+
+  // ---- SERVICE CREATION (after delivery on time) ----
+  if(["deliv_ontime"].includes(o.status)){
+    html+=serviceCreationPanel(o);
+  }
+
+  // ---- SCHEDULE + ASSIGN per sub-job ----
+  if(o.subjobs){
+    html+=`<div class="sec"><h3>Installation sub-jobs</h3>
+      <div class="note">Flooring and wallpaper are scheduled &amp; tracked separately, each with its own date, installer and status. Order completes only when all sub-jobs are done.</div>`;
+    o.subjobs.forEach(sj=>{
+      const inst=sj.installer?installerById(sj.installer):null;
+      html+=`<div class="sjcard" data-sj="${sj.id}">
+        <div class="sjh"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WALLPAPER':'FLOORING'}</span>
+          <span class="sk">${sj.items.map(it=>it.sku+(it.num?(' · '+it.num):'')+(sj.type==='wallpaper'?(' · '+(it.rolls||'?')+' rolls'):'')).join(', ')}</span>
+          <span class="st">${chip(sj.status)}</span></div>
+        <div class="kv">
+          <div class="k">Date / slot</div><div class="v">${sj.date?fmtDate(sj.date)+' · '+slotLabel(sj.slot):'<span style="color:var(--red)">Not scheduled</span>'}</div>
+          <div class="k">Installer</div><div class="v">${inst?inst.name+' ('+inst.phone+')':'<span style="color:var(--red)">Unassigned</span>'}</div>
+          ${sj.type==='wallpaper'?`<div class="k">Slots used</div><div class="v">${slotsForWp(sj.items[0]&&sj.items[0].rolls)} of 2 (${Number(sj.items[0]&&sj.items[0].rolls)>=5?'≥5 rolls':'<5 rolls'})</div>`:''}
+        </div>
+        <div class="actions" style="margin-top:10px">
+          ${sj.status==='created'||!sj.date?`<button class="btn navy sm" data-sched="${sj.id}">Schedule install</button>`:''}
+          ${sj.date&&!sj.installer?`<button class="btn primary sm" data-assign="${sj.id}">Assign installer</button>`:''}
+          ${["assigned","onway","atsite"].includes(sj.status)?`<button class="btn ghost sm" data-simsj="${sj.id}">&#9654; Simulate installer step</button>`:''}
+        </div>
+        <div data-schedbox="${sj.id}"></div>
+        <div data-assignbox="${sj.id}"></div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  // timeline
+  html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${l.t}</div><div class="td">${l.d}${l.by==='auto'?' · auto from installer':l.by==='manual'?' · manual':''}</div></div>`).join("")}</div></div>`;
+  return html;
+}
+
+function serviceCreationPanel(o){
+  const flHas=o.skus.some(s=>s.type==="flooring");
+  const wpHas=o.skus.some(s=>s.type==="wallpaper");
+  return `<div class="sec"><h3>Service creation</h3>
+    <div class="note green">Delivery confirmed on time — you can now create the service. Customer, phone, address and BM are auto-filled. Add SKU + SKU number for each category; for wallpaper, confirm the roll count.</div>
+    <div class="field"><label>Customer name <span class="autofill">auto</span></label><input value="${o.name}" disabled></div>
+    <div class="field"><label>Phone <span class="autofill">auto</span></label><input value="${o.phone}" disabled></div>
+    <div class="field"><label>Address <span class="autofill">auto</span></label><input value="${o.addr}" disabled></div>
+    <div class="field"><label>BM <span class="autofill">auto</span></label><input value="${o.bm}" disabled></div>
+    <div class="skugroup" data-grp="flooring">
+      <div class="gh"><span class="gt">Wooden Flooring</span><div class="switch ${flHas?'on':''}" data-tog="flooring"></div></div>
+      <div class="skurows ${flHas?'':'hide'}" data-rows="flooring"></div>
+      <button class="addsku ${flHas?'':'hide'}" data-add="flooring">+ Add flooring SKU</button>
+    </div>
+    <div class="skugroup" data-grp="wallpaper">
+      <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wpHas?'on':''}" data-tog="wallpaper"></div></div>
+      <div class="skurows ${wpHas?'':'hide'}" data-rows="wallpaper"></div>
+      <button class="addsku ${wpHas?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
+      <div class="rollhint">Roll count decides installer load: ≥5 rolls blocks a full day, &lt;5 rolls is a half-day.</div>
+    </div>
+  </div>`;
+}
+
+function drawerFoot(o){
+  if(!o.matchedAudit)return `<button class="btn gray" id="dClose">Close</button>`;
+  if(o.status==="pending")return `<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
+  if(o.status==="deliv_delayed")return `<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markOnTime">Now on time</button>`;
+  if(o.status==="deliv_ontime")return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
+  if(o.status==="created")return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="callCustomer" disabled>Schedule from sub-jobs above</button>`;
+  return `<button class="btn gray" id="dClose">Close</button>`;
+}
+
+/* ============== DRAWER WIRING ============== */
+let draft={};
+function wireDrawer(o){
+  draft={flooring:[],wallpaper:[]};
+  if(o.service){draft.flooring=(o.service.flooring||[]).map(x=>({...x}));draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));}
+  $("#dwClose").onclick=closeDrawer;
+  if($("#dClose"))$("#dClose").onclick=closeDrawer;
+
+  // manual status
+  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});toast("Status: "+STATUS[st].l);render();openOrder(o.pi);});
+
+  // delivery outcomes
+  if($("#markOnTime"))$("#markOnTime").onclick=()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:"Just now",by:"manual"});toast("Delivery on time — create service next");render();openOrder(o.pi);};
+  if($("#markDelayed"))$("#markDelayed").onclick=()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:"Delivery delayed — BM asked to inform client. New date: "+fmtDate(nd),d:"Just now",by:"manual"});toast("Marked delivery delayed");render();openOrder(o.pi);};
+
+  // service creation
+  function renderSkuRows(grp){
+    const box=document.querySelector(`[data-rows="${grp}"]`);if(!box)return;
+    box.innerHTML=draft[grp].map((r,i)=>`<div class="skurow">
+      <input placeholder="SKU code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
+      <input placeholder="SKU number" value="${r.num||''}" data-grp="${grp}" data-i="${i}" data-f="num">
+      ${grp==='wallpaper'?`<input class="rolls" placeholder="rolls" inputmode="numeric" value="${r.rolls||''}" data-grp="${grp}" data-i="${i}" data-f="rolls">`:''}
+      <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button></div>`).join("");
+    box.querySelectorAll("input").forEach(inp=>inp.oninput=()=>{draft[inp.dataset.grp][inp.dataset.i][inp.dataset.f]=inp.value;});
+    box.querySelectorAll("[data-delrow]").forEach(btn=>btn.onclick=()=>{draft[btn.dataset.delrow].splice(+btn.dataset.i,1);renderSkuRows(grp);});
+  }
+  document.querySelectorAll("[data-tog]").forEach(sw=>sw.onclick=()=>{
+    const grp=sw.dataset.tog;const on=!sw.classList.contains("on");sw.classList.toggle("on",on);
+    const rows=document.querySelector(`[data-rows="${grp}"]`),add=document.querySelector(`[data-add="${grp}"]`);
+    rows.classList.toggle("hide",!on);add.classList.toggle("hide",!on);
+    if(on&&draft[grp].length===0){draft[grp].push({sku:"",num:"",rolls:""});renderSkuRows(grp);}
+    if(!on)draft[grp]=[];
+  });
+  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push({sku:"",num:"",rolls:""});renderSkuRows(grp);});
+  if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
+  if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
+
+  if($("#createService"))$("#createService").onclick=()=>{
+    const fl=draft.flooring.filter(r=>r.sku||r.num),wp=draft.wallpaper.filter(r=>r.sku||r.num);
+    if(!fl.length&&!wp.length){toast("Add at least one SKU");return;}
+    o.service={flooring:fl,wallpaper:wp};
+    // build sub-jobs (one per type present)
+    o.subjobs=[];
+    if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,status:"created"});
+    if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,status:"created"});
+    o.status="created";
+    o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:"Just now",by:"manual"});
+    toast("Service created — "+o.subjobs.length+" sub-job(s)");render();openOrder(o.pi);
+  };
+
+  // ---- per-subjob schedule ----
+  document.querySelectorAll("[data-sched]").forEach(btn=>btn.onclick=()=>{
+    const sj=o.subjobs.find(s=>s.id===btn.dataset.sched);
+    const box=document.querySelector(`[data-schedbox="${sj.id}"]`);
+    box.innerHTML=`<div class="field" style="margin-top:10px"><label>Install date (call customer on delivery day)</label><input type="date" id="sd_${sj.id}" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+      <div class="field"><label>Slot</label><div class="slotgrid" id="sg_${sj.id}"></div></div>
+      <button class="btn navy sm" id="confirmSched_${sj.id}" disabled>Confirm slot</button>`;
+    let pickedSlot=null;
+    function renderSlots(){
+      const date=document.getElementById("sd_"+sj.id).value;
+      const grid=document.getElementById("sg_"+sj.id);
+      const pool=INSTALLERS.filter(i=>i.type===sj.type);
+      grid.innerHTML=SLOTS.map(s=>{
+        // capacity check across installers of this type (window-agnostic day cap, shown per window for UX)
+        let free;
+        if(sj.type==="flooring"){const used=pool.reduce((a,i)=>a+flLoad(i.id,date),0);free=pool.length*FLOOR_DAY_CAP-used;}
+        else {const used=pool.reduce((a,i)=>a+wpSlotLoad(i.id,date),0);const need=slotsForWp(sj.items[0]&&sj.items[0].rolls);free=Math.floor((pool.length*WP_DAY_SLOTS-used)/need);}
+        const full=free<=0;
+        return `<div class="slot ${pickedSlot===s.id?'on':''} ${full?'full':''}" data-s="${s.id}"><div class="w">${s.label}</div><div class="cap">${full?'Full':free+' free'}</div></div>`;
+      }).join("");
+      grid.querySelectorAll(".slot:not(.full)").forEach(el=>el.onclick=()=>{pickedSlot=el.dataset.s;renderSlots();document.getElementById("confirmSched_"+sj.id).disabled=false;});
+    }
+    document.getElementById("sd_"+sj.id).onchange=()=>{pickedSlot=null;renderSlots();document.getElementById("confirmSched_"+sj.id).disabled=true;};
+    renderSlots();
+    document.getElementById("confirmSched_"+sj.id).onclick=()=>{
+      sj.date=document.getElementById("sd_"+sj.id).value;sj.slot=pickedSlot;sj.status="scheduled";
+      syncParent(o);o.log.push({t:sj.type+" install scheduled: "+fmtDate(sj.date)+" · "+slotLabel(sj.slot),d:"Just now",by:"manual"});
+      toast("Sub-job scheduled");render();openOrder(o.pi);
+    };
+  });
+
+  // ---- per-subjob assign installer ----
+  document.querySelectorAll("[data-assign]").forEach(btn=>btn.onclick=()=>{
+    const sj=o.subjobs.find(s=>s.id===btn.dataset.assign);
+    const box=document.querySelector(`[data-assignbox="${sj.id}"]`);
+    const pool=INSTALLERS.filter(i=>i.type===sj.type);
+    let picked=null;
+    box.innerHTML=`<div class="note" style="margin-top:10px">Only ${sj.type} installers under capacity on ${fmtDate(sj.date)} are selectable. Assigning SMSes the installer's details to the customer.</div>
+      <div class="installerlist">`+pool.map(a=>{
+        let full,loadtxt;
+        if(sj.type==="flooring"){const l=flLoad(a.id,sj.date);full=l>=FLOOR_DAY_CAP;loadtxt=l+"/"+FLOOR_DAY_CAP+" job";}
+        else{const l=wpSlotLoad(a.id,sj.date);const need=slotsForWp(sj.items[0]&&sj.items[0].rolls);full=(l+need)>WP_DAY_SLOTS;loadtxt=l+"/"+WP_DAY_SLOTS+" slots (needs "+need+")";}
+        return `<div class="installerrow ${full?'full':''}" data-i="${a.id}"><div class="av">${initials(a.name)}</div>
+          <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}</div></div>
+          <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${loadtxt}${full?' · full':''}</div></div>`;
+      }).join("")+`</div><button class="btn primary sm" id="confirmAssign_${sj.id}" style="margin-top:10px" disabled>Assign installer</button>`;
+    box.querySelectorAll(".installerrow:not(.full)").forEach(el=>el.onclick=()=>{picked=el.dataset.i;box.querySelectorAll(".installerrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");document.getElementById("confirmAssign_"+sj.id).disabled=false;});
+    document.getElementById("confirmAssign_"+sj.id).onclick=()=>{
+      sj.installer=picked;sj.status="assigned";const a=installerById(picked);
+      syncParent(o);o.log.push({t:sj.type+" installer assigned: "+a.name+" · SMS sent to customer",d:"Just now",by:"manual"});
+      toast("Assigned "+a.name);render();openOrder(o.pi);
+    };
+  });
+
+  // ---- simulate installer step per sub-job ----
+  document.querySelectorAll("[data-simsj]").forEach(btn=>btn.onclick=()=>{
+    const sj=o.subjobs.find(s=>s.id===btn.dataset.simsj);
+    const next={assigned:"onway",onway:"atsite",atsite:"completed"}[sj.status];sj.status=next;
+    const a=installerById(sj.installer);
+    const msg={onway:a.name+" on the way",atsite:a.name+" at site",completed:sj.type+" installed ("+a.name+")"}[next];
+    syncParent(o);o.log.push({t:msg,d:"Just now",by:"auto"});toast(STATUS[next].l+" (from installer)");render();openOrder(o.pi);
+  });
+}
+
+// roll the parent status up from sub-jobs
+function syncParent(o){
+  if(!o.subjobs||!o.subjobs.length)return;
+  const sts=o.subjobs.map(s=>s.status);
+  if(sts.every(s=>s==="completed"))o.status="completed";
+  else if(sts.some(s=>s==="completed")&&sts.some(s=>s!=="completed"))o.status="partial";
+  else if(sts.some(s=>["onway","atsite"].includes(s)))o.status=sts.find(s=>["onway","atsite"].includes(s));
+  else if(sts.some(s=>s==="reschedule"))o.status="reschedule";
+  else if(sts.every(s=>s==="assigned"))o.status="assigned";
+  else if(sts.some(s=>s==="assigned"))o.status="assigned";
+  else if(sts.some(s=>s==="scheduled"))o.status="scheduled";
+}
+
+/* ============== GLOBAL WIRING ============== */
+function wire(){
+  document.querySelectorAll("#main tbody tr[data-pi]").forEach(tr=>tr.onclick=e=>{if(e.target.closest(".maplink")||e.target.closest("[data-open]"))return;openOrder(tr.dataset.pi);});
+  document.querySelectorAll("[data-open]").forEach(b=>b.onclick=e=>{e.stopPropagation();openOrder(b.dataset.open);});
+  document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{activeView=b.dataset.goto;render();});
+  if($("#q"))$("#q").oninput=e=>{searchQ=e.target.value;const tc=$("#main .tablecard");if(tc){const tmp=document.createElement("div");tmp.innerHTML=ordersView();tc.outerHTML=tmp.querySelector(".tablecard").outerHTML;}wire();const q=$("#q");if(q){q.focus();q.setSelectionRange(searchQ.length,searchQ.length);}};
+  document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
+  document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{const k=s.dataset.stat;if(k==="opsdue"){activeView="calls";render();return;}filterStatus=k;render();});
+  document.querySelectorAll("[data-delslot]").forEach(b=>b.onclick=()=>{if(SLOTS.length<=1){toast("Keep at least one window");return;}SLOTS.splice(+b.dataset.delslot,1);render();toast("Window deleted");});
+  if($("#addSlot"))$("#addSlot").onclick=()=>{SLOTS.push({id:"s"+Date.now(),label:"New window"});render();toast("Window added");};
+  if($("#saveSlots"))$("#saveSlots").onclick=()=>{document.querySelectorAll(".slotedit").forEach(i=>SLOTS[i.dataset.i].label=i.value);toast("Saved");render();};
+  if($("#pushDemo"))$("#pushDemo").onclick=()=>{const n=Math.floor(Math.random()*900+100);
+    ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],bm:"Karthik R",name:"New Customer",phone:"90000 0"+n,addr:"MG Road, Bengaluru 560001",matchedAudit:true,deliveryDate:dstr(addDays(1)),customWp:false,status:"pending",subjobs:null,service:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"},{t:"Matched to completed Site Audit",d:"Just now",by:"auto"}]});
+    render();toast("New installation order received");};
+}
+
+document.querySelectorAll("#rail a").forEach(a=>a.onclick=()=>{activeView=a.dataset.view;filterStatus="all";render();});
+$("#scrim").onclick=closeDrawer;
+$("#vSiteAudit").onclick=()=>{window.location.href="SM_Audit_Dashboard.html";};
+
+if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
+render();
+</script>
+</body>
+</html>

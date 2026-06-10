@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Material Depot — Installer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#5b6677;--line:#d8dee7;--bg:#f1f4f8;--card:#fff;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:17px;}
+  .app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);}
+  header{background:var(--navy);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;}
+  header .logo{width:38px;height:38px;border-radius:9px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:17px;}
+  header .h{font-size:18px;font-weight:800;line-height:1.1;}
+  header .me{margin-left:auto;text-align:right;font-size:12px;color:#cdd8e8;line-height:1.25;}
+  header .me b{color:#fff;font-size:14px;}
+  .wrap{padding:16px 16px 40px;}
+  /* big day tabs */
+  .days{display:flex;gap:10px;margin-bottom:18px;}
+  .day{flex:1;background:#fff;border:2px solid var(--line);border-radius:14px;padding:12px 6px;text-align:center;cursor:pointer;}
+  .day.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .day .dn{font-size:13px;font-weight:700;opacity:.85;}
+  .day .dd{font-size:22px;font-weight:800;}
+  .day .ct{font-size:12px;margin-top:2px;opacity:.8;}
+  .jobcard{background:#fff;border:2px solid var(--line);border-radius:18px;padding:18px;margin-bottom:16px;cursor:pointer;}
+  .jobcard:active{transform:scale(.99);}
+  .jobcard .time{font-size:14px;font-weight:800;color:var(--navy);}
+  .jobcard .nm{font-size:21px;font-weight:800;margin:6px 0 2px;}
+  .jobcard .ad{font-size:15px;color:var(--muted);line-height:1.35;}
+  .typetag{display:inline-block;font-size:13px;font-weight:800;border-radius:8px;padding:4px 11px;margin-top:10px;}
+  .typetag.fl{background:#fff4d6;color:#7a5800;} .typetag.wp{background:var(--purplebg);color:var(--purple);}
+  .statusrow{margin-top:12px;}
+  .badge{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:800;border-radius:30px;padding:7px 14px;}
+  .badge .dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
+  .b-scheduled{background:#e4f0fb;color:var(--blue);} .b-callpending{background:var(--amberbg);color:var(--amber);}
+  .b-reschedule{background:var(--redbg);color:var(--red);} .b-onway{background:#e8f0ff;color:#2b54c2;}
+  .b-atsite{background:var(--purplebg);color:var(--purple);} .b-completed{background:var(--greenbg);color:var(--green);}
+  .sechead{font-size:14px;font-weight:800;color:var(--muted);margin:16px 4px 10px;text-transform:uppercase;letter-spacing:.5px;}
+  .empty{text-align:center;color:var(--muted);padding:50px 16px;font-size:16px;}
+  /* full screens */
+  .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
+  .shead{background:var(--navy);color:#fff;padding:14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
+  .shead .back{border:0;background:rgba(255,255,255,.16);color:#fff;width:40px;height:40px;border-radius:10px;font-size:22px;cursor:pointer;}
+  .shead .ti{font-weight:800;font-size:18px;line-height:1.1;} .shead .su{font-size:12px;color:#9fb2cd;}
+  .sbody{flex:1;overflow:auto;padding:16px 16px 130px;}
+  .panel{background:#fff;border:2px solid var(--line);border-radius:18px;padding:18px;margin-bottom:16px;}
+  .panel h2{margin:0 0 12px;font-size:16px;color:var(--navy);}
+  .bigstage{background:#fff;border:2px solid var(--navy);border-radius:18px;padding:18px;margin-bottom:16px;text-align:center;}
+  .bigstage .lbl{font-size:13px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.5px;}
+  .bigstage .now{font-size:26px;font-weight:800;color:var(--navy);margin:6px 0 8px;}
+  .bigstage .say{font-size:16px;color:var(--ink);line-height:1.4;margin-bottom:6px;}
+  .kvbig{font-size:17px;line-height:1.6;}
+  .kvbig .k{font-size:13px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:10px;}
+  .kvbig .v{font-weight:700;}
+  .bigbtn{display:block;width:100%;border:0;border-radius:16px;padding:20px;font-size:19px;font-weight:800;cursor:pointer;margin-top:12px;text-align:center;}
+  .bigbtn.green{background:var(--green);color:#fff;} .bigbtn.blue{background:var(--blue);color:#fff;}
+  .bigbtn.navy{background:var(--navy);color:#fff;} .bigbtn.amber{background:var(--amber);color:#fff;}
+  .bigbtn.red{background:#fff;color:var(--red);border:2px solid var(--red);}
+  .bigbtn.ghost{background:#fff;color:var(--blue);border:2px solid var(--blue);}
+  .bigbtn:disabled{opacity:.4;}
+  .callink,.maplink{display:flex;align-items:center;gap:12px;background:var(--greenbg);color:var(--green);border-radius:14px;padding:16px;font-size:18px;font-weight:800;text-decoration:none;margin-bottom:10px;}
+  .maplink{background:#e8f0ff;color:#2b54c2;}
+  .callink .ic,.maplink .ic{font-size:22px;}
+  .twocol{display:flex;gap:10px;}
+  .twocol .bigbtn{flex:1;}
+  .note{background:var(--amberbg);border-left:5px solid var(--amber);border-radius:10px;padding:13px 15px;font-size:14.5px;color:var(--amber);margin:12px 0;font-weight:600;}
+  .note.blue{background:#eaf2fb;border-color:var(--blue);color:var(--navy);}
+  /* audit report read-only */
+  .auroom{border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  .auroom .rh{font-size:17px;font-weight:800;color:var(--navy);margin-bottom:8px;}
+  .auroom .imgs{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .auroom .imgs img{width:46%;border-radius:10px;border:1px solid var(--line);}
+  .auroom .calc{font-size:15px;line-height:1.7;}
+  .auroom .calc b{color:var(--navy);}
+  /* jobcard form (simple) */
+  label{display:block;font-size:14px;font-weight:800;color:var(--muted);margin:0 0 7px;}
+  input,textarea{width:100%;padding:15px;border:2px solid var(--line);border-radius:13px;font-size:17px;background:#fff;color:var(--ink);}
+  input:disabled{background:#f3f5f8;color:#56627a;}
+  textarea{resize:vertical;min-height:80px;}
+  .roomblock{background:#fff;border:2px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px;}
+  .roomtop{display:flex;align-items:center;justify-content:space-between;background:var(--navy);color:#fff;border-radius:12px;padding:11px 14px;margin:-2px -2px 14px;}
+  .roomtop .rn{font-weight:800;font-size:17px;}
+  .roomtop .rm{border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:9px;padding:7px 12px;font-weight:800;font-size:14px;cursor:pointer;}
+  .fieldgap{margin-bottom:14px;}
+  .photobox{border:2px dashed var(--blue);border-radius:14px;padding:18px;text-align:center;cursor:pointer;color:var(--blue);font-weight:800;font-size:16px;}
+  .photobox.has{border-style:solid;padding:8px;}
+  .photobox img{width:100%;border-radius:10px;display:block;}
+  .reqstar{color:var(--red);}
+  .addroom{width:100%;background:#fff;border:2px dashed var(--blue);color:var(--blue);border-radius:16px;padding:18px;font-weight:800;font-size:18px;cursor:pointer;margin-bottom:16px;}
+  canvas.sign{width:100%;height:190px;border:2px dashed var(--blue);border-radius:14px;background:#fff;touch-action:none;display:block;}
+  .footer{position:fixed;left:0;right:0;bottom:0;max-width:480px;margin:0 auto;background:#fff;border-top:2px solid var(--line);padding:12px 16px;display:flex;gap:10px;z-index:45;}
+  .footer .bigbtn{margin-top:0;padding:16px;font-size:17px;}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--navy2);color:#fff;padding:14px 22px;border-radius:30px;font-size:16px;opacity:0;transition:.25s;z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:700;}
+  .toast.show{opacity:1;}
+  .hide{display:none!important;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">MD</div>
+    <div><div class="h">My Installations</div></div>
+    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">Mahesh Pawar</b><br><span id="meType">Flooring Installer</span></div>
+  </header>
+  <div class="wrap" id="listView"></div>
+</div>
+
+<div class="screen hide" id="detailScreen">
+  <div class="shead"><button class="back" id="detBack">&#8592;</button>
+    <div><div class="ti" id="detName">Customer</div><div class="su" id="detSub"></div></div></div>
+  <div class="sbody" id="detBody"></div>
+</div>
+
+<div class="screen hide" id="auditScreen">
+  <div class="shead"><button class="back" id="auBack">&#8592;</button>
+    <div><div class="ti">Site Audit Report</div><div class="su" id="auSub"></div></div></div>
+  <div class="sbody" id="auBody"></div>
+</div>
+
+<div class="screen hide" id="jcScreen">
+  <div class="shead"><button class="back" id="jcBack">&#8592;</button>
+    <div><div class="ti">Installation Card</div><div class="su" id="jcSub"></div></div></div>
+  <div class="sbody" id="jcBody"></div>
+  <div class="footer">
+    <button class="bigbtn ghost" id="jcAddRoom" style="flex:1">+ Add room</button>
+    <button class="bigbtn navy" id="jcDone" style="flex:1">Finish &amp; sign</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============== INSTALLER & DATA ============== */
+const ME={id:"f1",name:"Mahesh Pawar",type:"flooring",zone:"South"}; // flooring installer demo
+const today=new Date();today.setHours(0,0,0,0);
+function dstr(d){return d.toISOString().slice(0,10);}
+function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
+const SLOTS={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+const STATUS={
+  scheduled:{l:"Scheduled",c:"b-scheduled"},
+  callpending:{l:"Call Pending",c:"b-callpending"},
+  reschedule:{l:"To Reschedule",c:"b-reschedule"},
+  onway:{l:"On The Way",c:"b-onway"},
+  atsite:{l:"At Site",c:"b-atsite"},
+  completed:{l:"Completed",c:"b-completed"},
+};
+function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
+
+/* Each job = one sub-job assigned to this installer. Includes the matched site-audit report (read only). */
+let JOBS=[
+  {pi:"PI-2026-00488",name:"Kavya Reddy",phone:"99016 44550",addr:"HSR Layout, Bengaluru 560102",bm:"Sneha P",
+   type:"flooring",date:dstr(today),slot:"s1",status:"scheduled",
+   sku:[{num:"FL-3310",name:"Oak Laminate 10mm"}],
+   audit:{auditor:"Rakesh Kumar",date:"Mon, 2 Jun",rooms:[
+     {name:"Living Room",type:"flooring",calc:{area:"220",boxes:"11",skirt:"18",skirtH:"75"},photo:null,sketch:null},
+     {name:"Bedroom",type:"flooring",calc:{area:"150",boxes:"8",skirt:"14",skirtH:"75"},photo:null,sketch:null}]},
+   jobcard:null},
+  {pi:"PI-2026-00466",name:"Lakshmi N",phone:"98860 22119",addr:"Jayanagar 4th Block, Bengaluru 560011",bm:"Karthik R",
+   type:"flooring",date:dstr(today),slot:"s2",status:"callpending",
+   sku:[{num:"FL-1102",name:"Oak Laminate 12mm"}],
+   audit:{auditor:"Anand Verma",date:"Fri, 30 May",rooms:[
+     {name:"Hall",type:"flooring",calc:{area:"310",boxes:"16",skirt:"22",skirtH:"100"},photo:null,sketch:null}]},
+   jobcard:null},
+  {pi:"PI-2026-00450",name:"Suresh Rao",phone:"98452 19087",addr:"BTM Layout, Bengaluru 560076",bm:"Mohan L",
+   type:"flooring",date:dstr(addDays(1)),slot:"s1",status:"scheduled",
+   sku:[{num:"FL-7740",name:"Walnut Laminate 8mm"}],
+   audit:{auditor:"Rakesh Kumar",date:"Tue, 3 Jun",rooms:[
+     {name:"Master Bedroom",type:"flooring",calc:{area:"180",boxes:"9",skirt:"16",skirtH:"75"},photo:null,sketch:null}]},
+   jobcard:null},
+];
+
+/* ============== HELPERS ============== */
+const $=s=>document.querySelector(s);
+function fmtDate(ds){if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+const slotLabel=id=>(SLOTS[id]||{}).label||"—";
+function badge(st){const s=STATUS[st];return `<span class="badge ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+function imgFmt(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
+function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
+function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)){const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
+
+/* ============== LIST ============== */
+let selDay=dstr(today);
+function listView(){
+  autoFlip();
+  $("#meName").textContent=ME.name;$("#meType").textContent=(ME.type==="wallpaper"?"Wallpaper":"Flooring")+" Installer";
+  const days=[today,addDays(1),addDays(2)];
+  const tabs=days.map(d=>{const ds=dstr(d);const n=JOBS.filter(j=>j.date===ds).length;
+    return `<div class="day ${selDay===ds?'on':''}" data-day="${ds}">
+      <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+      <div class="dd">${d.getDate()}</div><div class="ct">${n} job${n!==1?'s':''}</div></div>`;}).join("");
+  const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>a.slot.localeCompare(b.slot));
+  const todo=list.filter(j=>j.status!=="completed"),done=list.filter(j=>j.status==="completed");
+  const card=j=>`<div class="jobcard" data-pi="${j.pi}">
+    <div class="time">${slotLabel(j.slot)}</div>
+    <div class="nm">${j.name}</div>
+    <div class="ad">${j.addr}</div>
+    <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
+    <div class="statusrow">${badge(j.status)}</div></div>`;
+  return `<div class="days">${tabs}</div>
+    <div class="sechead">Jobs — ${fmtDate(selDay)}</div>
+    ${todo.map(card).join("")||`<div class="empty">No jobs for this day.</div>`}
+    ${done.length?`<div class="sechead">Finished</div>${done.map(card).join("")}`:""}`;
+}
+function renderList(){$("#listView").innerHTML=listView();
+  document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
+  document.querySelectorAll(".jobcard[data-pi]").forEach(c=>c.onclick=()=>openDetail(c.dataset.pi));
+}
+
+/* ============== DETAIL (one clear action) ============== */
+let curPI=null;
+function openDetail(pi){
+  curPI=pi;const j=JOBS.find(x=>x.pi===pi);if(!j)return;
+  $("#detName").textContent=j.name;
+  $("#detSub").textContent=fmtDate(j.date)+" · "+slotLabel(j.slot);
+  $("#detBody").innerHTML=detailBody(j);
+  $("#detailScreen").classList.remove("hide");
+  wireDetail(j);
+}
+function detailBody(j){
+  const tel=j.phone.replace(/\s/g,'');
+  let stage="";
+  if(j.status==="scheduled"){
+    stage=`<div class="bigstage"><div class="lbl">Now</div><div class="now">Scheduled</div>
+      <div class="say">This turns into <b>Call Pending</b> 3 hours before your time. You can call the customer now to start.</div>
+      <button class="bigbtn navy" id="toCall">Start — call customer now</button></div>`;
+  } else if(j.status==="callpending"){
+    stage=`<div class="bigstage"><div class="lbl">Step 1 of 3</div><div class="now">Call the customer</div>
+      <div class="say">Call 1–2 hours before. Ask if they are ready for you to come.</div>
+      <a class="calllink callink" href="tel:${tel}" style="background:var(--greenbg);color:var(--green);"><span class="ic">&#128222;</span> Call ${j.name}</a>
+      <div class="say" style="margin-top:14px">After the call, choose:</div>
+      <button class="bigbtn green" id="yes">They said YES — I'm on the way</button>
+      <button class="bigbtn red" id="no">They said NO — need to reschedule</button></div>
+      <div class="note">Also call your BM (${j.bm}) to confirm which room each product goes in.</div>`;
+  } else if(j.status==="reschedule"){
+    stage=`<div class="bigstage"><div class="lbl">Now</div><div class="now" style="color:var(--red)">To Reschedule</div>
+      <div class="say">Sent to the office to pick a new time. Nothing to do right now.</div></div>`;
+  } else if(j.status==="onway"){
+    stage=`<div class="bigstage"><div class="lbl">Step 2 of 3</div><div class="now">On the way</div>
+      <div class="say">Tap when you reach the site.</div>
+      <button class="bigbtn blue" id="reached">I have reached the site</button></div>`;
+  } else if(j.status==="atsite"){
+    stage=`<div class="bigstage"><div class="lbl">Step 3 of 3</div><div class="now">At the site</div>
+      <div class="say">Do the installation, then fill the card and take photos.</div>
+      <button class="bigbtn navy" id="openJC">${j.jobcard?'Continue installation card':'Start installation card'}</button></div>`;
+  } else if(j.status==="completed"){
+    stage=`<div class="bigstage"><div class="lbl">Done</div><div class="now" style="color:var(--green)">Completed</div>
+      <div class="say">Card saved and sent to the office.</div>
+      <button class="bigbtn ghost" id="dlPdf">Download PDF</button></div>`;
+  }
+  return stage+`
+    <a class="maplink" href="${mapUrl(j.addr)}" target="_blank" rel="noopener"><span class="ic">&#128205;</span> Get directions</a>
+    <a class="calllink calink" href="tel:${tel}"><span class="ic">&#128222;</span> Call ${j.name}</a>
+    <div class="panel"><h2>Job details</h2>
+      <div class="kvbig">
+        <div class="k">Customer</div><div class="v">${j.name}</div>
+        <div class="k">Phone</div><div class="v">${j.phone}</div>
+        <div class="k">Address</div><div class="v">${j.addr}</div>
+        <div class="k">Product</div><div class="v">${j.sku.map(s=>s.name+" ("+s.num+")").join(", ")}</div>
+        <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
+        <div class="k">Your BM</div><div class="v">${j.bm}</div>
+      </div>
+      <button class="bigbtn ghost" id="viewAudit" style="margin-top:14px">View site audit report</button>
+    </div>`;
+}
+function wireDetail(j){
+  $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
+  const adv=(st,msg)=>{j.status=st;toast(msg);openDetail(j.pi);};
+  if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Now: call the customer");
+  if($("#yes"))$("#yes").onclick=()=>adv("onway","Marked: on the way");
+  if($("#no"))$("#no").onclick=()=>adv("reschedule","Sent to office to reschedule");
+  if($("#reached"))$("#reached").onclick=()=>adv("atsite","You are at the site");
+  if($("#openJC"))$("#openJC").onclick=()=>openJobCard(j);
+  if($("#viewAudit"))$("#viewAudit").onclick=()=>openAudit(j);
+  if($("#dlPdf"))$("#dlPdf").onclick=()=>{if(j.jobcard)genPDF(j);};
+}
+
+/* ============== AUDIT REPORT (read-only) ============== */
+function openAudit(j){
+  $("#auSub").textContent=j.pi+" · "+j.name;
+  const a=j.audit;
+  const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH']];
+  const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer needed','primer']];
+  const rooms=a.rooms.map((r,i)=>{
+    const fields=r.type==='wallpaper'?WP:FL;
+    const imgs=(r.sketch||r.photo)?`<div class="imgs">${r.sketch?`<img src="${r.sketch}">`:''}${r.photo?`<img src="${r.photo}">`:''}</div>`:`<div class="note blue" style="margin:0 0 10px">No diagram / photo saved in this audit.</div>`;
+    const calc=fields.map(([lbl,k])=>r.calc[k]?`<div><b>${lbl}:</b> ${r.calc[k]}</div>`:'').join("");
+    return `<div class="auroom"><div class="rh">Room ${i+1}: ${r.name}</div>${imgs}<div class="calc">${calc||'<span style="color:var(--muted)">No measurements recorded.</span>'}</div></div>`;
+  }).join("");
+  $("#auBody").innerHTML=`<div class="note blue">This is what the site auditor measured. Read only — you cannot change it.</div>
+    <div class="panel"><h2>Audit info</h2><div class="kvbig">
+      <div class="k">Auditor</div><div class="v">${a.auditor}</div>
+      <div class="k">Audit date</div><div class="v">${a.date}</div>
+      <div class="k">Rooms audited</div><div class="v">${a.rooms.length}</div></div></div>
+    ${rooms}`;
+  $("#auditScreen").classList.remove("hide");
+  $("#auBack").onclick=()=>$("#auditScreen").classList.add("hide");
+}
+
+/* ============== INSTALLATION CARD (simple) ============== */
+let jcJob=null, jcRooms=[], jcSeq=0, jcSignPad=null;
+class SignPad{
+  constructor(c){this.c=c;this.ctx=c.getContext('2d');this.strokes=[];this.cur=null;this.draw=false;this.fit();this.bind();}
+  fit(){const dpr=window.devicePixelRatio||1;const r=this.c.getBoundingClientRect();if(!r.width)return;this.w=r.width;this.h=r.height;this.c.width=Math.round(r.width*dpr);this.c.height=Math.round(r.height*dpr);this.ctx.setTransform(dpr,0,0,dpr,0,0);this.render();}
+  bind(){const pos=e=>{const r=this.c.getBoundingClientRect();const p=e.touches?e.touches[0]:e;return{x:(p.clientX-r.left)/r.width,y:(p.clientY-r.top)/r.height};};
+    this.c.addEventListener('pointerdown',e=>{e.preventDefault();this.draw=true;this.cur=[pos(e)];this.strokes.push(this.cur);});
+    this.c.addEventListener('pointermove',e=>{if(!this.draw)return;e.preventDefault();this.cur.push(pos(e));this.render();});
+    window.addEventListener('pointerup',()=>{this.draw=false;this.cur=null;});}
+  render(){const x=this.ctx,w=this.w,h=this.h;if(!w)return;x.clearRect(0,0,w,h);x.fillStyle='#fff';x.fillRect(0,0,w,h);x.strokeStyle='#13294a';x.lineWidth=2.6;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*w,Y=p.y*h;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}}
+  clear(){this.strokes=[];this.render();} isEmpty(){return this.strokes.length===0;}
+  export(){const W=900,H=Math.round(900*((this.h/this.w)||0.4));const o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.strokeStyle='#13294a';x.lineWidth=3;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}return o.toDataURL('image/jpeg',0.9);}
+}
+
+function openJobCard(j){
+  jcJob=j;jcRooms=[];jcSeq=0;
+  $("#jcSub").textContent=j.pi+" · "+j.name;
+  $("#jcBody").innerHTML=`
+    <div class="note blue">Fill one block per room. Each room needs a photo after installation. <span class="reqstar">★</span> = required.</div>
+    <div id="roomsWrap"></div>`;
+  $("#jcScreen").classList.remove("hide");
+  if(j.jobcard&&j.jobcard.rooms&&j.jobcard.rooms.length)j.jobcard.rooms.forEach(r=>addRoom(r));else addRoom();
+  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};$("#jcScreen").classList.add("hide");openDetail(j.pi);};
+  $("#jcAddRoom").onclick=()=>addRoom();
+  $("#jcDone").onclick=()=>finishCard(j);
+}
+function addRoom(restore){
+  const id=++jcSeq;
+  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].num:''),photo:restore?restore.photo:null,comments:restore?restore.comments:''};
+  const block=el('div','roomblock');block.dataset.id=id;
+  const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+id));
+  const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();};top.appendChild(rm);block.appendChild(top);
+
+  const f1=el('div','fieldgap');f1.innerHTML='<label>Room name <span class="reqstar">★</span></label>';const nI=el('input');nI.placeholder='e.g. Living Room';nI.value=room.name;nI.oninput=()=>room.name=nI.value;f1.appendChild(nI);block.appendChild(f1);
+
+  const f2=el('div','fieldgap');f2.innerHTML='<label>SKU number <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;f2.appendChild(sI);block.appendChild(f2);
+
+  const f3=el('div','fieldgap');f3.innerHTML='<label>Photo after installation <span class="reqstar">★</span></label>';
+  const file=document.createElement('input');file.type='file';file.accept='image/*';file.capture='environment';file.style.display='none';
+  const pbox=el('div','photobox'+(room.photo?' has':''));pbox.innerHTML=room.photo?`<img src="${room.photo}">`:'&#128247; Tap to take / upload photo';
+  pbox.onclick=()=>file.click();
+  file.onchange=()=>{const f=file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photo=rd.result;pbox.classList.add('has');pbox.innerHTML=`<img src="${room.photo}">`;};rd.readAsDataURL(f);};
+  f3.appendChild(pbox);f3.appendChild(file);block.appendChild(f3);
+
+  const f4=el('div','fieldgap');f4.innerHTML='<label>Comments (if any)</label>';const cI=document.createElement('textarea');cI.placeholder='Anything to note...';cI.value=room.comments;cI.oninput=()=>room.comments=cI.value;f4.appendChild(cI);block.appendChild(f4);
+
+  $("#roomsWrap").appendChild(block);
+  room._photoEl=pbox;jcRooms.push(room);
+}
+function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
+function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,photo:r.photo,comments:r.comments}));}
+
+function finishCard(j){
+  if(jcRooms.length===0){toast("Add at least one room");return;}
+  for(const r of jcRooms){
+    if(!r.name.trim()){toast("Enter a room name");return;}
+    if(!r.sku.trim()){toast("Enter the SKU number");return;}
+    if(!r.photo){toast("Take a photo for "+(r.name||"each room"));return;}
+  }
+  // sign screen
+  $("#jcBody").innerHTML=`
+    <div class="panel"><h2>Customer signature <span class="reqstar">★</span></h2>
+      <div class="note">Show the phone to the customer. Ask them to sign that the installation is done and they are happy.</div>
+      <canvas class="sign" id="signCanvas"></canvas>
+      <button class="bigbtn ghost" id="signClear" style="margin-top:10px">Clear signature</button>
+      <div class="fieldgap" style="margin-top:12px"><label>Customer name</label><input id="signName" value="${j.name}"></div>
+    </div>
+    <button class="bigbtn green" id="reallyDone">Save &amp; finish job</button>
+    <button class="bigbtn ghost" id="backRooms" style="margin-top:10px">Back to rooms</button>`;
+  document.querySelector(".footer").classList.add("hide");
+  jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
+  $("#signClear").onclick=()=>jcSignPad.clear();
+  $("#backRooms").onclick=()=>{document.querySelector(".footer").classList.remove("hide");const saved=collectRooms();openJobCard(j);jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
+  $("#reallyDone").onclick=async()=>{
+    if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
+    j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value}};
+    j.status="completed";
+    toast("Saving...");
+    await genPDF(j);
+    document.querySelector(".footer").classList.remove("hide");
+    $("#jcScreen").classList.add("hide");
+    openDetail(j.pi);
+    toast("Job finished & sent to office");
+  };
+}
+
+/* ============== PDF ============== */
+async function genPDF(j){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
+  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const rooms=j.jobcard.rooms;
+  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Installation Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  header();
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+    body:[['Proforma Invoice No.',j.pi],['Client Name',j.name],['Client Mobile',j.phone],['Site Address',j.addr],['BM',j.bm],['Installer',ME.name],['Type',j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(j.date)]]});
+  y=doc.lastAutoTable.finalY+10;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-'])});
+
+  rooms.forEach((r,i)=>{
+    doc.addPage();y=M;header();
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-'),M,y+10);y+=24;
+    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Photo after installation',M,y);const iw=W-2*M;const ih=iw*0.6;try{doc.addImage(r.photo,imgFmt(r.photo),M,y+6,iw,ih);}catch(e){}y+=ih+18;}
+    if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
+  });
+
+  // consent + signature
+  doc.addPage();y=M;header();
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+  const consent="I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.";
+  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=70;
+  doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((j.jobcard.sign&&j.jobcard.sign.name)||j.name),M,y);y+=18;doc.text('Date: '+fmtDate(j.date),M,y);
+  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
+  if(j.jobcard.sign&&j.jobcard.sign.img){try{doc.addImage(j.jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+
+  const fn=('Installation_'+(j.name||'client')+'_'+(j.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');doc.save(fn);
+}
+
+if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
+renderList();
+</script>
+</body>
+</html>

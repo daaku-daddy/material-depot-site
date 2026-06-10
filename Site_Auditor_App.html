@@ -104,7 +104,7 @@
   <header>
     <div class="logo">MD</div>
     <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Auditor</div></div>
-    <div class="me"><b>Rakesh Kumar</b><br>Auditor · South BLR</div>
+    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b>Rakesh Kumar</b><br>Auditor · South BLR</div>
   </header>
   <div class="wrap" id="listView"></div>
 </div>
@@ -511,6 +511,7 @@ function renderSketchData(r){
 }
 
 $("#jcBack").onclick=()=>{$("#jcScreen").classList.add("hide");};
+if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
 renderList();
 </script>
 </body>
