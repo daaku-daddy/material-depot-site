@@ -88,7 +88,7 @@
   .btn-primary:hover{background:var(--navy2);}
   .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
 
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:none;align-items:center;justify-content:center;padding:20px;}
   .modal{background:#fff;border-radius:16px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;}
   .modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;}
   .modal-head h3{font-size:16px;font-weight:800;color:var(--navy);}
@@ -174,7 +174,7 @@
   </div>
 </div>
 
-<div id="overlay" class="overlay" hidden>
+<div id="overlay" class="overlay">
   <div class="modal" id="modal"></div>
 </div>
 
@@ -244,8 +244,8 @@ const MOCK_PERF=[
 ];
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
-function showModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('overlay').hidden=false;}
-function closeModal(){document.getElementById('overlay').hidden=true;}
+function showModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('overlay').style.display='flex';}
+function closeModal(){document.getElementById('overlay').style.display='none';}
 document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
 
 let currentView='overview';
