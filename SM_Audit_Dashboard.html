@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Material Depot — Service Manager · Site Audit</title>
+<style>
+  :root{
+    --navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;
+    --ink:#1b2230;--muted:#67748a;--line:#e2e7ef;--bg:#eef1f6;--card:#fff;
+    --lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;
+    --red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;
+    --shadow:0 1px 2px rgba(20,40,80,.05),0 6px 18px rgba(20,40,80,.04);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;}
+  /* top bar */
+  header{background:var(--navy);color:#fff;padding:0 18px;display:flex;align-items:center;gap:14px;height:56px;position:sticky;top:0;z-index:40;}
+  header .logo{width:34px;height:34px;border-radius:8px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:15px;}
+  header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
+  header .h{font-size:15px;font-weight:700;line-height:1.1;}
+  .vtoggle{margin-left:18px;display:flex;background:var(--navy2);border-radius:9px;padding:3px;}
+  .vtoggle button{border:0;background:transparent;color:#9fb2cd;font-weight:700;font-size:13px;padding:7px 14px;border-radius:7px;cursor:pointer;}
+  .vtoggle button.active{background:var(--yellow);color:#222;}
+  .vtoggle button.disabled{opacity:.45;cursor:not-allowed;}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:14px;}
+  header .who{font-size:12px;color:#cdd8e8;text-align:right;line-height:1.2;}
+  header .who b{color:#fff;font-size:13px;}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;}
+
+  .layout{display:flex;min-height:calc(100vh - 56px);}
+  /* left rail */
+  .rail{width:208px;background:#fff;border-right:1px solid var(--line);padding:14px 10px;flex:0 0 auto;}
+  .rail .grp{font-size:10px;letter-spacing:.8px;color:var(--muted);font-weight:800;margin:14px 8px 6px;}
+  .rail a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px;cursor:pointer;margin:2px 0;}
+  .rail a .ico{width:18px;text-align:center;opacity:.8;}
+  .rail a:hover{background:var(--lighter);}
+  .rail a.active{background:var(--navy);color:#fff;}
+  .rail a .ct{margin-left:auto;font-size:11px;background:var(--lighter);color:var(--navy);border-radius:20px;padding:1px 8px;font-weight:800;}
+  .rail a.active .ct{background:rgba(255,255,255,.18);color:#fff;}
+
+  main{flex:1;min-width:0;padding:18px 22px 60px;}
+  .crumbs{font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+  .pagehead{display:flex;align-items:flex-end;gap:14px;margin-bottom:14px;}
+  .pagehead h1{font-size:21px;margin:0;color:var(--navy);letter-spacing:-.3px;}
+  .pagehead p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+  .pagehead .actions{margin-left:auto;display:flex;gap:8px;}
+
+  /* stat strip */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);cursor:pointer;}
+  .stat:hover{border-color:var(--blue);}
+  .stat .n{font-size:24px;font-weight:800;color:var(--navy);letter-spacing:-.5px;}
+  .stat .l{font-size:11.5px;color:var(--muted);font-weight:700;margin-top:1px;}
+  .stat .b{height:3px;border-radius:3px;margin-top:8px;background:var(--line);}
+
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+  .search{flex:1;min-width:200px;position:relative;}
+  .search input{width:100%;padding:9px 11px 9px 32px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:#fff;}
+  .search .ico{position:absolute;left:10px;top:9px;color:var(--muted);}
+  .filt{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;}
+  .filt button{border:0;background:transparent;padding:6px 11px;border-radius:7px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .filt button.active{background:var(--navy);color:#fff;}
+
+  /* table */
+  .tablecard{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{background:#f7f9fc;text-align:left;font-size:10.5px;letter-spacing:.5px;color:var(--muted);font-weight:800;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;text-transform:uppercase;}
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:0;}
+  tbody tr{cursor:pointer;}
+  tbody tr:hover{background:#f9fbfd;}
+  .pi{font-weight:800;color:var(--navy);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;}
+  .po{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
+  .pill-list{display:flex;gap:4px;flex-wrap:wrap;}
+  .skupill{font-size:10.5px;background:var(--lighter);color:var(--navy);border-radius:6px;padding:2px 7px;font-weight:700;white-space:nowrap;}
+  .skupill.audit{background:#fff4d6;color:#7a5800;}
+  .cust b{color:var(--ink);} .cust div{color:var(--muted);font-size:11.5px;}
+  .bmtag{font-size:11px;color:var(--muted);font-weight:600;}
+
+  /* status chips */
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .c-pending{background:#eef1f6;color:#5a6b86;}
+  .c-created{background:var(--purplebg);color:var(--purple);}
+  .c-callna{background:var(--redbg);color:var(--red);}
+  .c-sched{background:#e4f0fb;color:var(--blue);}
+  .c-assigned{background:var(--amberbg);color:var(--amber);}
+  .c-resched{background:var(--redbg);color:var(--red);}
+  .c-onway{background:#e8f0ff;color:#2b54c2;}
+  .c-atsite{background:#e9e3fb;color:#5b3aa6;}
+  .c-done{background:var(--greenbg);color:var(--green);}
+
+  .btn{border:0;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .btn.primary{background:var(--blue);color:#fff;}
+  .btn.navy{background:var(--navy);color:#fff;}
+  .btn.green{background:var(--green);color:#fff;}
+  .btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--blue);}
+  .btn.gray{background:#fff;color:var(--muted);border:1px solid var(--line);}
+  .btn.sm{padding:6px 11px;font-size:12px;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(15,25,45,.42);opacity:0;pointer-events:none;transition:.2s;z-index:50;}
+  .scrim.show{opacity:1;pointer-events:auto;}
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:560px;max-width:94vw;background:#fff;box-shadow:-12px 0 40px rgba(10,20,40,.18);transform:translateX(100%);transition:transform .26s cubic-bezier(.4,0,.2,1);z-index:55;display:flex;flex-direction:column;}
+  .drawer.show{transform:none;}
+  .dhead{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px;position:sticky;top:0;background:#fff;}
+  .dhead h2{margin:0;font-size:17px;color:var(--navy);}
+  .dhead .sub{color:var(--muted);font-size:12px;margin-top:2px;}
+  .dhead .x{margin-left:auto;border:0;background:#f0f3f8;width:30px;height:30px;border-radius:8px;font-size:16px;cursor:pointer;color:var(--muted);}
+  .dbody{padding:18px 20px;overflow:auto;flex:1;}
+  .sec{margin-bottom:20px;}
+  .sec h3{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin:0 0 9px;}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:7px 14px;font-size:13px;}
+  .kv .k{color:var(--muted);font-weight:600;}
+  .kv .v{font-weight:600;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+  .field input,.field select,.field textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:#fff;}
+  .field input:disabled{background:#f5f7fa;color:#56627a;}
+  .autofill{font-size:10.5px;color:var(--green);font-weight:800;background:var(--greenbg);border-radius:5px;padding:1px 6px;margin-left:6px;}
+  .checks{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .checkrow{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-weight:600;font-size:13px;cursor:pointer;background:#fff;}
+  .checkrow.on{border-color:var(--blue);background:#f3f8fd;}
+  .checkrow input{width:16px;height:16px;}
+  .stepline{display:flex;gap:0;margin-bottom:18px;}
+  .step{flex:1;text-align:center;position:relative;}
+  .step .ball{width:24px;height:24px;border-radius:50%;background:#e7ecf3;color:var(--muted);font-size:11px;font-weight:800;display:grid;place-items:center;margin:0 auto 5px;border:2px solid #e7ecf3;}
+  .step.done .ball{background:var(--green);color:#fff;border-color:var(--green);}
+  .step.active .ball{background:#fff;color:var(--blue);border-color:var(--blue);}
+  .step .lb{font-size:10px;color:var(--muted);font-weight:700;}
+  .step.active .lb{color:var(--blue);}
+  .step:not(:last-child):after{content:"";position:absolute;top:11px;left:60%;right:-40%;height:2px;background:#e7ecf3;}
+  .step.done:not(:last-child):after{background:var(--green);}
+  .timeline{border-left:2px solid var(--line);margin-left:6px;padding-left:16px;}
+  .tl{position:relative;padding-bottom:14px;}
+  .tl:before{content:"";position:absolute;left:-22px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--blue);}
+  .tl .tt{font-weight:700;font-size:13px;}
+  .tl .td{font-size:11.5px;color:var(--muted);}
+  .slotgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .slot{border:1px solid var(--line);border-radius:9px;padding:9px;text-align:center;cursor:pointer;background:#fff;}
+  .slot.on{border-color:var(--blue);background:#f3f8fd;}
+  .slot.full{opacity:.45;cursor:not-allowed;background:#f6f7f9;}
+  .slot .w{font-weight:800;font-size:12.5px;color:var(--navy);}
+  .slot .cap{font-size:10.5px;color:var(--muted);margin-top:2px;}
+  .note{background:var(--lighter);border-left:4px solid var(--blue);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--navy);margin:10px 0;}
+  .auditorlist{display:flex;flex-direction:column;gap:8px;}
+  .auditorrow{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff;}
+  .auditorrow.on{border-color:var(--blue);background:#f3f8fd;}
+  .auditorrow.full{opacity:.5;cursor:not-allowed;}
+  .auditorrow .av{width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;}
+  .auditorrow .nm{font-weight:700;font-size:13.5px;} .auditorrow .mt{font-size:11.5px;color:var(--muted);}
+  .auditorrow .load{margin-left:auto;font-size:11.5px;font-weight:800;}
+  .dfoot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:9px;background:#fff;}
+  .dfoot .btn{flex:1;justify-content:center;}
+
+  /* fleet calendar view */
+  .calwrap{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);}
+  .calhead{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .calhead h2{margin:0;font-size:15px;color:var(--navy);}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
+  .daycell{border:1px solid var(--line);border-radius:10px;padding:9px;min-height:96px;}
+  .daycell .dn{font-size:11px;color:var(--muted);font-weight:700;}
+  .daycell .fleet{margin-top:6px;display:flex;align-items:center;gap:6px;}
+  .daycell .fleet input{width:42px;padding:5px;border:1px solid var(--line);border-radius:7px;text-align:center;font-weight:800;font-size:13px;}
+  .daycell .fl{font-size:10px;color:var(--muted);}
+  .daycell .used{margin-top:7px;font-size:10.5px;color:var(--blue);font-weight:700;}
+  .daycell.past{opacity:.5;background:#f7f8fa;}
+  .dow{font-size:10px;color:var(--muted);font-weight:800;text-align:center;padding-bottom:4px;letter-spacing:.5px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted);}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:12px 20px;border-radius:30px;font-size:13.5px;opacity:0;transition:.25s;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.3);font-weight:600;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .hide{display:none!important;}
+  @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">MD</div>
+  <div><div class="t">MATERIAL DEPOT</div><div class="h">Service Manager</div></div>
+  <div class="vtoggle">
+    <button class="active" id="vSiteAudit">Site Audit</button>
+    <button class="disabled" id="vInstall" title="Built next">Installations</button>
+  </div>
+  <div class="right">
+    <div class="who"><b>Priya Nair</b><br>Service Manager · Bengaluru</div>
+    <div class="avatar">PN</div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="rail" id="rail">
+    <div class="grp">SITE AUDIT</div>
+    <a class="active" data-view="orders"><span class="ico">▦</span>Orders<span class="ct" id="cOrders">0</span></a>
+    <a data-view="schedule"><span class="ico">◷</span>Today's schedule<span class="ct" id="cToday">0</span></a>
+    <a data-view="reschedule"><span class="ico">↻</span>To reschedule<span class="ct" id="cResched">0</span></a>
+    <a data-view="fleet"><span class="ico">▤</span>Fleet calendar</a>
+    <div class="grp">SETUP</div>
+    <a data-view="slots"><span class="ico">◴</span>Slots &amp; timings</a>
+    <a data-view="auditors"><span class="ico">◉</span>Auditors</a>
+  </nav>
+
+  <main id="main"></main>
+</div>
+
+<!-- Drawer -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead">
+    <div>
+      <h2 id="dwTitle">Order</h2>
+      <div class="sub" id="dwSub"></div>
+    </div>
+    <button class="x" id="dwClose">✕</button>
+  </div>
+  <div class="dbody" id="dwBody"></div>
+  <div class="dfoot" id="dwFoot"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============== MOCK DATA ============== */
+const AUDIT_SKU = "SVC-AUDIT-001";
+const SLOTS = [ {id:"s1",label:"9 AM – 12 PM"}, {id:"s2",label:"12 PM – 3 PM"}, {id:"s3",label:"3 PM – 6 PM"} ];
+
+// auditors with per-day cap (like installers). Default caps editable in Setup.
+const AUDITORS = [
+  {id:"a1", name:"Rakesh Kumar",  zone:"South BLR",  phone:"98861 20011", cap:4},
+  {id:"a2", name:"Imran Sheikh",  zone:"East BLR",   phone:"98861 20022", cap:4},
+  {id:"a3", name:"Suresh Babu",   zone:"North BLR",  phone:"98861 20033", cap:3},
+  {id:"a4", name:"Anand Verma",   zone:"Central",    phone:"98861 20044", cap:4},
+];
+
+// fleet counts per date (capacity PER window). Keyed yyyy-mm-dd.
+const today = new Date(); today.setHours(0,0,0,0);
+function dstr(d){return d.toISOString().slice(0,10);}
+function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
+const FLEET = {};
+for(let i=-2;i<26;i++){ FLEET[dstr(addDays(i))] = (i<0?0:[2,3,3,2,4,3,2][((i%7)+7)%7]); }
+
+// status keys -> label + chip class. ONE status per order; SM sees granular auditor steps.
+const STATUS = {
+  pending:      {l:"Pending",                c:"c-pending"},
+  created:      {l:"Service Created",        c:"c-created"},
+  call_na:      {l:"Call not picked",        c:"c-callna"},
+  scheduled:    {l:"Site Audit Scheduled",   c:"c-sched"},
+  assigned:     {l:"Site Auditor Assigned",  c:"c-assigned"},
+  reschedule:   {l:"To Reschedule",          c:"c-resched"},
+  onway:        {l:"On The Way",             c:"c-onway"},      // auditor step, live
+  atsite:       {l:"At Site",                c:"c-atsite"},     // auditor step, live
+  completed:    {l:"Site Audit Completed",   c:"c-done"},
+};
+// SM pipeline order for the stepper
+const FLOW = ["pending","created","scheduled","assigned","completed"];
+
+const cust = (n,p,a)=>({name:n,phone:p,addr:a});
+let ORDERS = [
+  { pi:"PI-2026-00412", po:["PO-WF-7781","PO-ACC-7782"], skus:[{c:"WF-OAK-12MM",n:"Oak Laminate 12mm",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Wooden Flooring"], bm:"Karthik R", status:"pending", ...cust("Meera Iyer","98450 11234","12, Brigade Rd, Bengaluru 560001"),
+    service:null, slot:null, date:null, auditor:null, log:[{t:"Order confirmed (POs generated)",d:"Today 09:14"}] },
+
+  { pi:"PI-2026-00408", po:["PO-WP-7763"], skus:[{c:"WP-STD-441",n:"Standard Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Standard Wallpapers"], bm:"Sneha P", status:"created", ...cust("Arjun Rao","99000 55671","48, Indiranagar 100ft Rd, Bengaluru 560038"),
+    service:{skus:["Standard Wallpapers"]}, slot:null, date:null, auditor:null,
+    log:[{t:"Order confirmed",d:"Yesterday 16:40"},{t:"Service created by Priya N.",d:"Today 10:02"}] },
+
+  { pi:"PI-2026-00401", po:["PO-WF-7740","PO-WP-7741"], skus:[{c:"WF-WAL-8MM",n:"Walnut Laminate",audit:false},{c:"WP-CUST-902",n:"Custom Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Wooden Flooring","Custom Wallpapers"], bm:"Karthik R", status:"scheduled", ...cust("Divya Menon","98800 33445","7th Block, Koramangala, Bengaluru 560095"),
+    service:{skus:["Wooden Flooring","Custom Wallpapers"]}, slot:"s2", date:dstr(addDays(2)), auditor:null,
+    log:[{t:"Order confirmed",d:"2 days ago"},{t:"Service created",d:"Yesterday 11:20"},{t:"Slot booked: "+dstr(addDays(2))+" · 12 PM–3 PM",d:"Yesterday 15:05"}] },
+
+  { pi:"PI-2026-00399", po:["PO-WP-7728"], skus:[{c:"WP-STD-220",n:"Standard Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Standard Wallpapers"], bm:"Mohan L", status:"assigned", ...cust("Rohit Shetty","97400 88112","Whitefield, Bengaluru 560066"),
+    service:{skus:["Standard Wallpapers"]}, slot:"s1", date:dstr(addDays(1)), auditor:"a2",
+    log:[{t:"Order confirmed",d:"3 days ago"},{t:"Service created",d:"2 days ago"},{t:"Slot booked",d:"2 days ago"},{t:"Auditor assigned: Imran Sheikh · SMS sent to customer",d:"Today 08:30"}] },
+
+  { pi:"PI-2026-00388", po:["PO-WF-7701"], skus:[{c:"WF-OAK-10MM",n:"Oak Laminate 10mm",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Wooden Flooring"], bm:"Sneha P", status:"onway", ...cust("Kavya Reddy","99016 44550","HSR Layout, Bengaluru 560102"),
+    service:{skus:["Wooden Flooring"]}, slot:"s1", date:dstr(today), auditor:"a1",
+    log:[{t:"Service created",d:"2 days ago"},{t:"Slot booked",d:"2 days ago"},{t:"Auditor assigned: Rakesh Kumar",d:"Yesterday"},{t:"Auditor confirmed call · On the way",d:"Today 08:55"}] },
+
+  { pi:"PI-2026-00377", po:["PO-WP-7688"], skus:[{c:"WP-CUST-880",n:"Custom Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Custom Wallpapers"], bm:"Mohan L", status:"reschedule", ...cust("Sanjay Gupta","98453 77881","JP Nagar, Bengaluru 560078"),
+    service:{skus:["Custom Wallpapers"]}, slot:"s3", date:dstr(today), auditor:"a3",
+    log:[{t:"Service created",d:"3 days ago"},{t:"Slot booked",d:"2 days ago"},{t:"Auditor assigned: Suresh Babu",d:"Yesterday"},{t:"Customer declined pre-call → To Reschedule",d:"Today 13:10"}] },
+
+  { pi:"PI-2026-00362", po:["PO-WF-7651","PO-ACC-7652"], skus:[{c:"WF-OAK-12MM",n:"Oak Laminate 12mm",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Wooden Flooring"], bm:"Karthik R", status:"completed", ...cust("Lakshmi N","98860 22119","Jayanagar 4th Block, Bengaluru 560011"),
+    service:{skus:["Wooden Flooring"]}, slot:"s2", date:dstr(addDays(-1)), auditor:"a4",
+    log:[{t:"Service created",d:"4 days ago"},{t:"Slot booked",d:"3 days ago"},{t:"Auditor assigned: Anand Verma",d:"2 days ago"},{t:"Audit completed · JobCard PDF generated",d:"Yesterday 15:42"},{t:"Status pushed to BM CRM (Karthik R)",d:"Yesterday 15:42"}] },
+
+  { pi:"PI-2026-00355", po:["PO-WP-7640"], skus:[{c:"WP-STD-301",n:"Standard Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
+    auditFor:["Standard Wallpapers"], bm:"Sneha P", status:"call_na", ...cust("Vikram Singh","97391 66220","Marathahalli, Bengaluru 560037"),
+    service:{skus:["Standard Wallpapers"]}, slot:null, date:null, auditor:null,
+    log:[{t:"Service created",d:"Today 09:50"},{t:"Acknowledgement call — not picked (attempt 1)",d:"Today 11:15"}] },
+];
+
+/* ============== HELPERS ============== */
+const $=s=>document.querySelector(s);
+const fmtDate=ds=>{ if(!ds) return "—"; const d=new Date(ds+"T00:00"); return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}); };
+const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
+const auditorById=id=>AUDITORS.find(a=>a.id===id);
+function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
+
+// slot usage for a (date,slot): how many orders already booked
+function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===slotId&&["scheduled","assigned","onway","atsite","completed"].includes(o.status)).length;}
+// auditor load on a date
+function auditorLoad(aid,date){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
+
+let activeView="orders", filterStatus="all", searchQ="", currentPI=null;
+
+/* ============== VIEWS ============== */
+function counts(){
+  $("#cOrders").textContent=ORDERS.length;
+  $("#cToday").textContent=ORDERS.filter(o=>o.date===dstr(today)).length;
+  $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule").length;
+}
+
+function render(){
+  counts();
+  document.querySelectorAll("#rail a").forEach(a=>a.classList.toggle("active",a.dataset.view===activeView));
+  const m=$("#main");
+  if(activeView==="orders") m.innerHTML=ordersView();
+  else if(activeView==="schedule") m.innerHTML=scheduleView();
+  else if(activeView==="reschedule") m.innerHTML=reschedView();
+  else if(activeView==="fleet") m.innerHTML=fleetView();
+  else if(activeView==="slots") m.innerHTML=slotsView();
+  else if(activeView==="auditors") m.innerHTML=auditorsView();
+  wire();
+}
+
+function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
+
+function ordersView(){
+  const c={};Object.keys(STATUS).forEach(k=>c[k]=0);ORDERS.forEach(o=>c[o.status]++);
+  const live=c.scheduled+c.assigned+c.onway+c.atsite;
+  const stats=`<div class="stats">
+    ${statTile(ORDERS.length,"Live audit orders","#1F3A5F","all")}
+    ${statTile(c.pending+c.created+c.call_na,"Need action","#b3261e","action")}
+    ${statTile(live,"Scheduled / in progress","#2E6CA8","live")}
+    ${statTile(c.reschedule,"To reschedule","#9a6200","reschedule")}
+    ${statTile(c.completed,"Completed","#1f7a3f","completed")}
+  </div>`;
+  const filters=["all","pending","created","scheduled","assigned","reschedule","completed"];
+  const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":STATUS[f]?STATUS[f].l:f}</button>`).join("");
+  const rows=ORDERS.filter(o=>{
+    if(filterStatus!=="all"){
+      if(filterStatus==="action") return ["pending","created","call_na"].includes(o.status);
+      if(filterStatus==="live") return ["scheduled","assigned","onway","atsite"].includes(o.status);
+      if(o.status!==filterStatus) return false;
+    }
+    if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
+    return true;
+  }).map(o=>{
+    const skupills=o.skus.map(s=>`<span class="skupill ${s.audit?'audit':''}">${s.c}</span>`).join("");
+    const st = ["onway","atsite"].includes(o.status)? o.status : o.status; // SM sees granular live steps
+    return `<tr data-pi="${o.pi}">
+      <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
+      <td><div class="pill-list">${skupills}</div></td>
+      <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+      <td style="max-width:170px"><div class="cust"><div>${o.addr}</div></div></td>
+      <td><span class="bmtag">${o.bm}</span></td>
+      <td>${chip(st)}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="crumbs">Site Audit / Orders</div>
+  <div class="pagehead"><div><h1>Audit orders</h1><p>Every confirmed order containing the Site Audit SKU (${AUDIT_SKU}). Click a row to manage.</p></div>
+    <div class="actions"><button class="btn gray sm" id="pushDemo">Simulate new order</button></div></div>
+  ${stats}
+  <div class="toolbar">
+    <div class="search"><span class="ico">⌕</span><input id="q" placeholder="Search PI, customer, phone, BM, SKU…" value="${searchQ}"/></div>
+    <div class="filt">${fbtns}</div>
+  </div>
+  <div class="tablecard"><table>
+    <thead><tr><th>PI / PO</th><th>SKUs in cart</th><th>Customer</th><th>Address</th><th>BM</th><th>Status</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">No orders match.</td></tr>`}</tbody>
+  </table></div>`;
+}
+
+function scheduleView(){
+  const list=ORDERS.filter(o=>o.date===dstr(today)).sort((a,b)=>(a.slot||"").localeCompare(b.slot||""));
+  const rows=list.map(o=>`<tr data-pi="${o.pi}">
+    <td><b>${slotLabel(o.slot)}</b></td>
+    <td><div class="pi">${o.pi}</div></td>
+    <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+    <td>${o.auditor?auditorById(o.auditor).name:'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
+    <td>${chip(o.status)}</td></tr>`).join("");
+  return `<div class="crumbs">Site Audit / Today's schedule</div>
+  <div class="pagehead"><div><h1>Today — ${fmtDate(dstr(today))}</h1><p>Live view of today's audits and auditor progress.</p></div></div>
+  <div class="tablecard"><table>
+   <thead><tr><th>Slot</th><th>PI</th><th>Customer</th><th>Auditor</th><th>Live status</th></tr></thead>
+   <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No audits scheduled today.</td></tr>`}</tbody>
+  </table></div>`;
+}
+
+function reschedView(){
+  const list=ORDERS.filter(o=>o.status==="reschedule");
+  const rows=list.map(o=>`<tr data-pi="${o.pi}">
+    <td><div class="pi">${o.pi}</div></td>
+    <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+    <td>${fmtDate(o.date)} · ${slotLabel(o.slot)}</td>
+    <td>${o.auditor?auditorById(o.auditor).name:"—"}</td>
+    <td><button class="btn primary sm" data-rebook="${o.pi}">Call &amp; rebook</button></td></tr>`).join("");
+  return `<div class="crumbs">Site Audit / To reschedule</div>
+  <div class="pagehead"><div><h1>To reschedule</h1><p>Customers who declined the auditor's pre-visit call. Call them and rebook a slot.</p></div></div>
+  <div class="note">These appear here automatically when an auditor marks an order <b>To Reschedule</b>.</div>
+  <div class="tablecard"><table>
+   <thead><tr><th>PI</th><th>Customer</th><th>Was booked</th><th>Auditor</th><th></th></tr></thead>
+   <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nothing to reschedule. 🎉</td></tr>`}</tbody>
+  </table></div>`;
+}
+
+function fleetView(){
+  const dows=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  let cells="";
+  const start=new Date(today); const startDow=start.getDay();
+  // pad to start on the week
+  for(let i=0;i<startDow;i++) cells+=`<div></div>`;
+  for(let i=0;i<28;i++){
+    const d=addDays(i); const ds=dstr(d); const past=d<today;
+    const fleet=FLEET[ds]||0;
+    const used=ORDERS.filter(o=>o.date===ds&&["scheduled","assigned","onway","atsite","completed"].includes(o.status)).length;
+    const totalCap=fleet*SLOTS.length;
+    cells+=`<div class="daycell ${past?'past':''}">
+      <div class="dn">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
+      <div class="fleet"><input type="number" min="0" value="${fleet}" data-fleet="${ds}" ${past?'disabled':''}/><span class="fl">fleets</span></div>
+      <div class="used">${used}/${totalCap} booked</div>
+    </div>`;
+  }
+  return `<div class="crumbs">Site Audit / Fleet calendar</div>
+  <div class="pagehead"><div><h1>Fleet calendar</h1><p>Set how many fleets are available each day. Capacity = fleets × ${SLOTS.length} slot windows. Enter these well in advance.</p></div></div>
+  <div class="calwrap">
+   <div class="calgrid">${dows.map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>
+   <div class="legend"><span>Each fleet unlocks <b>1 slot in every window</b> (${SLOTS.map(s=>s.label).join(", ")}).</span></div>
+  </div>`;
+}
+
+function slotsView(){
+  const rows=SLOTS.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
+    <td><input class="slotedit" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td></tr>`).join("");
+  return `<div class="crumbs">Setup / Slots &amp; timings</div>
+  <div class="pagehead"><div><h1>Slots &amp; timings</h1><p>Customize window timings or add new windows. Capacity per window is driven by the Fleet calendar.</p></div>
+   <div class="actions"><button class="btn ghost sm" id="addSlot">+ Add window</button><button class="btn navy sm" id="saveSlots">Save</button></div></div>
+  <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function auditorsView(){
+  const rows=AUDITORS.map(a=>`<tr>
+    <td><div class="cust"><b>${a.name}</b><div>${a.phone}</div></div></td>
+    <td>${a.zone}</td>
+    <td><input type="number" min="1" value="${a.cap}" data-cap="${a.id}" style="width:60px;padding:7px;border:1px solid var(--line);border-radius:8px;text-align:center;font-weight:700"/></td>
+    <td>${auditorLoad(a.id,dstr(today))} today</td></tr>`).join("");
+  return `<div class="crumbs">Setup / Auditors</div>
+  <div class="pagehead"><div><h1>Site auditors</h1><p>Set each auditor's max jobs per day. An auditor can't be assigned beyond this cap on a given date.</p></div>
+   <div class="actions"><button class="btn navy sm" id="saveCaps">Save caps</button></div></div>
+  <div class="tablecard"><table><thead><tr><th>Auditor</th><th>Zone</th><th>Daily cap</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ============== DRAWER (order detail / actions) ============== */
+function openOrder(pi){
+  currentPI=pi; const o=ORDERS.find(x=>x.pi===pi); if(!o) return;
+  $("#dwTitle").textContent=o.name;
+  $("#dwSub").innerHTML=`${o.pi} · BM ${o.bm} &nbsp; ${chip(o.status)}`;
+  $("#dwBody").innerHTML=drawerBody(o);
+  $("#dwFoot").innerHTML=drawerFoot(o);
+  $("#scrim").classList.add("show"); $("#drawer").classList.add("show");
+  wireDrawer(o);
+}
+function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;}
+
+function stepper(o){
+  let reached=FLOW.indexOf(o.status);
+  if(["assigned","onway","atsite"].includes(o.status)) reached=FLOW.indexOf("assigned");
+  if(o.status==="call_na"||o.status==="reschedule") reached=FLOW.indexOf("created");
+  if(o.status==="completed") reached=FLOW.length-1;
+  const labels=["Pending","Service\ncreated","Scheduled","Auditor\nassigned","Completed"];
+  return `<div class="stepline">${FLOW.map((s,i)=>`<div class="step ${i<reached?'done':''} ${i===reached?'active':''}"><div class="ball">${i<reached?'✓':i+1}</div><div class="lb">${labels[i].replace('\n','<br>')}</div></div>`).join("")}</div>`;
+}
+
+function drawerBody(o){
+  let html=stepper(o);
+  // order facts
+  const skupills=o.skus.map(s=>`<span class="skupill ${s.audit?'audit':''}">${s.c} · ${s.n}</span>`).join(" ");
+  html+=`<div class="sec"><h3>Order</h3><div class="kv">
+    <div class="k">PI ID</div><div class="v">${o.pi}</div>
+    <div class="k">PO numbers</div><div class="v">${o.po.join(", ")}</div>
+    <div class="k">SKUs in cart</div><div class="v"><div class="pill-list">${skupills}</div></div>
+    <div class="k">Audit ticked for</div><div class="v">${o.auditFor.join(", ")||"—"}</div>
+    <div class="k">BM</div><div class="v">${o.bm}</div>
+  </div></div>`;
+  html+=`<div class="sec"><h3>Customer</h3><div class="kv">
+    <div class="k">Name</div><div class="v">${o.name}</div>
+    <div class="k">Phone</div><div class="v">${o.phone}</div>
+    <div class="k">Address</div><div class="v">${o.addr}</div>
+  </div></div>`;
+
+  // STAGE-SPECIFIC PANEL
+  if(o.status==="pending"){
+    html+=`<div class="sec"><h3>Service creation</h3>
+      <div class="note">Customer, phone, address and BM are pulled from the order automatically. Just confirm which SKUs need auditing.</div>
+      <div class="field"><label>Customer name <span class="autofill">auto</span></label><input value="${o.name}" disabled></div>
+      <div class="field"><label>Phone <span class="autofill">auto</span></label><input value="${o.phone}" disabled></div>
+      <div class="field"><label>Address <span class="autofill">auto</span></label><input value="${o.addr}" disabled></div>
+      <div class="field"><label>BM <span class="autofill">auto</span></label><input value="${o.bm}" disabled></div>
+      <div class="field"><label>Assign SKUs for site audit</label>
+        <div class="checks" id="skuChecks">
+          ${o.auditFor.map((s,i)=>`<label class="checkrow on"><input type="checkbox" checked data-sku="${s}">${s}</label>`).join("")}
+          <label class="checkrow" id="naRow"><input type="checkbox" data-sku="NA">None fixed yet (NA)</label>
+        </div>
+      </div></div>`;
+  }
+  else if(["created","call_na"].includes(o.status)){
+    html+=`<div class="sec"><h3>Acknowledgement call</h3>
+      <div class="note">Call the customer to confirm a date &amp; slot. Available slots reflect fleet capacity per window.</div>
+      ${o.status==="call_na"?`<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Marked “Call not picked”. Try again or mark for follow-up.</div>`:""}
+      <div class="field"><label>Audit date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div>
+    </div>`;
+  }
+  else if(o.status==="scheduled"){
+    html+=`<div class="sec"><h3>Assign auditor <span style="font-weight:600;color:var(--muted)">— a day before</span></h3>
+      <div class="kv" style="margin-bottom:10px">
+        <div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
+      <div class="note">Only auditors under their daily cap on ${fmtDate(o.date)} are selectable. Assigning will SMS the auditor's details to the customer.</div>
+      <div class="auditorlist" id="auditorList"></div>
+    </div>`;
+  }
+  else if(["assigned","onway","atsite"].includes(o.status)){
+    const a=auditorById(o.auditor);
+    html+=`<div class="sec"><h3>Assignment</h3><div class="kv">
+      <div class="k">Auditor</div><div class="v">${a.name} (${a.phone})</div>
+      <div class="k">Slot</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
+      <div class="k">Live status</div><div class="v">${chip(o.status)}</div>
+    </div>
+    <div class="note">Auditor's live steps (On The Way → At Site → Completed) appear here as they happen. Customer was notified of the auditor by SMS.</div></div>`;
+  }
+  else if(o.status==="reschedule"){
+    html+=`<div class="sec"><h3>Reschedule</h3>
+      <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Customer declined the auditor's pre-visit call. Call to rebook.</div>
+      <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div></div>`;
+  }
+  else if(o.status==="completed"){
+    const a=auditorById(o.auditor);
+    html+=`<div class="sec"><h3>Completed</h3><div class="kv">
+      <div class="k">Auditor</div><div class="v">${a.name}</div>
+      <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
+    </div>
+    <div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">JobCard PDF generated. Status pushed to BM ${o.bm}'s CRM against ${o.phone}.</div>
+    <button class="btn ghost sm" id="viewPdf">View JobCard PDF</button></div>`;
+  }
+
+  // timeline
+  html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl"><div class="tt">${l.t}</div><div class="td">${l.d}</div></div>`).join("")}</div></div>`;
+  return html;
+}
+
+function drawerFoot(o){
+  if(o.status==="pending") return `<button class="btn gray" id="dClose">Cancel</button><button class="btn navy" id="createService">Create service</button>`;
+  if(["created","call_na"].includes(o.status)) return `<button class="btn gray" id="markNA">Call not picked</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
+  if(o.status==="scheduled") return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
+  if(o.status==="reschedule") return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Rebook slot</button>`;
+  if(["assigned","onway","atsite"].includes(o.status)) return `<button class="btn gray" id="dClose">Close</button><button class="btn ghost" id="simStep">▶ Simulate auditor step</button>`;
+  return `<button class="btn gray" id="dClose">Close</button>`;
+}
+
+/* ============== DRAWER WIRING ============== */
+let draft={skus:[],slot:null,date:null,auditor:null};
+function wireDrawer(o){
+  draft={skus:o.auditFor.slice(),slot:null,date:null,auditor:null};
+  const close=()=>closeDrawer();
+  $("#dwClose").onclick=close;
+  if($("#dClose"))$("#dClose").onclick=close;
+
+  // service creation checkboxes
+  if($("#skuChecks")){
+    $("#skuChecks").querySelectorAll(".checkrow").forEach(row=>{
+      row.onclick=e=>{ if(e.target.tagName!=="INPUT"){const cb=row.querySelector("input");cb.checked=!cb.checked;} 
+        const cb=row.querySelector("input"); row.classList.toggle("on",cb.checked);
+        const sku=cb.dataset.sku;
+        if(sku==="NA"){ if(cb.checked){draft.skus=["NA"]; $("#skuChecks").querySelectorAll('input:not([data-sku="NA"])').forEach(x=>{x.checked=false;x.closest('.checkrow').classList.remove('on');});} }
+        else { if(cb.checked){draft.skus=draft.skus.filter(s=>s!=="NA"); $('#naRow').classList.remove('on');$('#naRow input').checked=false; draft.skus.push(sku);} else draft.skus=draft.skus.filter(s=>s!==sku); }
+      };
+    });
+  }
+  if($("#createService"))$("#createService").onclick=()=>{
+    o.service={skus:draft.skus.length?draft.skus:["NA"]}; o.status="created";
+    o.log.push({t:"Service created — audit SKUs: "+o.service.skus.join(", "),d:"Just now"});
+    toast("Service created"); render(); openOrder(o.pi);
+  };
+
+  // slot booking grid
+  function renderSlots(){
+    const grid=$("#slotGrid"); if(!grid) return;
+    const date=$("#bookDate").value; draft.date=date;
+    const fleet=FLEET[date]||0;
+    grid.innerHTML=SLOTS.map(s=>{
+      const used=slotUsage(date,s.id); const free=fleet-used; const full=free<=0;
+      return `<div class="slot ${draft.slot===s.id?'on':''} ${full?'full':''}" data-slot="${s.id}">
+        <div class="w">${s.label}</div><div class="cap">${full?'Full':free+' of '+fleet+' free'}</div></div>`;
+    }).join("");
+    grid.querySelectorAll(".slot:not(.full)").forEach(el=>el.onclick=()=>{
+      draft.slot=el.dataset.slot; renderSlots();
+      const b=$("#bookSlot"); if(b)b.disabled=!draft.slot;
+    });
+  }
+  if($("#bookDate")){ $("#bookDate").onchange=()=>{draft.slot=null;renderSlots();const b=$("#bookSlot");if(b)b.disabled=true;}; renderSlots(); }
+  if($("#bookSlot"))$("#bookSlot").onclick=()=>{
+    o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
+    o.log.push({t:"Slot booked: "+fmtDate(o.date)+" · "+slotLabel(o.slot),d:"Just now"});
+    toast("Slot booked — "+fmtDate(o.date)); render(); openOrder(o.pi);
+  };
+  if($("#markNA"))$("#markNA").onclick=()=>{ o.status="call_na";o.log.push({t:"Acknowledgement call — not picked",d:"Just now"});toast("Marked call not picked");render();openOrder(o.pi);};
+
+  // auditor assignment
+  if($("#auditorList")){
+    const list=$("#auditorList");
+    list.innerHTML=AUDITORS.map(a=>{
+      const load=auditorLoad(a.id,o.date); const full=load>=a.cap;
+      return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
+        <div class="av">${a.name.split(' ').map(x=>x[0]).join('').slice(0,2)}</div>
+        <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}</div></div>
+        <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${load}/${a.cap}${full?' · full':''}</div></div>`;
+    }).join("");
+    list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
+      draft.auditor=el.dataset.aud; list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on")); el.classList.add("on");
+      $("#assignAuditor").disabled=false;
+    });
+  }
+  if($("#assignAuditor"))$("#assignAuditor").onclick=()=>{
+    o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
+    o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:"Just now"});
+    toast("Assigned "+a.name+" · customer notified"); render(); openOrder(o.pi);
+  };
+
+  // simulate auditor live steps
+  if($("#simStep"))$("#simStep").onclick=()=>{
+    const next={assigned:"onway",onway:"atsite",atsite:"completed"}[o.status];
+    o.status=next;
+    const msg={onway:"Auditor confirmed pre-call · On the way",atsite:"Auditor arrived · At site",completed:"Audit completed · JobCard PDF generated · pushed to BM CRM"}[next];
+    o.log.push({t:msg,d:"Just now"}); toast(STATUS[next].l); render(); openOrder(o.pi);
+  };
+  if($("#viewPdf"))$("#viewPdf").onclick=()=>toast("Opens the generated JobCard PDF (built in the Auditor module)");
+}
+
+/* ============== GLOBAL WIRING ============== */
+function wire(){
+  document.querySelectorAll("#main tbody tr[data-pi]").forEach(tr=>tr.onclick=()=>openOrder(tr.dataset.pi));
+  if($("#q"))$("#q").oninput=e=>{searchQ=e.target.value;const m=$("#main");m.querySelector(".tablecard").outerHTML=ordersView().match(/<div class="tablecard">[\s\S]*<\/table><\/div>/)[0];wire();$("#q").focus();$("#q").setSelectionRange(searchQ.length,searchQ.length);};
+  document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
+  document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{filterStatus=s.dataset.stat;render();});
+  document.querySelectorAll("[data-rebook]").forEach(b=>b.onclick=e=>{e.stopPropagation();openOrder(b.dataset.rebook);});
+  document.querySelectorAll("[data-fleet]").forEach(inp=>inp.onchange=()=>{FLEET[inp.dataset.fleet]=parseInt(inp.value)||0;render();toast("Fleet updated for "+fmtDate(inp.dataset.fleet));});
+  document.querySelectorAll("[data-cap]").forEach(inp=>inp.onchange=()=>{auditorById(inp.dataset.cap).cap=parseInt(inp.value)||1;});
+  if($("#saveCaps"))$("#saveCaps").onclick=()=>toast("Auditor caps saved");
+  if($("#saveSlots"))$("#saveSlots").onclick=()=>{document.querySelectorAll(".slotedit").forEach(i=>SLOTS[i.dataset.i].label=i.value);toast("Slot timings saved");render();};
+  if($("#addSlot"))$("#addSlot").onclick=()=>{SLOTS.push({id:"s"+(SLOTS.length+1),label:"New window"});render();toast("Window added");};
+  if($("#pushDemo"))$("#pushDemo").onclick=()=>{
+    const n=Math.floor(Math.random()*900+100);
+    ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],auditFor:["Wooden Flooring"],bm:"Karthik R",status:"pending",name:"New Customer",phone:"90000 0"+n,addr:"Bengaluru",service:null,slot:null,date:null,auditor:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"}]});
+    render();toast("New audit order received");
+  };
+}
+
+document.querySelectorAll("#rail a").forEach(a=>a.onclick=()=>{activeView=a.dataset.view;filterStatus="all";render();});
+$("#scrim").onclick=closeDrawer;
+$("#vInstall").onclick=()=>toast("Installation dashboard — building next");
+
+render();
+</script>
+</body>
+</html>

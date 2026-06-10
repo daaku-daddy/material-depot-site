@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Material Depot — Sign in</title>
+<style>
+  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#67748a;--line:#dde3ec;--bg:#eef1f6;--card:#fff;--green:#1f7a3f;--greenbg:#e6f3ea;--red:#b3261e;--redbg:#fbeae8;--amber:#9a6200;--amberbg:#fdf2da;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:linear-gradient(160deg,#1F3A5F 0%,#16294a 60%,#0f1d36 100%);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .shell{width:100%;max-width:420px;}
+  .brand{text-align:center;margin-bottom:22px;color:#fff;}
+  .brand .logo{width:58px;height:58px;border-radius:15px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:24px;margin:0 auto 12px;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+  .brand .t{font-size:11px;letter-spacing:2px;color:#9fb2cd;font-weight:700;}
+  .brand .h{font-size:22px;font-weight:800;margin-top:2px;}
+  .card{background:#fff;border-radius:20px;padding:26px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .card h1{font-size:19px;margin:0 0 4px;color:var(--navy);}
+  .card .sub{font-size:13.5px;color:var(--muted);margin:0 0 20px;line-height:1.45;}
+  label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin:0 0 7px;}
+  input{width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;font-size:16px;background:#fff;color:var(--ink);}
+  input:focus{outline:none;border-color:var(--blue);}
+  .otpwrap{display:flex;gap:8px;justify-content:space-between;}
+  .otpwrap input{text-align:center;font-size:22px;font-weight:800;padding:13px 0;letter-spacing:0;}
+  .btn{width:100%;border:0;border-radius:12px;padding:15px;font-size:16px;font-weight:800;cursor:pointer;margin-top:18px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .btn.alt{background:#fff;color:var(--blue);border:2px solid var(--blue);margin-top:10px;}
+  .err{background:var(--redbg);color:var(--red);border-radius:10px;padding:11px 13px;font-size:13px;font-weight:600;margin-top:14px;display:none;}
+  .err.show{display:block;}
+  .otpdemo{background:var(--amberbg);color:var(--amber);border-radius:10px;padding:11px 13px;font-size:13px;font-weight:700;margin-top:14px;text-align:center;}
+  .meta{font-size:12.5px;color:var(--muted);margin-top:14px;text-align:center;}
+  .meta a{color:var(--blue);font-weight:700;cursor:pointer;text-decoration:none;}
+  .roleline{display:flex;align-items:center;gap:10px;background:var(--greenbg);color:var(--green);border-radius:12px;padding:13px 15px;font-weight:700;font-size:14px;margin-top:16px;}
+  .roleline .ic{font-size:20px;}
+  .demo{margin-top:18px;border-top:1px solid var(--line);padding-top:16px;}
+  .demo .dt{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin-bottom:10px;text-align:center;}
+  .demolist{display:grid;gap:8px;}
+  .demobtn{display:flex;align-items:center;gap:11px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 12px;cursor:pointer;text-align:left;}
+  .demobtn:hover{border-color:var(--blue);background:#f7faff;}
+  .demobtn .av{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;flex:0 0 auto;}
+  .demobtn .nm{font-weight:700;font-size:13.5px;color:var(--ink);} .demobtn .rl{font-size:11.5px;color:var(--muted);}
+  .demobtn .em{margin-left:auto;font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .footnote{text-align:center;color:#8aa0bf;font-size:11.5px;margin-top:20px;}
+  .back{background:none;border:0;color:var(--blue);font-weight:700;font-size:13.5px;cursor:pointer;padding:0;margin-bottom:8px;}
+  .spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="brand">
+    <div class="logo">MD</div>
+    <div class="t">MATERIAL DEPOT</div>
+    <div class="h">Installations &amp; Audit</div>
+  </div>
+
+  <div class="card" id="card"></div>
+
+  <div class="footnote">Your access is set by an Admin. The dashboard you see depends on your role.</div>
+</div>
+
+<script>
+/* ============== BACKEND STAND-IN ==============
+   In production this lookup is the real backend approval response.
+   Here it's a mock table: email -> {name, role, file, extra}
+*/
+const ROLE_FILES={
+  admin:        {label:"Admin",            file:null,                         color:"#5b3aa6", note:"Admin console"},
+  service_mgr:  {label:"Service Manager",  file:"SM_Audit_Dashboard.html",    color:"#1F3A5F", note:"Site Audit + Installations"},
+  site_auditor: {label:"Site Auditor",     file:"Site_Auditor_App.html",      color:"#2E6CA8", note:"Field audit app"},
+  installer:    {label:"Site Installer",   file:"Site_Installer_App.html",    color:"#1f7a3f", note:"Field installation app"},
+};
+const USERS={
+  "priya.nair@materialdepot.in":   {name:"Priya Nair",    role:"service_mgr"},
+  "admin@materialdepot.in":        {name:"Anita Desai",   role:"admin"},
+  "rakesh.kumar@materialdepot.in": {name:"Rakesh Kumar",  role:"site_auditor"},
+  "mahesh.pawar@materialdepot.in": {name:"Mahesh Pawar",  role:"installer"},
+  "faisal.khan@materialdepot.in":  {name:"Faisal Khan",   role:"installer"},
+};
+const DEMO=[
+  {email:"priya.nair@materialdepot.in",   role:"service_mgr"},
+  {email:"admin@materialdepot.in",        role:"admin"},
+  {email:"rakesh.kumar@materialdepot.in", role:"site_auditor"},
+  {email:"mahesh.pawar@materialdepot.in", role:"installer"},
+];
+
+const $=s=>document.querySelector(s);
+let state={email:"",otp:"",sentCode:"",user:null};
+function genCode(){return String(Math.floor(100000+Math.random()*900000));}
+function initials(n){return n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
+
+/* ---- Screen 1: email ---- */
+function emailScreen(){
+  $("#card").innerHTML=`
+    <h1>Sign in</h1>
+    <p class="sub">Enter your Material Depot email. We'll send a one-time code to verify it's you.</p>
+    <label>Work email</label>
+    <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@materialdepot.in" value="${state.email}">
+    <div class="err" id="err"></div>
+    <button class="btn" id="send">Send code</button>
+    <div class="demo">
+      <div class="dt">Demo accounts — tap to use</div>
+      <div class="demolist">
+        ${DEMO.map(d=>{const u=USERS[d.email];const r=ROLE_FILES[d.role];
+          return `<button class="demobtn" data-email="${d.email}">
+            <div class="av" style="background:${r.color}">${initials(u.name)}</div>
+            <div><div class="nm">${u.name}</div><div class="rl">${r.label}</div></div>
+            <div class="em">${d.email.split('@')[0]}</div></button>`;}).join("")}
+      </div>
+    </div>`;
+  $("#email").oninput=e=>state.email=e.target.value.trim();
+  $("#send").onclick=trySend;
+  $("#email").onkeydown=e=>{if(e.key==='Enter')trySend();};
+  document.querySelectorAll("[data-email]").forEach(b=>b.onclick=()=>{state.email=b.dataset.email;$("#email").value=state.email;trySend();});
+}
+function trySend(){
+  const err=$("#err");err.classList.remove("show");
+  const email=(state.email||"").toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent="Enter a valid email address.";err.classList.add("show");return;}
+  const user=USERS[email];
+  if(!user){err.innerHTML="This email isn't approved for access yet. Ask an Admin to add you.";err.classList.add("show");return;}
+  state.user=user;state.sentCode=genCode();state.otp="";
+  otpScreen();
+}
+
+/* ---- Screen 2: OTP ---- */
+function otpScreen(){
+  $("#card").innerHTML=`
+    <button class="back" id="back">&#8592; Change email</button>
+    <h1>Enter the code</h1>
+    <p class="sub">We sent a 6-digit code to <b>${state.email}</b>. It expires in 10 minutes.</p>
+    <div class="otpwrap" id="otpwrap">
+      ${[0,1,2,3,4,5].map(i=>`<input maxlength="1" inputmode="numeric" data-i="${i}">`).join("")}
+    </div>
+    <div class="otpdemo">Demo code (no SMS gateway): <b>${state.sentCode}</b></div>
+    <div class="err" id="err"></div>
+    <button class="btn" id="verify" disabled>Verify &amp; continue</button>
+    <button class="btn alt" id="resend">Resend code</button>`;
+  $("#back").onclick=emailScreen;
+  const boxes=[...document.querySelectorAll("#otpwrap input")];
+  boxes[0].focus();
+  boxes.forEach((b,i)=>{
+    b.oninput=()=>{b.value=b.value.replace(/\D/g,'');if(b.value&&i<5)boxes[i+1].focus();sync();};
+    b.onkeydown=e=>{if(e.key==='Backspace'&&!b.value&&i>0)boxes[i-1].focus();if(e.key==='Enter')tryVerify();};
+    b.onpaste=e=>{const t=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);if(t){e.preventDefault();t.split('').forEach((c,k)=>{if(boxes[k])boxes[k].value=c;});sync();boxes[Math.min(t.length,5)].focus();}};
+  });
+  function sync(){state.otp=boxes.map(b=>b.value).join("");$("#verify").disabled=state.otp.length!==6;}
+  $("#verify").onclick=tryVerify;
+  $("#resend").onclick=()=>{state.sentCode=genCode();otpScreen();};
+}
+function tryVerify(){
+  const err=$("#err");err.classList.remove("show");
+  if(state.otp!==state.sentCode){err.textContent="That code doesn't match. Check and try again.";err.classList.add("show");return;}
+  successScreen();
+}
+
+/* ---- Screen 3: success + route ---- */
+function successScreen(){
+  const r=ROLE_FILES[state.user.role];
+  $("#card").innerHTML=`
+    <h1>Welcome, ${state.user.name.split(' ')[0]}</h1>
+    <p class="sub">You're signed in. Taking you to your dashboard…</p>
+    <div class="roleline"><span class="ic">&#10003;</span> Role: ${r.label} <span style="margin-left:auto;font-weight:600;color:var(--muted)">${r.note}</span></div>
+    <button class="btn" id="go"><span class="spin"></span> Opening…</button>`;
+  const go=()=>{
+    if(!r.file){
+      // Admin not built yet — graceful stub
+      $("#card").innerHTML=`
+        <button class="back" id="back2">&#8592; Sign out</button>
+        <h1>${r.label} console</h1>
+        <p class="sub">Signed in as <b>${state.user.name}</b> (${state.email}).</p>
+        <div class="roleline" style="background:#efeaf8;color:#5b3aa6"><span class="ic">&#128679;</span> The Admin console isn't built yet — coming next.</div>
+        <p class="meta">When ready, this role will open the Admin console for access management and data overview.</p>`;
+      $("#back2").onclick=()=>{state={email:"",otp:"",sentCode:"",user:null};emailScreen();};
+      return;
+    }
+    // route to the role's dashboard file (kept as separate files)
+    window.location.href=r.file;
+  };
+  setTimeout(go,900);
+  $("#go").onclick=go;
+}
+
+emailScreen();
+</script>
+</body>
+</html>

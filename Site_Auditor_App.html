@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Material Depot — Site Auditor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#67748a;--line:#dde3ec;--bg:#f4f6f9;--card:#fff;--lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;}
+  .app{max-width:520px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative;}
+  header{background:var(--navy);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;}
+  header .logo{width:36px;height:36px;border-radius:9px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:16px;}
+  header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
+  header .h{font-size:16px;font-weight:700;line-height:1.1;}
+  header .me{margin-left:auto;text-align:right;font-size:11px;color:#cdd8e8;line-height:1.25;}
+  header .me b{color:#fff;font-size:13px;}
+  .wrap{padding:14px 14px 90px;}
+  .daystrip{display:flex;gap:8px;margin-bottom:14px;}
+  .daychip{flex:1;background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;cursor:pointer;}
+  .daychip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .daychip .dn{font-size:11px;font-weight:700;opacity:.8;}
+  .daychip .dd{font-size:18px;font-weight:800;margin-top:1px;}
+  .daychip .ct{font-size:10px;margin-top:2px;opacity:.75;}
+  .sechead{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin:14px 2px 8px;}
+  .ocard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,80,.04);cursor:pointer;}
+  .ocard:active{transform:scale(.997);}
+  .ocard .top{display:flex;align-items:flex-start;gap:10px;}
+  .ocard .nm{font-weight:800;font-size:16px;color:var(--ink);}
+  .ocard .pi{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .ocard .slot{margin-left:auto;text-align:right;}
+  .ocard .slot .w{font-weight:800;font-size:13px;color:var(--navy);}
+  .ocard .meta{margin-top:10px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:5px;}
+  .ocard .meta .r{display:flex;gap:7px;align-items:flex-start;}
+  .ocard .meta .ic{width:16px;text-align:center;opacity:.7;flex:0 0 auto;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .c-scheduled{background:#e4f0fb;color:var(--blue);}
+  .c-callpending{background:var(--amberbg);color:var(--amber);}
+  .c-reschedule{background:var(--redbg);color:var(--red);}
+  .c-onway{background:#e8f0ff;color:#2b54c2;}
+  .c-atsite{background:#e9e3fb;color:#5b3aa6;}
+  .c-completed{background:var(--greenbg);color:var(--green);}
+  .skupill{font-size:11px;background:var(--lighter);color:var(--navy);border-radius:6px;padding:2px 8px;font-weight:700;display:inline-block;margin:2px 4px 0 0;}
+  .skupill.fl{background:#fff4d6;color:#7a5800;}
+  .skupill.wp{background:#e9e3fb;color:#5b3aa6;}
+  .maplink{color:var(--blue);text-decoration:none;font-weight:600;}
+  .empty{text-align:center;color:var(--muted);padding:46px 16px;}
+  /* detail screen */
+  .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:520px;margin:0 auto;}
+  .shead{background:var(--navy);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
+  .shead .back{border:0;background:rgba(255,255,255,.14);color:#fff;width:34px;height:34px;border-radius:9px;font-size:18px;cursor:pointer;}
+  .shead .ti{font-weight:700;font-size:16px;} .shead .su{font-size:11px;color:#9fb2cd;}
+  .sbody{flex:1;overflow:auto;padding:14px 14px 120px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  .card h2{margin:0 0 10px;font-size:14px;color:var(--navy);}
+  .kv{display:grid;grid-template-columns:96px 1fr;gap:7px 12px;font-size:14px;}
+  .kv .k{color:var(--muted);font-weight:600;} .kv .v{font-weight:600;}
+  .callbtn{display:inline-flex;align-items:center;gap:7px;background:var(--greenbg);color:var(--green);border:0;border-radius:10px;padding:9px 14px;font-weight:800;font-size:14px;text-decoration:none;}
+  .stagebar{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  .stagebar .now{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+  .stagebar .big{font-size:18px;font-weight:800;margin:4px 0 2px;}
+  .stagebar .desc{font-size:13px;color:var(--muted);}
+  .actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap;}
+  .btn{border:0;border-radius:11px;padding:13px 16px;font-weight:800;font-size:15px;cursor:pointer;flex:1;text-align:center;display:inline-flex;align-items:center;justify-content:center;gap:7px;}
+  .btn.green{background:var(--green);color:#fff;} .btn.navy{background:var(--navy);color:#fff;} .btn.blue{background:var(--blue);color:#fff;}
+  .btn.ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue);}
+  .btn.warn{background:#fff;color:var(--red);border:1.5px solid #e3b4ad;}
+  .btn.sm{padding:9px 12px;font-size:13px;flex:0 0 auto;}
+  .btn:disabled{opacity:.45;}
+  .note{background:var(--lighter);border-left:4px solid var(--blue);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--navy);margin:10px 0;}
+  .note.warn{border-color:var(--amber);background:var(--amberbg);color:var(--amber);}
+  .note.red{border-color:var(--red);background:var(--redbg);color:var(--red);}
+  /* jobcard */
+  label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 5px;}
+  input,select,textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fff;color:var(--ink);}
+  input:disabled{background:#f3f5f8;color:#56627a;}
+  textarea{resize:vertical;min-height:60px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .full{grid-column:1 / -1;}
+  .prefill{font-size:10px;color:var(--green);font-weight:800;background:var(--greenbg);border-radius:5px;padding:1px 6px;margin-left:6px;}
+  .roomhead{display:flex;align-items:center;justify-content:space-between;background:var(--navy);color:#fff;border-radius:10px;padding:9px 12px;margin:-2px 0 12px;}
+  .roomhead .rn{font-weight:800;font-size:14px;}
+  .typetog{display:flex;background:#e7edf4;border-radius:9px;padding:3px;margin-bottom:12px;}
+  .typetog button{flex:1;border:0;background:transparent;padding:9px;border-radius:7px;font-weight:700;color:var(--muted);font-size:13.5px;}
+  .typetog button.on{background:var(--navy);color:#fff;}
+  canvas.sketch{width:100%;height:280px;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none;display:block;}
+  .sketchbar{display:flex;gap:8px;margin:8px 0;}
+  .photo-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .photo-row img{width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--line);}
+  .addroom{width:100%;background:#fff;border:1.5px dashed var(--blue);color:var(--blue);border-radius:12px;padding:14px;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:12px;}
+  .footer{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;z-index:45;}
+  .footer .btn{font-size:14px;padding:13px 8px;}
+  canvas.sign{width:100%;height:170px;border:1px dashed var(--blue);border-radius:10px;background:#fff;touch-action:none;display:block;}
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--navy2);color:#fff;padding:11px 18px;border-radius:30px;font-size:14px;opacity:0;transition:.25s;z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3);}
+  .toast.show{opacity:1;}
+  .hide{display:none!important;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">MD</div>
+    <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Auditor</div></div>
+    <div class="me"><b>Rakesh Kumar</b><br>Auditor · South BLR</div>
+  </header>
+  <div class="wrap" id="listView"></div>
+</div>
+
+<!-- ORDER DETAIL SCREEN -->
+<div class="screen hide" id="detailScreen">
+  <div class="shead">
+    <button class="back" id="detBack">&#8592;</button>
+    <div><div class="ti" id="detName">Customer</div><div class="su" id="detSub"></div></div>
+  </div>
+  <div class="sbody" id="detBody"></div>
+</div>
+
+<!-- JOBCARD SCREEN -->
+<div class="screen hide" id="jcScreen">
+  <div class="shead">
+    <button class="back" id="jcBack">&#8592;</button>
+    <div><div class="ti">Site Audit Job Card</div><div class="su" id="jcSub"></div></div>
+  </div>
+  <div class="sbody" id="jcBody"></div>
+  <div class="footer" id="jcFooter">
+    <button class="btn ghost" id="jcAddRoom" style="flex:1">+ Add room</button>
+    <button class="btn navy" id="jcReview" style="flex:1">Review &amp; sign</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============== DATA (mirrors orders assigned to this auditor) ============== */
+const ME={id:"a1",name:"Rakesh Kumar",zone:"South BLR"};
+const AUDIT_SKU="SVC-AUDIT-001";
+const today=new Date();today.setHours(0,0,0,0);
+function dstr(d){return d.toISOString().slice(0,10);}
+function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
+const SLOTS={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+
+// auditor-side statuses
+const STATUS={
+  scheduled:{l:"Scheduled",c:"c-scheduled"},
+  callpending:{l:"Call Pending",c:"c-callpending"},
+  reschedule:{l:"To Reschedule",c:"c-reschedule"},
+  onway:{l:"On The Way",c:"c-onway"},
+  atsite:{l:"At Site",c:"c-atsite"},
+  completed:{l:"Site Audit Completed",c:"c-completed"},
+};
+function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
+
+// SKUs to audit carry a type so room calc fields can match
+let ORDERS=[
+  {pi:"PI-2026-00388",name:"Kavya Reddy",phone:"99016 44550",addr:"HSR Layout, Bengaluru 560102",bm:"Sneha P",
+   date:dstr(today),slot:"s1",status:"scheduled",
+   skus:[{type:"flooring",sku:"WF-OAK-10MM",num:"FL-3310"}], jobcard:null},
+  {pi:"PI-2026-00370",name:"Arjun Rao",phone:"99000 55671",addr:"48, Indiranagar 100ft Rd, Bengaluru 560038",bm:"Karthik R",
+   date:dstr(today),slot:"s2",status:"callpending",
+   skus:[{type:"wallpaper",sku:"WP-STD-441",num:"WP-4410"}], jobcard:null},
+  {pi:"PI-2026-00365",name:"Divya Menon",phone:"98800 33445",addr:"7th Block, Koramangala, Bengaluru 560095",bm:"Karthik R",
+   date:dstr(today),slot:"s3",status:"scheduled",
+   skus:[{type:"flooring",sku:"WF-WAL-8MM",num:"FL-9001"},{type:"wallpaper",sku:"WP-CUST-902",num:"WP-9020"}], jobcard:null},
+  {pi:"PI-2026-00351",name:"Sanjay Gupta",phone:"98453 77881",addr:"JP Nagar, Bengaluru 560078",bm:"Mohan L",
+   date:dstr(addDays(1)),slot:"s1",status:"scheduled",
+   skus:[{type:"wallpaper",sku:"WP-CUST-880",num:"WP-8810"}], jobcard:null},
+  {pi:"PI-2026-00349",name:"Rohit Shetty",phone:"97400 88112",addr:"Whitefield, Bengaluru 560066",bm:"Mohan L",
+   date:dstr(addDays(1)),slot:"s2",status:"scheduled",
+   skus:[{type:"flooring",sku:"WF-OAK-12MM",num:"FL-1201"}], jobcard:null},
+];
+
+/* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
+const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
+const WALL_FIELDS=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type',type:'select',opts:['Straight','Offset','Free']},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed',type:'select',opts:['No','Yes']}];
+const fieldsFor=t=>t==='wallpaper'?WALL_FIELDS:FLOOR_FIELDS;
+
+/* ============== HELPERS ============== */
+const $=s=>document.querySelector(s);
+const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});};
+const slotLabel=id=>(SLOTS[id]||{}).label||"—";
+function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+function imgFmt(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
+function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
+
+// "3 hours before slot start" auto flip scheduled->callpending (simulated against now)
+function autoFlip(){
+  const now=new Date();
+  ORDERS.forEach(o=>{
+    if(o.status==="scheduled"&&o.date===dstr(today)){
+      const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);
+      if(now>=new Date(start.getTime()-3*3600*1000)) o.status="callpending";
+    }
+  });
+}
+
+/* ============== LIST VIEW ============== */
+let selDay=dstr(today);
+function listView(){
+  autoFlip();
+  const days=[today,addDays(1),addDays(2)];
+  const strip=days.map(d=>{const ds=dstr(d);const n=ORDERS.filter(o=>o.date===ds).length;
+    return `<div class="daychip ${selDay===ds?'on':''}" data-day="${ds}">
+      <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+      <div class="dd">${d.getDate()}</div><div class="ct">${n} audit${n!==1?'s':''}</div></div>`;}).join("");
+  const list=ORDERS.filter(o=>o.date===selDay).sort((a,b)=>a.slot.localeCompare(b.slot));
+  const todo=list.filter(o=>o.status!=="completed");
+  const done=list.filter(o=>o.status==="completed");
+  const card=o=>{
+    const skus=o.skus.map(s=>`<span class="skupill ${s.type==='wallpaper'?'wp':'fl'}">${s.type==='wallpaper'?'Wallpaper':'Flooring'} · ${s.sku}</span>`).join("");
+    return `<div class="ocard" data-pi="${o.pi}">
+      <div class="top"><div><div class="nm">${o.name}</div><div class="pi">${o.pi} · BM ${o.bm}</div></div>
+        <div class="slot"><div class="w">${slotLabel(o.slot)}</div>${chip(o.status)}</div></div>
+      <div class="meta">
+        <div class="r"><span class="ic">&#128241;</span>${o.phone}</div>
+        <div class="r"><span class="ic">&#128205;</span><a class="maplink" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${o.addr}</a></div>
+        <div class="r"><span class="ic">&#128230;</span><span>${skus||'NA'}</span></div>
+      </div></div>`;
+  };
+  return `<div class="daystrip">${strip}</div>
+    <div class="sechead">To do — ${fmtDate(selDay)}</div>
+    ${todo.map(card).join("")||`<div class="empty">No pending audits for this day.</div>`}
+    ${done.length?`<div class="sechead">Completed</div>${done.map(card).join("")}`:""}`;
+}
+function renderList(){$("#listView").innerHTML=listView();wireList();}
+function wireList(){
+  document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
+  document.querySelectorAll(".ocard[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openDetail(c.dataset.pi);});
+}
+
+/* ============== DETAIL VIEW ============== */
+let curPI=null;
+function openDetail(pi){
+  curPI=pi;const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  $("#detName").textContent=o.name;
+  $("#detSub").innerHTML=`${o.pi} · ${fmtDate(o.date)} · ${slotLabel(o.slot)}`;
+  $("#detBody").innerHTML=detailBody(o);
+  $("#detailScreen").classList.remove("hide");
+  wireDetail(o);
+}
+function detailBody(o){
+  const skus=o.skus.map(s=>`<span class="skupill ${s.type==='wallpaper'?'wp':'fl'}">${s.type==='wallpaper'?'Wallpaper':'Flooring'} · ${s.sku}${s.num?(' · '+s.num):''}</span>`).join(" ")||"NA";
+  let stage="";
+  if(o.status==="scheduled"){
+    stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">Scheduled</div>
+      <div class="desc">This flips to <b>Call Pending</b> automatically 3 hours before your slot. You can also start the pre-visit call now.</div>
+      <div class="actions"><button class="btn navy" id="toCall">Start pre-visit call</button></div></div>`;
+  } else if(o.status==="callpending"){
+    stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">Call Pending</div>
+      <div class="desc">Call the customer 1–2 hours before. Confirm they're available, then choose an outcome.</div>
+      <div class="note">Also call the BM (${o.bm}) to confirm which room each selected SKU is for, and cross-verify with the client.</div>
+      <div class="actions">
+        <button class="btn green" id="custYes">Customer confirmed → On the way</button>
+        <button class="btn warn" id="custNo">Customer declined → Reschedule</button></div></div>`;
+  } else if(o.status==="reschedule"){
+    stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">To Reschedule</div>
+      <div class="desc">Sent back to the Service Manager to rebook. No action needed from you until it's reassigned.</div></div>`;
+  } else if(o.status==="onway"){
+    stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">On The Way</div>
+      <div class="desc">Mark <b>At Site</b> when you arrive — that opens the Job Card.</div>
+      <div class="actions"><button class="btn blue" id="atSite">I've arrived → At Site</button></div></div>`;
+  } else if(o.status==="atsite"){
+    stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">At Site</div>
+      <div class="desc">Fill the Job Card, capture the client's signature, and complete the audit.</div>
+      <div class="actions"><button class="btn navy" id="openJC">${o.jobcard?'Resume Job Card':'Open Job Card'}</button></div></div>`;
+  } else if(o.status==="completed"){
+    stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big" style="color:var(--green)">Site Audit Completed</div>
+      <div class="desc">JobCard PDF generated and pushed to the Service Manager &amp; BM CRM.</div>
+      <div class="actions"><button class="btn ghost" id="dlPdf">Download Job Card PDF</button></div></div>`;
+  }
+  return stage+`
+    <div class="card"><h2>Customer</h2><div class="kv">
+      <div class="k">Name</div><div class="v">${o.name}</div>
+      <div class="k">Phone</div><div class="v"><a class="maplink" href="tel:${o.phone.replace(/\s/g,'')}">${o.phone}</a></div>
+      <div class="k">Address</div><div class="v"><a class="maplink" href="${mapUrl(o.addr)}" target="_blank" rel="noopener">${o.addr} &#8599;</a></div>
+      <div class="k">BM</div><div class="v">${o.bm}</div>
+      <div class="k">Audit for</div><div class="v">${skus}</div></div>
+      <div class="actions"><a class="callbtn" href="tel:${o.phone.replace(/\s/g,'')}">&#128222; Call customer</a></div>
+    </div>`;
+}
+function wireDetail(o){
+  $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
+  const adv=(st,msg)=>{o.status=st;toast(msg);openDetail(o.pi);};
+  if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Moved to Call Pending");
+  if($("#custYes"))$("#custYes").onclick=()=>adv("onway","On the way — SM notified");
+  if($("#custNo"))$("#custNo").onclick=()=>{adv("reschedule","Sent to SM for reschedule");};
+  if($("#atSite"))$("#atSite").onclick=()=>adv("atsite","At site — open the Job Card");
+  if($("#openJC"))$("#openJC").onclick=()=>openJobCard(o);
+  if($("#dlPdf"))$("#dlPdf").onclick=()=>{if(o.jobcard)genPDF(o);};
+}
+
+/* ============== JOB CARD ============== */
+let jcOrder=null, jcRooms=[], jcSeq=0, jcSign=null, jcSignPad=null;
+
+class Sketch{
+  constructor(c){this.c=c;this.ctx=c.getContext('2d');this.strokes=[];this.cur=null;this.draw=false;this.fit();this.bind();}
+  fit(){const dpr=window.devicePixelRatio||1;const r=this.c.getBoundingClientRect();if(!r.width)return;this.w=r.width;this.h=r.height;this.c.width=Math.round(r.width*dpr);this.c.height=Math.round(r.height*dpr);this.ctx.setTransform(dpr,0,0,dpr,0,0);this.render();}
+  bind(){const pos=e=>{const r=this.c.getBoundingClientRect();const p=e.touches?e.touches[0]:e;return{x:(p.clientX-r.left)/r.width,y:(p.clientY-r.top)/r.height};};
+    this.c.addEventListener('pointerdown',e=>{e.preventDefault();this.draw=true;this.cur=[pos(e)];this.strokes.push(this.cur);});
+    this.c.addEventListener('pointermove',e=>{if(!this.draw)return;e.preventDefault();this.cur.push(pos(e));this.render();});
+    window.addEventListener('pointerup',()=>{this.draw=false;this.cur=null;});}
+  render(){const x=this.ctx,w=this.w,h=this.h;if(!w)return;x.clearRect(0,0,w,h);x.fillStyle='#fff';x.fillRect(0,0,w,h);const s=22;x.fillStyle='#b2b8c1';for(let yy=s;yy<h;yy+=s)for(let xx=s;xx<w;xx+=s){x.beginPath();x.arc(xx,yy,1.3,0,7);x.fill();}x.strokeStyle='#1F3A5F';x.lineWidth=2.2;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*w,Y=p.y*h;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}}
+  undo(){this.strokes.pop();this.render();} clear(){this.strokes=[];this.render();}
+  export(){const W=1000,H=Math.round(1000*((this.h/this.w)||0.5));const o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);const s=Math.round(22*(W/(this.w||300)));x.fillStyle='#b2b8c1';for(let yy=s;yy<H;yy+=s)for(let xx=s;xx<W;xx+=s){x.beginPath();x.arc(xx,yy,2,0,7);x.fill();}x.strokeStyle='#1F3A5F';x.lineWidth=3.2;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}return o.toDataURL('image/jpeg',0.85);}
+}
+class SignPad{
+  constructor(c){this.c=c;this.ctx=c.getContext('2d');this.strokes=[];this.cur=null;this.draw=false;this.fit();this.bind();}
+  fit(){const dpr=window.devicePixelRatio||1;const r=this.c.getBoundingClientRect();if(!r.width)return;this.w=r.width;this.h=r.height;this.c.width=Math.round(r.width*dpr);this.c.height=Math.round(r.height*dpr);this.ctx.setTransform(dpr,0,0,dpr,0,0);this.render();}
+  bind(){const pos=e=>{const r=this.c.getBoundingClientRect();const p=e.touches?e.touches[0]:e;return{x:(p.clientX-r.left)/r.width,y:(p.clientY-r.top)/r.height};};
+    this.c.addEventListener('pointerdown',e=>{e.preventDefault();this.draw=true;this.cur=[pos(e)];this.strokes.push(this.cur);});
+    this.c.addEventListener('pointermove',e=>{if(!this.draw)return;e.preventDefault();this.cur.push(pos(e));this.render();});
+    window.addEventListener('pointerup',()=>{this.draw=false;this.cur=null;});}
+  render(){const x=this.ctx,w=this.w,h=this.h;if(!w)return;x.clearRect(0,0,w,h);x.fillStyle='#fff';x.fillRect(0,0,w,h);x.strokeStyle='#13294a';x.lineWidth=2.4;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*w,Y=p.y*h;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}}
+  clear(){this.strokes=[];this.render();}
+  isEmpty(){return this.strokes.length===0;}
+  export(){const W=900,H=Math.round(900*((this.h/this.w)||0.3));const o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.strokeStyle='#13294a';x.lineWidth=3;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}return o.toDataURL('image/jpeg',0.9);}
+}
+
+function openJobCard(o){
+  jcOrder=o; jcRooms=[]; jcSeq=0; jcSign=null;
+  $("#jcSub").textContent=`${o.pi} · ${o.name}`;
+  // restore if exists
+  $("#jcScreen").classList.remove("hide");
+  $("#jcFooter").classList.remove("hide");
+  renderJCHeader();
+  // seed one room per SKU type ticked
+  if(o.jobcard&&o.jobcard.rooms&&o.jobcard.rooms.length){
+    o.jobcard.rooms.forEach(r=>addRoom(r));
+  } else {
+    addRoom();
+  }
+  $("#jcBack").onclick=()=>{ o.jobcard={rooms:collectRooms()}; $("#jcScreen").classList.add("hide"); openDetail(o.pi); };
+  $("#jcAddRoom").onclick=()=>addRoom();
+  $("#jcReview").onclick=()=>reviewAndSign(o);
+}
+function renderJCHeader(){
+  const o=jcOrder;
+  $("#jcBody").innerHTML=`
+   <div class="card"><h2>Job details <span class="prefill">prefilled</span></h2>
+     <div class="grid2">
+       <div class="full"><label>Proforma Invoice No.</label><input value="${o.pi}" disabled></div>
+       <div><label>Client name</label><input value="${o.name}" disabled></div>
+       <div><label>Client mobile</label><input value="${o.phone}" disabled></div>
+       <div class="full"><label>Site address</label><input value="${o.addr}" disabled></div>
+       <div><label>Auditor</label><input value="${ME.name}" disabled></div>
+       <div><label>Date</label><input value="${fmtDate(o.date)}" disabled></div>
+     </div>
+   </div>
+   <div class="note">Add a room for every space audited. Pick the room type — calculation fields match Flooring or Wallpaper.</div>
+   <div id="roomsWrap"></div>`;
+}
+
+function addRoom(restore){
+  const id=++jcSeq;
+  const initType=restore?restore.type:(jcOrder.skus[0]?jcOrder.skus[0].type:'flooring');
+  const room={id,type:initType,name:restore?restore.name:'',sku:restore?restore.sku:'',photo:restore?restore.photo:null,calc:restore?Object.assign({},restore.calc):{},notes:restore?restore.notes:''};
+  const card=el('div','card');card.dataset.id=id;
+  const head=el('div','roomhead');head.appendChild(el('div','rn','Room / Space '+id));
+  const rm=el('button','btn warn sm','Remove');rm.style.flex='0 0 auto';rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);card.remove();renumber();};head.appendChild(rm);card.appendChild(head);
+
+  // type toggle
+  const tog=el('div','typetog');
+  const bFl=el('button',initType==='flooring'?'on':'','Wooden Flooring');
+  const bWp=el('button',initType==='wallpaper'?'on':'','Wallpaper');
+  tog.appendChild(bFl);tog.appendChild(bWp);card.appendChild(tog);
+
+  const g=el('div','grid2');
+  const nW=el('div','full');nW.appendChild(el('label',null,'Room name'));const nI=el('input');nI.placeholder='e.g. Master Bedroom';nI.value=room.name;nI.oninput=()=>room.name=nI.value;nW.appendChild(nI);g.appendChild(nW);
+  const sW=el('div','full');sW.appendChild(el('label',null,'SKU number (write NA if none)'));const sI=el('input');sI.placeholder='e.g. '+(room.sku||'WP-9020 / NA');sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;sW.appendChild(sI);g.appendChild(sW);
+  card.appendChild(g);
+
+  // photo
+  const pW=el('div');pW.style.marginTop='10px';pW.appendChild(el('label',null,'Room photo'));const prow=el('div','photo-row');
+  const file=document.createElement('input');file.type='file';file.accept='image/*';file.capture='environment';file.style.display='none';
+  const pick=el('button','btn ghost sm','Take / upload photo');pick.style.flex='0 0 auto';pick.onclick=()=>file.click();
+  const thumb=el('img');thumb.style.display=room.photo?'':'none';if(room.photo)thumb.src=room.photo;
+  file.onchange=()=>{const f=file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photo=rd.result;thumb.src=rd.result;thumb.style.display='';};rd.readAsDataURL(f);};
+  prow.appendChild(pick);prow.appendChild(thumb);prow.appendChild(file);pW.appendChild(prow);card.appendChild(pW);
+
+  // sketch
+  const skW=el('div');skW.style.marginTop='12px';skW.appendChild(el('label',null,'2D diagram (draw on the dotted sheet)'));const cv=document.createElement('canvas');cv.className='sketch';skW.appendChild(cv);
+  const bar=el('div','sketchbar');const undo=el('button','btn ghost sm','Undo');const clr=el('button','btn ghost sm','Clear');bar.appendChild(undo);bar.appendChild(clr);skW.appendChild(bar);card.appendChild(skW);
+
+  // calc (adaptive)
+  const cT=el('label',null,'Calculations');cT.style.marginTop='12px';card.appendChild(cT);
+  const cBox=el('div','grid2');card.appendChild(cBox);room._calcEl=cBox;
+
+  // notes
+  const ntW=el('div');ntW.style.marginTop='12px';ntW.appendChild(el('label',null,'Notes'));const nt=document.createElement('textarea');nt.placeholder='Site notes, access, special instructions…';nt.value=room.notes;nt.oninput=()=>room.notes=nt.value;ntW.appendChild(nt);card.appendChild(ntW);
+
+  $("#roomsWrap").appendChild(card);
+  const sk=new Sketch(cv);room._sketch=sk;undo.onclick=()=>sk.undo();clr.onclick=()=>sk.clear();window.addEventListener('resize',()=>sk.fit());setTimeout(()=>sk.fit(),60);
+  if(restore&&restore.sketchStrokes){room._sketch.strokes=restore.sketchStrokes;room._sketch.render();}
+
+  function renderCalc(){cBox.innerHTML='';fieldsFor(room.type).forEach(f=>{const wrap=el('div',f.type==='select'?'':'');wrap.appendChild(el('label',null,f.label));let inp;if(f.type==='select'){inp=document.createElement('select');f.opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;inp.appendChild(op);});}else{inp=document.createElement('input');inp.setAttribute('inputmode','decimal');if(f.ph)inp.placeholder=f.ph;}inp.value=room.calc[f.k]||'';const upd=()=>room.calc[f.k]=inp.value;inp.addEventListener('input',upd);inp.addEventListener('change',upd);wrap.appendChild(inp);cBox.appendChild(wrap);});}
+  renderCalc();
+  bFl.onclick=()=>{room.type='flooring';room.calc={};bFl.classList.add('on');bWp.classList.remove('on');renderCalc();};
+  bWp.onclick=()=>{room.type='wallpaper';room.calc={};bWp.classList.add('on');bFl.classList.remove('on');renderCalc();};
+
+  jcRooms.push(room);
+}
+function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((c,i)=>{const rn=c.querySelector('.rn');if(rn)rn.textContent='Room / Space '+(i+1);});}
+function collectRooms(){return jcRooms.map(r=>({type:r.type,name:r.name,sku:r.sku,photo:r.photo,calc:Object.assign({},r.calc),notes:r.notes,sketchStrokes:r._sketch?r._sketch.strokes:[]}));}
+
+/* ============== REVIEW + SIGN ============== */
+function reviewAndSign(o){
+  // validate at least a room name
+  if(jcRooms.length===0){toast("Add at least one room");return;}
+  $("#jcFooter").classList.add("hide");
+  const roomSummary=jcRooms.map((r,i)=>`<div class="kv" style="margin-bottom:8px"><div class="k">Room ${i+1}</div><div class="v">${r.name||'(unnamed)'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU ${r.sku||'NA'}</div></div>`).join("");
+  $("#jcBody").innerHTML=`
+   <div class="card"><h2>Review</h2><div class="kv">
+     <div class="k">Client</div><div class="v">${o.name}</div>
+     <div class="k">PI</div><div class="v">${o.pi}</div>
+     <div class="k">Rooms</div><div class="v">${jcRooms.length}</div></div>
+     <div style="height:10px"></div>${roomSummary}</div>
+   <div class="card"><h2>Client consent &amp; signature</h2>
+     <div class="note">By signing, the client confirms the site audit was carried out and the captured details are correct.</div>
+     <label>Client signature</label>
+     <canvas class="sign" id="signCanvas"></canvas>
+     <div class="sketchbar"><button class="btn ghost sm" id="signClear">Clear signature</button></div>
+     <div class="grid2" style="margin-top:8px">
+       <div><label>Client name (confirming)</label><input id="signName" value="${o.name}"></div>
+       <div><label>Date</label><input value="${fmtDate(o.date)}" disabled></div>
+     </div>
+   </div>
+   <div class="actions" style="margin-bottom:24px">
+     <button class="btn ghost" id="backToRooms">&#8592; Back to rooms</button>
+     <button class="btn green" id="finishAudit">Generate PDF &amp; complete</button>
+   </div>`;
+  const sc=$("#signCanvas");jcSignPad=new SignPad(sc);setTimeout(()=>jcSignPad.fit(),60);
+  $("#signClear").onclick=()=>jcSignPad.clear();
+  $("#backToRooms").onclick=()=>{$("#jcFooter").classList.remove("hide");renderJCHeader();const saved=collectRooms();jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
+  $("#finishAudit").onclick=async()=>{
+    if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
+    jcSign={img:jcSignPad.export(),name:$("#signName").value};
+    o.jobcard={rooms:collectRooms(),sign:jcSign};
+    o.status="completed";
+    toast("Building PDF…");
+    await genPDF(o);
+    $("#jcScreen").classList.add("hide");
+    openDetail(o.pi);
+    toast("Audit completed · sent to SM & BM CRM");
+  };
+}
+
+/* ============== PDF ============== */
+const LOGO=null;
+async function genPDF(o){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
+  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const rooms=o.jobcard.rooms;
+  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);
+    doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Site Audit Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  header();
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+    body:[['Proforma Invoice No.',o.pi],['Client Name',o.name],['Client Mobile',o.phone],['Site Address',o.addr],['BM',o.bm],['Auditor',ME.name],['Date',fmtDate(o.date)]]});
+  y=doc.lastAutoTable.finalY+10;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
+    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+
+  rooms.forEach((r,i)=>{
+    doc.addPage();y=M;header();
+    const fields=fieldsFor(r.type);
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc[f.k]||'')])});
+    y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    // sketch
+    const sketchImg=renderSketchData(r);
+    if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
+    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(r.photo,imgFmt(r.photo),M+colW+12,y+6,colW,ih);}catch(e){}}
+    y+=ih+18;
+    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
+  });
+
+  // consent + signature page
+  doc.addPage();y=M;header();
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+  const consent="I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.";
+  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=70;
+  doc.setFontSize(10);doc.setTextColor(...muted);
+  doc.text('Client name: '+((o.jobcard.sign&&o.jobcard.sign.name)||o.name),M,y);y+=18;
+  doc.text('Date: '+fmtDate(o.date),M,y);
+  // signature bottom-right
+  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
+  if(o.jobcard.sign&&o.jobcard.sign.img){try{doc.addImage(o.jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+
+  const fn=('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');
+  doc.save(fn);
+}
+// re-render a saved room's sketch strokes into an image for the PDF
+function renderSketchData(r){
+  if(!r.sketchStrokes||!r.sketchStrokes.length)return null;
+  const W=1000,H=500;const o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);const s=Math.round(22*(W/360));x.fillStyle='#b2b8c1';
+  for(let yy=s;yy<H;yy+=s)for(let xx=s;xx<W;xx+=s){x.beginPath();x.arc(xx,yy,2,0,7);x.fill();}
+  x.strokeStyle='#1F3A5F';x.lineWidth=3.2;x.lineJoin='round';x.lineCap='round';
+  for(const st of r.sketchStrokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}
+  return o.toDataURL('image/jpeg',0.85);
+}
+
+$("#jcBack").onclick=()=>{$("#jcScreen").classList.add("hide");};
+renderList();
+</script>
+</body>
+</html>
