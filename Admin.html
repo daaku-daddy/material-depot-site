@@ -289,9 +289,9 @@ async function renderOverview(m){
       <div class="stat-card"><div class="val">${active}</div><div class="lbl">Active Jobs Today</div><div class="bar"><div class="bar-fill" style="width:60%;background:var(--amber)"></div></div></div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Team Members</h2><button class="btn-primary" style="margin-left:auto" onclick="navigate('users')">Manage All →</button></div>
+      <div class="card-head"><h2>Team Members</h2><button class="btn-primary" style="margin-left:auto" onclick="openAddUser()">+ Add User</button></div>
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th><th>Actions</th></tr></thead>
         <tbody>
           ${list.length?list.slice(0,6).map(u=>`
             <tr>
@@ -299,8 +299,12 @@ async function renderOverview(m){
               <td style="color:var(--muted);font-family:monospace;font-size:12px">${u.email}</td>
               <td>${roleBadge(u.role)}</td>
               <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
+              <td><div style="display:flex;gap:6px">
+                <button class="btn-icon" onclick='openEditRole(${JSON.stringify(u)})'>✏️ Edit Role</button>
+                <button class="btn-icon del" onclick="confirmDelete('${u.id}','${u.name.replace(/'/g,"\\'")}')">🗑 Remove</button>
+              </div></td>
             </tr>`).join('')
-          :`<tr><td colspan="4"><div class="empty"><div class="e-ico">👥</div><div class="e-msg">No users yet — add some in the Users tab</div></div></td></tr>`}
+          :`<tr><td colspan="5"><div class="empty"><div class="e-ico">👥</div><div class="e-msg">No users yet — click "+ Add User" to get started</div></div></td></tr>`}
         </tbody>
       </table>
     </div>`;

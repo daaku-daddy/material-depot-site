@@ -68,13 +68,6 @@ const ROLE_FILES={
   site_auditor:{label:"Site Auditor",    file:"Site_Auditor_App.html",  color:"#2E6CA8", note:"Field audit app"},
   installer:   {label:"Site Installer",  file:"Site_Installer_App.html",color:"#1f7a3f", note:"Field installation app"},
 };
-const DEMO=[
-  {email:"priya.nair@materialdepot.com",   name:"Priya Nair",   role:"service_mgr"},
-  {email:"admin@materialdepot.com",        name:"Anita Desai",  role:"admin"},
-  {email:"rakesh.kumar@materialdepot.com", name:"Rakesh Kumar", role:"site_auditor"},
-  {email:"mahesh.pawar@materialdepot.com", name:"Mahesh Pawar", role:"installer"},
-];
-
 const $=s=>document.querySelector(s);
 let state={email:"",otp:"",sentCode:"",user:null};
 function genCode(){return String(Math.floor(100000+Math.random()*900000));}
@@ -88,21 +81,10 @@ function emailScreen(){
     <label>Work email</label>
     <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@materialdepot.com" value="${state.email}">
     <div class="err" id="err"></div>
-    <button class="btn" id="send">Send code</button>
-    <div class="demo">
-      <div class="dt">Demo accounts — tap to use</div>
-      <div class="demolist">
-        ${DEMO.map(d=>{const r=ROLE_FILES[d.role];
-          return `<button class="demobtn" data-email="${d.email}">
-            <div class="av" style="background:${r.color}">${initials(d.name)}</div>
-            <div><div class="nm">${d.name}</div><div class="rl">${r.label}</div></div>
-            <div class="em">${d.email.split('@')[0]}</div></button>`;}).join("")}
-      </div>
-    </div>`;
+    <button class="btn" id="send">Send code</button>`;
   $("#email").oninput=e=>state.email=e.target.value.trim();
   $("#send").onclick=trySend;
   $("#email").onkeydown=e=>{if(e.key==='Enter')trySend();};
-  document.querySelectorAll("[data-email]").forEach(b=>b.onclick=()=>{state.email=b.dataset.email;$("#email").value=state.email;trySend();});
 }
 async function trySend(){
   const err=$("#err");err.classList.remove("show");
