@@ -104,7 +104,7 @@
   <header>
     <div class="logo">MD</div>
     <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Auditor</div></div>
-    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b>Rakesh Kumar</b><br>Auditor · South BLR</div>
+    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Auditor</div>
   </header>
   <div class="wrap" id="listView"></div>
 </div>
@@ -134,8 +134,20 @@
 <div class="toast" id="toast"></div>
 
 <script>
-/* ============== DATA (mirrors orders assigned to this auditor) ============== */
-const ME={id:"a1",name:"Rakesh Kumar",zone:"South BLR"};
+/* ============== SUPABASE + SESSION ============== */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
+async function sbPatch(t,id,b){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});}
+function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
+
+const SESSION=getSession();
+if(!SESSION||SESSION.role!=='site_auditor'){window.location.href='Login.html';}
+const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',zone:''};
+document.getElementById('meName').textContent=ME.name;
+
+/* ============== DATA ============== */
 const AUDIT_SKU="SVC-AUDIT-001";
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){return d.toISOString().slice(0,10);}
@@ -153,24 +165,32 @@ const STATUS={
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
-// SKUs to audit carry a type so room calc fields can match
-let ORDERS=[
-  {pi:"PI-2026-00388",name:"Kavya Reddy",phone:"99016 44550",addr:"HSR Layout, Bengaluru 560102",bm:"Sneha P",
-   date:dstr(today),slot:"s1",status:"scheduled",
-   skus:[{type:"flooring",sku:"WF-OAK-10MM",num:"FL-3310"}], jobcard:null},
-  {pi:"PI-2026-00370",name:"Arjun Rao",phone:"99000 55671",addr:"48, Indiranagar 100ft Rd, Bengaluru 560038",bm:"Karthik R",
-   date:dstr(today),slot:"s2",status:"callpending",
-   skus:[{type:"wallpaper",sku:"WP-STD-441",num:"WP-4410"}], jobcard:null},
-  {pi:"PI-2026-00365",name:"Divya Menon",phone:"98800 33445",addr:"7th Block, Koramangala, Bengaluru 560095",bm:"Karthik R",
-   date:dstr(today),slot:"s3",status:"scheduled",
-   skus:[{type:"flooring",sku:"WF-WAL-8MM",num:"FL-9001"},{type:"wallpaper",sku:"WP-CUST-902",num:"WP-9020"}], jobcard:null},
-  {pi:"PI-2026-00351",name:"Sanjay Gupta",phone:"98453 77881",addr:"JP Nagar, Bengaluru 560078",bm:"Mohan L",
-   date:dstr(addDays(1)),slot:"s1",status:"scheduled",
-   skus:[{type:"wallpaper",sku:"WP-CUST-880",num:"WP-8810"}], jobcard:null},
-  {pi:"PI-2026-00349",name:"Rohit Shetty",phone:"97400 88112",addr:"Whitefield, Bengaluru 560066",bm:"Mohan L",
-   date:dstr(addDays(1)),slot:"s2",status:"scheduled",
-   skus:[{type:"flooring",sku:"WF-OAK-12MM",num:"FL-1201"}], jobcard:null},
-];
+let ORDERS=[];
+
+async function loadJobs(){
+  try{
+    const rows=await sbGet('audit_orders?auditor_email=eq.'+encodeURIComponent(ME.email)+'&select=*&order=created_at.desc');
+    if(!Array.isArray(rows)){return;}
+    // Preserve existing jobcard data (in-memory only, not in DB yet)
+    const existing={};ORDERS.forEach(o=>{if(o.jobcard)existing[o.pi]=o.jobcard;});
+    ORDERS=rows.map(r=>({
+      id:r.id,
+      pi:r.pi||'',
+      name:r.customer_name||'',
+      phone:r.phone||'',
+      addr:r.addr||'',
+      bm:r.bm||'',
+      date:r.date||null,
+      slot:r.slot||null,
+      status:r.status==='assigned'?'scheduled':r.status, // SM "assigned" → auditor sees "scheduled"
+      skus:r.skus||[],
+      log:r.log||[],
+      jobcard:existing[r.pi]||null
+    }));
+    renderList();
+  }catch(e){console.error('loadJobs',e);}
+}
+setInterval(loadJobs,30000);
 
 /* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
 const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
@@ -284,10 +304,19 @@ function detailBody(o){
 }
 function wireDetail(o){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
-  const adv=(st,msg)=>{o.status=st;toast(msg);openDetail(o.pi);};
+  const adv=async(st,msg)=>{
+    const prev=o.status;o.status=st;
+    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    const logMsg={callpending:"Pre-visit call started",onway:"Auditor on the way · customer confirmed",reschedule:"Customer declined → sent to SM to reschedule",atsite:"Auditor arrived at site",completed:"Site audit completed"}[st]||st;
+    o.log=o.log||[];o.log.push({t:logMsg,d:"Today "+now,by:"auto"});
+    // Map auditor status back to SM status vocabulary for DB
+    const dbStatus=st==='scheduled'?'assigned':st;
+    if(o.id){try{await sbPatch('audit_orders',o.id,{status:dbStatus,log:o.log});}catch(e){o.status=prev;toast("Network error — try again");return;}}
+    toast(msg);openDetail(o.pi);
+  };
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Moved to Call Pending");
   if($("#custYes"))$("#custYes").onclick=()=>adv("onway","On the way — SM notified");
-  if($("#custNo"))$("#custNo").onclick=()=>{adv("reschedule","Sent to SM for reschedule");};
+  if($("#custNo"))$("#custNo").onclick=()=>adv("reschedule","Sent to SM for reschedule");
   if($("#atSite"))$("#atSite").onclick=()=>adv("atsite","At site — open the Job Card");
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(o);
   if($("#dlPdf"))$("#dlPdf").onclick=()=>{if(o.jobcard)genPDF(o);};
@@ -512,7 +541,7 @@ function renderSketchData(r){
 
 $("#jcBack").onclick=()=>{$("#jcScreen").classList.add("hide");};
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
-renderList();
+loadJobs();
 </script>
 </body>
 </html>

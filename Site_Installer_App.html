@@ -102,7 +102,7 @@
   <header>
     <div class="logo">MD</div>
     <div><div class="h">My Installations</div></div>
-    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">Mahesh Pawar</b><br><span id="meType">Flooring Installer</span></div>
+    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br><span id="meType">Installer</span></div>
   </header>
   <div class="wrap" id="listView"></div>
 </div>
@@ -132,8 +132,19 @@
 <div class="toast" id="toast"></div>
 
 <script>
-/* ============== INSTALLER & DATA ============== */
-const ME={id:"f1",name:"Mahesh Pawar",type:"flooring",zone:"South"}; // flooring installer demo
+/* ============== SUPABASE + SESSION ============== */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
+async function sbPatch(t,id,b){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});}
+function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
+
+const SESSION=getSession();
+if(!SESSION||SESSION.role!=='installer'){window.location.href='Login.html';}
+const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'flooring',zone:''};
+
+/* ============== DATA ============== */
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){return d.toISOString().slice(0,10);}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
@@ -148,28 +159,43 @@ const STATUS={
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
-/* Each job = one sub-job assigned to this installer. Includes the matched site-audit report (read only). */
-let JOBS=[
-  {pi:"PI-2026-00488",name:"Kavya Reddy",phone:"99016 44550",addr:"HSR Layout, Bengaluru 560102",bm:"Sneha P",
-   type:"flooring",date:dstr(today),slot:"s1",status:"scheduled",
-   sku:[{num:"FL-3310",name:"Oak Laminate 10mm"}],
-   audit:{auditor:"Rakesh Kumar",date:"Mon, 2 Jun",rooms:[
-     {name:"Living Room",type:"flooring",calc:{area:"220",boxes:"11",skirt:"18",skirtH:"75"},photo:null,sketch:null},
-     {name:"Bedroom",type:"flooring",calc:{area:"150",boxes:"8",skirt:"14",skirtH:"75"},photo:null,sketch:null}]},
-   jobcard:null},
-  {pi:"PI-2026-00466",name:"Lakshmi N",phone:"98860 22119",addr:"Jayanagar 4th Block, Bengaluru 560011",bm:"Karthik R",
-   type:"flooring",date:dstr(today),slot:"s2",status:"callpending",
-   sku:[{num:"FL-1102",name:"Oak Laminate 12mm"}],
-   audit:{auditor:"Anand Verma",date:"Fri, 30 May",rooms:[
-     {name:"Hall",type:"flooring",calc:{area:"310",boxes:"16",skirt:"22",skirtH:"100"},photo:null,sketch:null}]},
-   jobcard:null},
-  {pi:"PI-2026-00450",name:"Suresh Rao",phone:"98452 19087",addr:"BTM Layout, Bengaluru 560076",bm:"Mohan L",
-   type:"flooring",date:dstr(addDays(1)),slot:"s1",status:"scheduled",
-   sku:[{num:"FL-7740",name:"Walnut Laminate 8mm"}],
-   audit:{auditor:"Rakesh Kumar",date:"Tue, 3 Jun",rooms:[
-     {name:"Master Bedroom",type:"flooring",calc:{area:"180",boxes:"9",skirt:"16",skirtH:"75"},photo:null,sketch:null}]},
-   jobcard:null},
-];
+let JOBS=[];
+
+async function loadJobs(){
+  try{
+    const rows=await sbGet('install_orders?select=*&order=created_at.desc');
+    if(!Array.isArray(rows)){return;}
+    // Preserve existing jobcard data
+    const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'_'+j.sjId]=j.jobcard;});
+    const newJobs=[];
+    rows.forEach(r=>{
+      (r.subjobs||[]).forEach(sj=>{
+        if(sj.installer_email===ME.email){
+          newJobs.push({
+            id:r.id,
+            sjId:sj.id,
+            pi:r.pi||'',
+            name:r.customer_name||'',
+            phone:r.phone||'',
+            addr:r.addr||'',
+            bm:r.bm||'',
+            type:sj.type||'flooring',
+            date:sj.date||null,
+            slot:sj.slot||null,
+            status:sj.status==='assigned'?'scheduled':sj.status,
+            sku:(sj.items||[]).map(it=>({num:it.num||'',name:it.sku||it.name||''})),
+            audit:null,
+            jobcard:existing[r.pi+'_'+sj.id]||null,
+            parentLog:r.log||[]
+          });
+        }
+      });
+    });
+    JOBS=newJobs;
+    renderList();
+  }catch(e){console.error('loadJobs',e);}
+}
+setInterval(loadJobs,30000);
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
@@ -186,7 +212,8 @@ function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="schedul
 let selDay=dstr(today);
 function listView(){
   autoFlip();
-  $("#meName").textContent=ME.name;$("#meType").textContent=(ME.type==="wallpaper"?"Wallpaper":"Flooring")+" Installer";
+  if($("#meName"))$("#meName").textContent=ME.name;
+  if($("#meType"))$("#meType").textContent=(ME.type==="wallpaper"?"Wallpaper":"Flooring")+" Installer";
   const days=[today,addDays(1),addDays(2)];
   const tabs=days.map(d=>{const ds=dstr(d);const n=JOBS.filter(j=>j.date===ds).length;
     return `<div class="day ${selDay===ds?'on':''}" data-day="${ds}">
@@ -194,7 +221,7 @@ function listView(){
       <div class="dd">${d.getDate()}</div><div class="ct">${n} job${n!==1?'s':''}</div></div>`;}).join("");
   const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>a.slot.localeCompare(b.slot));
   const todo=list.filter(j=>j.status!=="completed"),done=list.filter(j=>j.status==="completed");
-  const card=j=>`<div class="jobcard" data-pi="${j.pi}">
+  const card=j=>`<div class="jobcard" data-key="${j.pi}_${j.sjId}">
     <div class="time">${slotLabel(j.slot)}</div>
     <div class="nm">${j.name}</div>
     <div class="ad">${j.addr}</div>
@@ -207,13 +234,13 @@ function listView(){
 }
 function renderList(){$("#listView").innerHTML=listView();
   document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
-  document.querySelectorAll(".jobcard[data-pi]").forEach(c=>c.onclick=()=>openDetail(c.dataset.pi));
+  document.querySelectorAll(".jobcard[data-key]").forEach(c=>c.onclick=()=>openDetail(c.dataset.key));
 }
 
 /* ============== DETAIL (one clear action) ============== */
-let curPI=null;
-function openDetail(pi){
-  curPI=pi;const j=JOBS.find(x=>x.pi===pi);if(!j)return;
+let curKey=null;
+function openDetail(key){
+  curKey=key;const [pi,sjId]=key.split('_');const j=JOBS.find(x=>x.pi===pi&&x.sjId===sjId);if(!j)return;
   $("#detName").textContent=j.name;
   $("#detSub").textContent=fmtDate(j.date)+" · "+slotLabel(j.slot);
   $("#detBody").innerHTML=detailBody(j);
@@ -268,7 +295,25 @@ function detailBody(j){
 }
 function wireDetail(j){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
-  const adv=(st,msg)=>{j.status=st;toast(msg);openDetail(j.pi);};
+  const adv=async(st,msg)=>{
+    const prev=j.status;j.status=st;
+    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    const logMsg={callpending:"Pre-install call started",onway:"Installer on the way · customer confirmed",reschedule:"Customer declined → sent to office to reschedule",atsite:"Installer arrived at site",completed:"Installation completed"}[st]||st;
+    j.parentLog=j.parentLog||[];j.parentLog.push({t:logMsg,d:"Today "+now,by:"auto"});
+    if(j.id&&j.sjId){
+      try{
+        // Need to update this specific subjob's status in the parent order's subjobs array
+        const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log');
+        if(Array.isArray(parentRows)&&parentRows[0]){
+          const subjobs=parentRows[0].subjobs||[];
+          const sj=subjobs.find(s=>s.id===j.sjId);
+          if(sj){sj.status=st==='scheduled'?'assigned':st;}
+          await sbPatch('install_orders',j.id,{subjobs,log:j.parentLog});
+        }
+      }catch(e){j.status=prev;toast("Network error — try again");return;}
+    }
+    toast(msg);openDetail(j.pi+'_'+j.sjId);
+  };
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Now: call the customer");
   if($("#yes"))$("#yes").onclick=()=>adv("onway","Marked: on the way");
   if($("#no"))$("#no").onclick=()=>adv("reschedule","Sent to office to reschedule");
@@ -424,7 +469,7 @@ async function genPDF(j){
 }
 
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
-renderList();
+loadJobs();
 </script>
 </body>
 </html>

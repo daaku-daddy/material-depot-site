@@ -205,8 +205,8 @@
     <button class="active" id="vInstall">Installations</button>
   </div>
   <div class="right">
-    <div class="who"><b>Priya Nair</b><br>Service Manager · Bengaluru</div>
-    <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer">PN</div>
+    <div class="who"><b id="smName">…</b><br>Service Manager</div>
+    <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer">SM</div>
   </div>
 </header>
 
@@ -304,22 +304,30 @@
 </div>
 
 <script>
+/* ============== SUPABASE ============== */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
+async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});return r.json();}
+async function sbPatch(t,id,b){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});}
+function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
+
+const SESSION=getSession();
+if(!SESSION||SESSION.role!=='service_mgr'){window.location.href='Login.html';}
+document.getElementById('smName').textContent=SESSION?SESSION.name:'';
+(function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
+
 /* ============== CONFIG ============== */
 const INSTALL_SKU="SVC-INSTALL-001";
-const CUSTOM_WP_SKU="WP-CUST"; // prefix marking customised wallpaper -> 3-day Ops call
+const CUSTOM_WP_SKU="WP-CUST";
 let SLOTS=[{id:"s1",label:"9 AM – 12 PM"},{id:"s2",label:"12 PM – 3 PM"},{id:"s3",label:"3 PM – 6 PM"}];
 
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){return d.toISOString().slice(0,10);}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 
-// typed installers: flooring cap = 1 job/day; wallpaper cap = 2 SLOTS/day (>=5 rolls uses 2, <5 uses 1)
-const INSTALLERS=[
-  {id:"f1",type:"flooring",name:"Mahesh Pawar",zone:"South",phone:"98861 30011"},
-  {id:"f2",type:"flooring",name:"Ganesh Iyer",zone:"East",phone:"98861 30022"},
-  {id:"w1",type:"wallpaper",name:"Faisal Khan",zone:"Central",phone:"98861 30033"},
-  {id:"w2",type:"wallpaper",name:"Deepak Joshi",zone:"North",phone:"98861 30044"},
-];
+let INSTALLERS=[];
 const FLOOR_DAY_CAP=1;       // jobs/installer/day
 const WP_DAY_SLOTS=2;        // slots/installer/day
 const slotsForWp=rolls=>(Number(rolls)>=5?2:1);
@@ -332,6 +340,7 @@ const STATUS={
   call_na:{l:"Call not picked",c:"c-call_na"},
   scheduled:{l:"Site Installation Scheduled",c:"c-scheduled"},
   assigned:{l:"Site Installer Assigned",c:"c-assigned"},
+  callpending:{l:"Call Pending (Installer)",c:"c-assigned"},
   reschedule:{l:"To Reschedule",c:"c-reschedule"},
   onway:{l:"On The Way",c:"c-onway"},
   atsite:{l:"At Site",c:"c-atsite"},
@@ -341,75 +350,40 @@ const STATUS={
 const AUTO_STATUSES=["onway","atsite","completed"];
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
-/* ============== ORDERS ==============
-  Each order can have multiple installable items across two types.
-  After service creation, order.subjobs = [{type, items:[{sku,num,rolls}], date, slot, installer, status}]
-  matchedAudit: simulated prior-audit lookup by phone+address.
-*/
-let ORDERS=[
-  {pi:"PI-2026-00520",po:["PO-WF-8811","PO-ACC-8812"],
-   skus:[{c:"WF-OAK-12MM",n:"Oak Laminate 12mm",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Karthik R",name:"Meera Iyer",phone:"98450 11234",addr:"12, Brigade Rd, Bengaluru 560001",
-   matchedAudit:true, deliveryDate:dstr(addDays(1)), customWp:false,
-   status:"pending", subjobs:null, service:null,
-   log:[{t:"Order confirmed (POs generated)",d:"Today 09:14"},{t:"Matched to completed Site Audit (phone+address)",d:"Today 09:14",by:"auto"}]},
+let ORDERS=[];
 
-  {pi:"PI-2026-00515",po:["PO-WP-8790"],
-   skus:[{c:"WP-CUST-902",n:"Custom Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Sneha P",name:"Arjun Rao",phone:"99000 55671",addr:"48, Indiranagar 100ft Rd, Bengaluru 560038",
-   matchedAudit:true, deliveryDate:dstr(addDays(3)), customWp:true,
-   status:"pending", subjobs:null, service:null,
-   log:[{t:"Order confirmed",d:"Yesterday 16:40"},{t:"Matched to completed Site Audit",d:"Yesterday 16:40",by:"auto"}]},
+/* ============== SUPABASE LOAD ============== */
+async function loadInstallers(){
+  try{
+    const rows=await sbGet('profiles?role=eq.installer&select=id,name,email');
+    INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:'flooring',zone:'',phone:''}));
+  }catch(e){console.error('loadInstallers',e);}
+}
 
-  {pi:"PI-2026-00508",po:["PO-WF-8770","PO-WP-8771"],
-   skus:[{c:"WF-WAL-8MM",n:"Walnut Laminate",type:"flooring",audit:false},{c:"WP-STD-441",n:"Standard Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Karthik R",name:"Divya Menon",phone:"98800 33445",addr:"7th Block, Koramangala, Bengaluru 560095",
-   matchedAudit:true, deliveryDate:dstr(addDays(1)), customWp:false,
-   status:"deliv_ontime", subjobs:null, service:null,
-   log:[{t:"Order confirmed",d:"2 days ago"},{t:"Operations confirmed delivery on time",d:"Today 10:10",by:"manual"}]},
-
-  {pi:"PI-2026-00499",po:["PO-WP-8740"],
-   skus:[{c:"WP-STD-220",n:"Standard Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Mohan L",name:"Rohit Shetty",phone:"97400 88112",addr:"Whitefield, Bengaluru 560066",
-   matchedAudit:true, deliveryDate:dstr(today), customWp:false,
-   status:"created", subjobs:null,
-   service:{wallpaper:[{sku:"WP-STD-220",num:"WP-5521",rolls:"3"}],flooring:[]},
-   log:[{t:"Order confirmed",d:"3 days ago"},{t:"Delivery confirmed on time",d:"Yesterday",by:"manual"},{t:"Service created",d:"Yesterday 14:00",by:"manual"}]},
-
-  {pi:"PI-2026-00488",po:["PO-WF-8701"],
-   skus:[{c:"WF-OAK-10MM",n:"Oak Laminate 10mm",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Sneha P",name:"Kavya Reddy",phone:"99016 44550",addr:"HSR Layout, Bengaluru 560102",
-   matchedAudit:true, deliveryDate:dstr(addDays(-1)), customWp:false,
-   status:"scheduled", subjobs:[{id:"sj1",type:"flooring",items:[{sku:"WF-OAK-10MM",num:"FL-3310",rolls:""}],date:dstr(addDays(1)),slot:"s1",installer:null,status:"scheduled"}],
-   service:{flooring:[{sku:"WF-OAK-10MM",num:"FL-3310",rolls:""}],wallpaper:[]},
-   log:[{t:"Delivery on time",d:"2 days ago",by:"manual"},{t:"Service created",d:"2 days ago",by:"manual"},{t:"Install slot booked: "+fmtDateRaw(addDays(1))+" · 9AM–12PM",d:"Yesterday",by:"manual"}]},
-
-  {pi:"PI-2026-00477",po:["PO-WP-8688"],
-   skus:[{c:"WP-CUST-880",n:"Custom Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Mohan L",name:"Sanjay Gupta",phone:"98453 77881",addr:"JP Nagar, Bengaluru 560078",
-   matchedAudit:true, deliveryDate:dstr(addDays(-2)), customWp:true,
-   status:"assigned", subjobs:[{id:"sj1",type:"wallpaper",items:[{sku:"WP-CUST-880",num:"WP-8810",rolls:"6"}],date:dstr(today),slot:"s2",installer:"w1",status:"assigned"}],
-   service:{flooring:[],wallpaper:[{sku:"WP-CUST-880",num:"WP-8810",rolls:"6"}]},
-   log:[{t:"Delivery on time",d:"4 days ago",by:"manual"},{t:"Service created",d:"3 days ago",by:"manual"},{t:"Install slot booked",d:"2 days ago",by:"manual"},{t:"Installer assigned: Faisal Khan · SMS sent to customer",d:"Yesterday",by:"manual"}]},
-
-  {pi:"PI-2026-00466",po:["PO-WF-8651","PO-WP-8652"],
-   skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",type:"flooring",audit:false},{c:"WP-STD-301",n:"Standard Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Karthik R",name:"Lakshmi N",phone:"98860 22119",addr:"Jayanagar 4th Block, Bengaluru 560011",
-   matchedAudit:true, deliveryDate:dstr(addDays(-3)), customWp:false,
-   status:"partial",
-   subjobs:[
-     {id:"sj1",type:"flooring",items:[{sku:"WF-OAK-12MM",num:"FL-1102",rolls:""}],date:dstr(addDays(-1)),slot:"s1",installer:"f1",status:"completed"},
-     {id:"sj2",type:"wallpaper",items:[{sku:"WP-STD-301",num:"WP-3011",rolls:"4"}],date:dstr(today),slot:"s2",installer:"w2",status:"onway"}],
-   service:{flooring:[{sku:"WF-OAK-12MM",num:"FL-1102",rolls:""}],wallpaper:[{sku:"WP-STD-301",num:"WP-3011",rolls:"4"}]},
-   log:[{t:"Delivery on time",d:"5 days ago",by:"manual"},{t:"Service created",d:"4 days ago",by:"manual"},{t:"Flooring installed (Mahesh Pawar)",d:"Yesterday",by:"auto"},{t:"Wallpaper installer on the way (Deepak Joshi)",d:"Today 09:30",by:"auto"}]},
-
-  {pi:"PI-2026-00455",po:["PO-WP-8640"],
-   skus:[{c:"WP-CUST-770",n:"Custom Wallpaper",type:"wallpaper",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],
-   bm:"Sneha P",name:"Vikram Singh",phone:"97391 66220",addr:"Marathahalli, Bengaluru 560037",
-   matchedAudit:false, deliveryDate:dstr(addDays(5)), customWp:true,
-   status:"pending", subjobs:null, service:null,
-   log:[{t:"Order confirmed",d:"Today 08:20"},{t:"WARNING: no matching completed Site Audit found for this customer",d:"Today 08:20",by:"auto"}]},
-];
+async function loadOrders(){
+  try{
+    const rows=await sbGet('install_orders?select=*&order=created_at.desc');
+    if(!Array.isArray(rows)){return;}
+    ORDERS=rows.map(r=>({
+      id:r.id,
+      pi:r.pi||'',
+      po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
+      skus:r.skus||[],
+      bm:r.bm||'—',
+      name:r.customer_name||'',
+      phone:r.phone||'',
+      addr:r.addr||'',
+      matchedAudit:r.matched_audit||false,
+      deliveryDate:r.delivery_date||null,
+      customWp:r.custom_wp||false,
+      status:r.status||'pending',
+      subjobs:r.subjobs||null,
+      service:r.service||null,
+      log:r.log||[]
+    }));
+    render();
+  }catch(e){console.error('loadOrders',e);}
+}
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
@@ -746,11 +720,11 @@ function wireDrawer(o){
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
 
   // manual status
-  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});toast("Status: "+STATUS[st].l);render();openOrder(o.pi);});
+  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});toast("Status: "+STATUS[st].l);render();openOrder(o.pi);});
 
   // delivery outcomes
-  if($("#markOnTime"))$("#markOnTime").onclick=()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:"Just now",by:"manual"});toast("Delivery on time — create service next");render();openOrder(o.pi);};
-  if($("#markDelayed"))$("#markDelayed").onclick=()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:"Delivery delayed — BM asked to inform client. New date: "+fmtDate(nd),d:"Just now",by:"manual"});toast("Marked delivery delayed");render();openOrder(o.pi);};
+  if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});toast("Delivery on time — create service next");render();openOrder(o.pi);};
+  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:"Delivery delayed — BM asked to inform client. New date: "+fmtDate(nd),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});toast("Marked delivery delayed");render();openOrder(o.pi);};
 
   // service creation
   function renderSkuRows(grp){
@@ -774,16 +748,16 @@ function wireDrawer(o){
   if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
   if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
 
-  if($("#createService"))$("#createService").onclick=()=>{
+  if($("#createService"))$("#createService").onclick=async()=>{
     const fl=draft.flooring.filter(r=>r.sku||r.num),wp=draft.wallpaper.filter(r=>r.sku||r.num);
     if(!fl.length&&!wp.length){toast("Add at least one SKU");return;}
     o.service={flooring:fl,wallpaper:wp};
-    // build sub-jobs (one per type present)
     o.subjobs=[];
-    if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,status:"created"});
-    if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,status:"created"});
+    if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,installer_email:null,status:"created"});
+    if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,installer_email:null,status:"created"});
     o.status="created";
     o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
     toast("Service created — "+o.subjobs.length+" sub-job(s)");render();openOrder(o.pi);
   };
 
@@ -811,9 +785,10 @@ function wireDrawer(o){
     }
     document.getElementById("sd_"+sj.id).onchange=()=>{pickedSlot=null;renderSlots();document.getElementById("confirmSched_"+sj.id).disabled=true;};
     renderSlots();
-    document.getElementById("confirmSched_"+sj.id).onclick=()=>{
+    document.getElementById("confirmSched_"+sj.id).onclick=async()=>{
       sj.date=document.getElementById("sd_"+sj.id).value;sj.slot=pickedSlot;sj.status="scheduled";
       syncParent(o);o.log.push({t:sj.type+" install scheduled: "+fmtDate(sj.date)+" · "+slotLabel(sj.slot),d:"Just now",by:"manual"});
+      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       toast("Sub-job scheduled");render();openOrder(o.pi);
     };
   });
@@ -834,9 +809,11 @@ function wireDrawer(o){
           <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${loadtxt}${full?' · full':''}</div></div>`;
       }).join("")+`</div><button class="btn primary sm" id="confirmAssign_${sj.id}" style="margin-top:10px" disabled>Assign installer</button>`;
     box.querySelectorAll(".installerrow:not(.full)").forEach(el=>el.onclick=()=>{picked=el.dataset.i;box.querySelectorAll(".installerrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");document.getElementById("confirmAssign_"+sj.id).disabled=false;});
-    document.getElementById("confirmAssign_"+sj.id).onclick=()=>{
+    document.getElementById("confirmAssign_"+sj.id).onclick=async()=>{
       sj.installer=picked;sj.status="assigned";const a=installerById(picked);
+      sj.installer_email=a.email||null;
       syncParent(o);o.log.push({t:sj.type+" installer assigned: "+a.name+" · SMS sent to customer",d:"Just now",by:"manual"});
+      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       toast("Assigned "+a.name);render();openOrder(o.pi);
     };
   });
@@ -904,7 +881,7 @@ function addSkuRow(){
   row.innerHTML=`<input class="ao-sku-code" placeholder="SKU code"><select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option></select>`;
   document.getElementById("ao-sku-list").appendChild(row);
 }
-function submitAddOrder(){
+async function submitAddOrder(){
   const pi      = document.getElementById("ao-pi").value.trim();
   const poRaw   = document.getElementById("ao-po").value.trim();
   const name    = document.getElementById("ao-name").value.trim();
@@ -929,22 +906,42 @@ function submitAddOrder(){
   skus.push({c:INSTALL_SKU,n:"Installation",type:"install",audit:false});
 
   const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-  ORDERS.unshift({
-    pi,po,skus,bm,name,phone,addr,
-    matchedAudit:false,
-    deliveryDate:delivery||null,
-    customWp,
-    status:"pending",
-    subjobs:null,service:null,
-    log:[{t:"Order added manually by Service Manager",d:"Today "+now}]
-  });
+  const logEntry={t:"Order added manually by "+SESSION.name,d:"Today "+now};
 
-  closeAddOrder();
-  render();
-  toast("✓ Installation order "+pi+" added");
+  document.getElementById("ao-submit").disabled=true;
+  try{
+    const saved=await sbPost('install_orders',{
+      pi, po:po.join(','), skus, bm,
+      customer_name:name, phone, addr,
+      matched_audit:false,
+      delivery_date:delivery||null,
+      custom_wp:customWp,
+      status:'pending',
+      log:[logEntry],
+      created_by_email:SESSION.email
+    });
+    const row=Array.isArray(saved)?saved[0]:null;
+    ORDERS.unshift({
+      id:row?row.id:null,
+      pi,po,skus,bm,name,phone,addr,
+      matchedAudit:false,
+      deliveryDate:delivery||null,
+      customWp,
+      status:"pending",
+      subjobs:null,service:null,
+      log:[logEntry]
+    });
+    closeAddOrder();
+    render();
+    toast("✓ Installation order "+pi+" added");
+  }catch(e){
+    err.textContent="Failed to save order. Check network and try again.";err.classList.add("show");
+  }
+  document.getElementById("ao-submit").disabled=false;
 }
 document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
-render();
+
+Promise.all([loadInstallers(),loadOrders()]).then(()=>{setInterval(loadOrders,30000);});
 </script>
 </body>
 </html>

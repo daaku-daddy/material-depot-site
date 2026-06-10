@@ -207,8 +207,8 @@
     <button id="vInstall">Installations</button>
   </div>
   <div class="right">
-    <div class="who"><b>Priya Nair</b><br>Service Manager · Bengaluru</div>
-    <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer">PN</div>
+    <div class="who"><b id="smName">…</b><br>Service Manager</div>
+    <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer" id="smAvatar">SM</div>
   </div>
 </header>
 
@@ -300,16 +300,25 @@
 </div>
 
 <script>
-/* ============== CONFIG / MOCK DATA ============== */
+/* ============== SUPABASE ============== */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
+async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});return r.json();}
+async function sbPatch(t,id,b){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});}
+function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
+
+const SESSION=getSession();
+if(!SESSION||SESSION.role!=='service_mgr'){window.location.href='Login.html';}
+document.getElementById('smName').textContent=SESSION?SESSION.name:'';
+(function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
+
+/* ============== CONFIG ============== */
 const AUDIT_SKU="SVC-AUDIT-001";
 let SLOTS=[{id:"s1",label:"9 AM – 12 PM"},{id:"s2",label:"12 PM – 3 PM"},{id:"s3",label:"3 PM – 6 PM"}];
 
-const AUDITORS=[
-  {id:"a1",name:"Rakesh Kumar",zone:"South BLR",phone:"98861 20011"},
-  {id:"a2",name:"Imran Sheikh",zone:"East BLR",phone:"98861 20022"},
-  {id:"a3",name:"Suresh Babu",zone:"North BLR",phone:"98861 20033"},
-  {id:"a4",name:"Anand Verma",zone:"Central",phone:"98861 20044"},
-];
+let AUDITORS=[];
 
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){return d.toISOString().slice(0,10);}
@@ -318,12 +327,8 @@ function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 // PER-AUDITOR, PER-DATE caps. CAPS[auditorId][yyyy-mm-dd] = number. Default applied if absent.
 const DEFAULT_CAP=3;
 const CAPS={};
-AUDITORS.forEach(a=>{CAPS[a.id]={};});
-// seed a couple of varied caps to show it's per-day (Rakesh 3 today, 2 tomorrow)
-CAPS.a1[dstr(today)]=3; CAPS.a1[dstr(addDays(1))]=2;
-CAPS.a3[dstr(addDays(1))]=2;
 function capFor(aid,ds){const c=CAPS[aid];if(c&&c[ds]!==undefined)return c[ds];return DEFAULT_CAP;}
-function setCap(aid,ds,v){CAPS[aid][ds]=v;}
+function setCap(aid,ds,v){if(!CAPS[aid])CAPS[aid]={};CAPS[aid][ds]=v;}
 // auditors available on a date = those with cap>=1
 function auditorsAvailable(ds){return AUDITORS.filter(a=>capFor(a.id,ds)>=1).length;}
 // total daily throughput = sum of caps
@@ -335,6 +340,7 @@ const STATUS={
   call_na:{l:"Call not picked",c:"c-call_na"},
   scheduled:{l:"Site Audit Scheduled",c:"c-scheduled"},
   assigned:{l:"Site Auditor Assigned",c:"c-assigned"},
+  callpending:{l:"Call Pending (Auditor)",c:"c-assigned"},
   reschedule:{l:"To Reschedule",c:"c-reschedule"},
   onway:{l:"On The Way",c:"c-onway"},
   atsite:{l:"At Site",c:"c-atsite"},
@@ -345,48 +351,42 @@ const AUTO_STATUSES=["onway","atsite","completed"];
 const FLOW=["pending","created","scheduled","assigned","completed"];
 
 function mapUrl(addr){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);}
-const cust=(n,p,a,lat,lng)=>({name:n,phone:p,addr:a});
 
-let ORDERS=[
-  {pi:"PI-2026-00412",po:["PO-WF-7781","PO-ACC-7782"],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate 12mm",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Wooden Flooring"],bm:"Karthik R",status:"pending",...cust("Meera Iyer","98450 11234","12, Brigade Rd, Bengaluru 560001"),
-   service:null,slot:null,date:null,auditor:null,log:[{t:"Order confirmed (POs generated)",d:"Today 09:14"}]},
+let ORDERS=[];
 
-  {pi:"PI-2026-00408",po:["PO-WP-7763"],skus:[{c:"WP-STD-441",n:"Standard Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Standard Wallpapers"],bm:"Sneha P",status:"created",...cust("Arjun Rao","99000 55671","48, Indiranagar 100ft Rd, Bengaluru 560038"),
-   service:{flooring:[],wallpaper:[{sku:"WP-STD-441",num:""}]},slot:null,date:null,auditor:null,
-   log:[{t:"Order confirmed",d:"Yesterday 16:40"},{t:"Service created by Priya N.",d:"Today 10:02",by:"manual"}]},
+/* ============== SUPABASE LOAD ============== */
+async function loadAuditors(){
+  try{
+    const rows=await sbGet('profiles?role=eq.site_auditor&select=id,name,email');
+    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP}));
+    AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
+  }catch(e){console.error('loadAuditors',e);}
+}
 
-  {pi:"PI-2026-00401",po:["PO-WF-7740","PO-WP-7741"],skus:[{c:"WF-WAL-8MM",n:"Walnut Laminate",audit:false},{c:"WP-CUST-902",n:"Custom Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Wooden Flooring","Custom Wallpapers"],bm:"Karthik R",status:"scheduled",...cust("Divya Menon","98800 33445","7th Block, Koramangala, Bengaluru 560095"),
-   service:{flooring:[{sku:"WF-WAL-8MM",num:"FL-9001"}],wallpaper:[{sku:"WP-CUST-902",num:"WP-7741"}]},slot:"s2",date:dstr(addDays(2)),auditor:null,
-   log:[{t:"Order confirmed",d:"2 days ago"},{t:"Service created",d:"Yesterday 11:20",by:"manual"},{t:"Slot booked: "+dstr(addDays(2))+" · 12 PM–3 PM",d:"Yesterday 15:05",by:"manual"}]},
-
-  {pi:"PI-2026-00399",po:["PO-WP-7728"],skus:[{c:"WP-STD-220",n:"Standard Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Standard Wallpapers"],bm:"Mohan L",status:"assigned",...cust("Rohit Shetty","97400 88112","Whitefield, Bengaluru 560066"),
-   service:{flooring:[],wallpaper:[{sku:"WP-STD-220",num:"WP-5521"}]},slot:"s1",date:dstr(addDays(1)),auditor:"a2",
-   log:[{t:"Order confirmed",d:"3 days ago"},{t:"Service created",d:"2 days ago",by:"manual"},{t:"Slot booked",d:"2 days ago",by:"manual"},{t:"Auditor assigned: Imran Sheikh · SMS sent to customer",d:"Today 08:30",by:"manual"}]},
-
-  {pi:"PI-2026-00388",po:["PO-WF-7701"],skus:[{c:"WF-OAK-10MM",n:"Oak Laminate 10mm",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Wooden Flooring"],bm:"Sneha P",status:"onway",...cust("Kavya Reddy","99016 44550","HSR Layout, Bengaluru 560102"),
-   service:{flooring:[{sku:"WF-OAK-10MM",num:"FL-3310"}],wallpaper:[]},slot:"s1",date:dstr(today),auditor:"a1",
-   log:[{t:"Service created",d:"2 days ago",by:"manual"},{t:"Slot booked",d:"2 days ago",by:"manual"},{t:"Auditor assigned: Rakesh Kumar",d:"Yesterday",by:"manual"},{t:"Auditor confirmed call · On the way",d:"Today 08:55",by:"auto"}]},
-
-  {pi:"PI-2026-00377",po:["PO-WP-7688"],skus:[{c:"WP-CUST-880",n:"Custom Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Custom Wallpapers"],bm:"Mohan L",status:"reschedule",...cust("Sanjay Gupta","98453 77881","JP Nagar, Bengaluru 560078"),
-   service:{flooring:[],wallpaper:[{sku:"WP-CUST-880",num:"WP-8810"}]},slot:"s3",date:dstr(today),auditor:"a3",
-   log:[{t:"Service created",d:"3 days ago",by:"manual"},{t:"Slot booked",d:"2 days ago",by:"manual"},{t:"Auditor assigned: Suresh Babu",d:"Yesterday",by:"manual"},{t:"Customer declined pre-call → To Reschedule",d:"Today 13:10",by:"auto"}]},
-
-  {pi:"PI-2026-00362",po:["PO-WF-7651","PO-ACC-7652"],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate 12mm",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Wooden Flooring"],bm:"Karthik R",status:"completed",...cust("Lakshmi N","98860 22119","Jayanagar 4th Block, Bengaluru 560011"),
-   service:{flooring:[{sku:"WF-OAK-12MM",num:"FL-1102"}],wallpaper:[]},slot:"s2",date:dstr(addDays(-1)),auditor:"a4",
-   log:[{t:"Service created",d:"4 days ago",by:"manual"},{t:"Slot booked",d:"3 days ago",by:"manual"},{t:"Auditor assigned: Anand Verma",d:"2 days ago",by:"manual"},{t:"Audit completed · JobCard PDF generated",d:"Yesterday 15:42",by:"auto"},{t:"Status pushed to BM CRM (Karthik R)",d:"Yesterday 15:42",by:"auto"}]},
-
-  {pi:"PI-2026-00355",po:["PO-WP-7640"],skus:[{c:"WP-STD-301",n:"Standard Wallpaper",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],
-   auditTicked:["Standard Wallpapers"],bm:"Sneha P",status:"call_na",...cust("Vikram Singh","97391 66220","Marathahalli, Bengaluru 560037"),
-   service:{flooring:[],wallpaper:[{sku:"WP-STD-301",num:"WP-3011"}]},slot:null,date:null,auditor:null,
-   log:[{t:"Service created",d:"Today 09:50",by:"manual"},{t:"Acknowledgement call — not picked (attempt 1)",d:"Today 11:15",by:"manual"}]},
-];
+async function loadOrders(){
+  try{
+    const rows=await sbGet('audit_orders?select=*&order=created_at.desc');
+    if(!Array.isArray(rows)){return;}
+    ORDERS=rows.map(r=>({
+      id:r.id,
+      pi:r.pi||'',
+      po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
+      skus:r.skus||[],
+      auditTicked:r.audit_ticked||[],
+      bm:r.bm||'—',
+      name:r.customer_name||'',
+      phone:r.phone||'',
+      addr:r.addr||'',
+      status:r.status||'pending',
+      service:r.service||null,
+      slot:r.slot||null,
+      date:r.date||null,
+      auditor:r.auditor_id||null,
+      log:r.log||[]
+    }));
+    render();
+  }catch(e){console.error('loadOrders',e);}
+}
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
@@ -668,7 +668,7 @@ function wireDrawer(o){
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
 
   // stepper back-navigation (free backward to any prior stage)
-  document.querySelectorAll(".step[data-goto]").forEach(st=>st.onclick=()=>{
+  document.querySelectorAll(".step[data-goto]").forEach(st=>st.onclick=async()=>{
     const target=st.dataset.goto;const curIdx=FLOW.indexOf(o.status);
     let curEff=curIdx;
     if(["assigned","onway","atsite"].includes(o.status))curEff=FLOW.indexOf("assigned");
@@ -681,14 +681,21 @@ function wireDrawer(o){
     if(tIdx<FLOW.indexOf("assigned"))o.auditor=null;
     if(tIdx<FLOW.indexOf("scheduled")){o.slot=null;o.date=null;}
     o.log.push({t:"Moved back to "+STATUS[target].l+" by SM",d:"Just now",by:"manual"});
+    if(o.id){
+      const patch={status:o.status,log:o.log};
+      if(tIdx<FLOW.indexOf("assigned")){patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;}
+      if(tIdx<FLOW.indexOf("scheduled")){patch.slot=null;patch.date=null;}
+      await sbPatch('audit_orders',o.id,patch);
+    }
     toast("Moved back to "+STATUS[target].l);render();openOrder(o.pi);
   });
 
   // manual status override
-  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
     o.status=st;
     o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,log:o.log});
     toast("Status: "+STATUS[st].l);render();openOrder(o.pi);
   });
 
@@ -717,12 +724,13 @@ function wireDrawer(o){
   if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
   if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
 
-  if($("#createService"))$("#createService").onclick=()=>{
+  if($("#createService"))$("#createService").onclick=async()=>{
     const fl=draft.flooring.filter(r=>r.sku||r.num),wp=draft.wallpaper.filter(r=>r.sku||r.num);
     o.service={flooring:fl,wallpaper:wp};o.status="created";
     const summary=(fl.length?("Flooring: "+fl.map(r=>r.sku+(r.num?" ("+r.num+")":"")).join(", ")):"")+
                   (wp.length?(" | Wallpaper: "+wp.map(r=>r.sku+(r.num?" ("+r.num+")":"")).join(", ")):"");
     o.log.push({t:"Service created — "+(summary||"NA (no SKU fixed)"),d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,service:o.service,log:o.log});
     toast("Service created");render();openOrder(o.pi);
   };
 
@@ -738,8 +746,9 @@ function wireDrawer(o){
     grid.querySelectorAll(".slot:not(.full)").forEach(el=>el.onclick=()=>{draft.slot=el.dataset.slot;renderSlots();const b=$("#bookSlot");if(b)b.disabled=!draft.slot;});
   }
   if($("#bookDate")){$("#bookDate").onchange=()=>{draft.slot=null;renderSlots();const b=$("#bookSlot");if(b)b.disabled=true;};renderSlots();}
-  if($("#bookSlot"))$("#bookSlot").onclick=()=>{o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
+  if($("#bookSlot"))$("#bookSlot").onclick=async()=>{o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
     o.log.push({t:"Slot booked: "+fmtDate(o.date)+" · "+slotLabel(o.slot),d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,slot:o.slot,date:o.date,log:o.log});
     toast("Slot booked — "+fmtDate(o.date));render();openOrder(o.pi);};
 
   // ---- auditor assignment ----
@@ -755,8 +764,9 @@ function wireDrawer(o){
     list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
       draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
   }
-  if($("#assignAuditor"))$("#assignAuditor").onclick=()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
+  if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
     o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
     toast("Assigned "+a.name+" · customer notified");render();openOrder(o.pi);};
 
   // ---- simulate auditor live steps ----
@@ -800,7 +810,7 @@ function closeAddOrder(){
   ["ao-fl","ao-wp","ao-cwp"].forEach(id=>{document.getElementById(id).checked=false;});
   document.getElementById("ao-err").classList.remove("show");
 }
-function submitAddOrder(){
+async function submitAddOrder(){
   const pi    = document.getElementById("ao-pi").value.trim();
   const poRaw = document.getElementById("ao-po").value.trim();
   const name  = document.getElementById("ao-name").value.trim();
@@ -827,22 +837,34 @@ function submitAddOrder(){
   if(document.getElementById("ao-cwp").checked)ticked.push("Custom Wallpapers");
 
   const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-  ORDERS.unshift({
-    pi,po,skus,auditTicked:ticked,bm,
-    status:"pending",name,phone,addr,
-    service:null,slot:null,date:null,auditor:null,
-    log:[{t:"Order added manually by Service Manager",d:"Today "+now}]
-  });
+  const logEntry={t:"Order added manually by "+SESSION.name,d:"Today "+now};
 
   document.getElementById("ao-submit").disabled=true;
-  closeAddOrder();
-  render();
-  toast("✓ Audit order "+pi+" added");
+  try{
+    const saved=await sbPost('audit_orders',{
+      pi, po:po.join(','), skus, audit_ticked:ticked, bm,
+      customer_name:name, phone, addr, status:'pending',
+      log:[logEntry], created_by_email:SESSION.email
+    });
+    const row=Array.isArray(saved)?saved[0]:null;
+    ORDERS.unshift({
+      id:row?row.id:null,
+      pi,po,skus,auditTicked:ticked,bm,
+      status:"pending",name,phone,addr,
+      service:null,slot:null,date:null,auditor:null,
+      log:[logEntry]
+    });
+    closeAddOrder();
+    render();
+    toast("✓ Audit order "+pi+" added");
+  }catch(e){
+    err.textContent="Failed to save order. Check network and try again.";err.classList.add("show");
+  }
   document.getElementById("ao-submit").disabled=false;
 }
 document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
 
-render();
+Promise.all([loadAuditors(),loadOrders()]).then(()=>{setInterval(loadOrders,30000);});
 </script>
 </body>
 </html>
