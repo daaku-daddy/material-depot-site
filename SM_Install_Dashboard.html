@@ -223,6 +223,8 @@
     <div class="grp">SETUP</div>
     <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
     <a data-view="installers"><span class="ico">&#9673;</span>Installers</a>
+    <div class="grp">DATA</div>
+    <a data-view="deleted"><span class="ico">🗑</span>Deleted Orders<span class="ct" id="cDeleted"></span></a>
   </nav>
   <main id="main"></main>
 </div>
@@ -353,7 +355,7 @@ const STATUS={
 const AUTO_STATUSES=["onway","atsite","completed"];
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
-let ORDERS=[];
+let ORDERS=[],DELETED=[];
 
 /* ============== SUPABASE LOAD ============== */
 async function loadInstallers(){
@@ -367,7 +369,7 @@ async function loadOrders(){
   try{
     const rows=await sbGet('install_orders?select=*&order=created_at.desc');
     if(!Array.isArray(rows)){return;}
-    ORDERS=rows.map(r=>({
+    const mapRow=r=>({
       id:r.id,
       pi:r.pi||'',
       po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
@@ -384,8 +386,11 @@ async function loadOrders(){
       subjobs:r.subjobs||null,
       service:r.service||null,
       log:r.log||[]
-    }));
-    render();
+    });
+    DELETED=rows.filter(r=>r.status==='deleted').map(mapRow);
+    ORDERS=rows.filter(r=>r.status!=='deleted').map(mapRow);
+    const drawerOpen=document.querySelector("#drawer")&&document.querySelector("#drawer").classList.contains("show");
+    if(!drawerOpen)render();else counts();
   }catch(e){console.error('loadOrders',e);}
 }
 
@@ -396,7 +401,7 @@ const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return fmtD
 const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
 const installerById=id=>INSTALLERS.find(a=>a.id===id);
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
 
@@ -419,6 +424,7 @@ function counts(){
   $("#cCalls").textContent=ORDERS.filter(opsCallDue).length;
   $("#cToday").textContent=ORDERS.filter(o=>(o.subjobs||[]).some(sj=>sj.date===dstr(today))).length;
   $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule"||(o.subjobs||[]).some(sj=>sj.status==="reschedule")).length;
+  if($("#cDeleted"))$("#cDeleted").textContent=DELETED.length||'';
 }
 
 /* ============== RENDER ============== */
@@ -433,6 +439,7 @@ function render(){
   else if(activeView==="calendar")m.innerHTML=calendarView();
   else if(activeView==="slots")m.innerHTML=slotsView();
   else if(activeView==="installers")m.innerHTML=installersView();
+  else if(activeView==="deleted")m.innerHTML=deletedView();
   wire();
 }
 function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
@@ -440,8 +447,8 @@ function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div
 function subjobSummary(o){
   if(!o.subjobs)return '<span style="color:var(--muted)">—</span>';
   return `<div class="subjobs">`+o.subjobs.map(sj=>{
-    const inst=sj.installer?installerById(sj.installer).name:"unassigned";
-    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span>${fmtDate(sj.date)} · ${inst} · ${STATUS[sj.status].l}</span>`;
+    const inst=sj.installer?(installerById(sj.installer)||{name:'Unknown'}).name:"Unassigned";
+    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span>${fmtDate(sj.date)} · ${inst} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
   }).join("")+`</div>`;
 }
 
@@ -605,7 +612,7 @@ function openOrder(pi){
   $("#scrim").classList.add("show");$("#drawer").classList.add("show");
   wireDrawer(o);
 }
-function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;}
+function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;render();}
 
 function drawerBody(o){
   let html="";
@@ -843,10 +850,10 @@ function wireDrawer(o){
 
   // ---- delete order ----
   if($("#delOrder"))$("#delOrder").onclick=async()=>{
-    if(!confirm("Delete this install order permanently? This cannot be undone."))return;
+    if(!confirm("Move this install order to Deleted? It will be stored in the Deleted Orders section and can be restored."))return;
     try{
-      if(o.id)await sbDel('install_orders',o.id);
-      closeDrawer();await loadOrders();toast("Order deleted");
+      if(o.id)await sbPatch('install_orders',o.id,{status:'deleted'});
+      closeDrawer();await loadOrders();toast("Order moved to Deleted");
     }catch(e){toast("Couldn't delete — try again");}
   };
 }
@@ -864,8 +871,32 @@ function syncParent(o){
   else if(sts.some(s=>s==="scheduled"))o.status="scheduled";
 }
 
+function deletedView(){
+  const rows=DELETED.map(o=>{
+    const skupills=o.skus.map(s=>`<span class="skupill">${s.c}</span>`).join(" ");
+    return `<tr>
+      <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
+      <td><div class="pill-list">${skupills}</div></td>
+      <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+      <td style="max-width:170px">${mapLink(o.addr)}</td>
+      <td>${fmtDate(o.deliveryDate)}</td>
+      <td><button class="btn ghost sm" data-restore="${o.id}" data-pi="${o.pi}">Restore</button></td></tr>`;
+  }).join("");
+  return `<div class="crumbs">Installations / Deleted Orders</div>
+  <div class="pagehead"><div><h1>Deleted Orders</h1><p>All deleted install orders. Restore any order to move it back to Pending.</p></div></div>
+  <div class="tablecard"><table>
+    <thead><tr><th>PI / PO</th><th>SKUs</th><th>Customer</th><th>Address</th><th>Delivery Date</th><th>Action</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">No deleted orders.</td></tr>`}</tbody>
+  </table></div>`;
+}
+
 /* ============== GLOBAL WIRING ============== */
 function wire(){
+  document.querySelectorAll("[data-restore]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.restore,pi=b.dataset.pi;b.disabled=true;b.textContent="Restoring…";
+    try{await sbPatch('install_orders',id,{status:'pending'});await loadOrders();toast("Order "+pi+" restored to Pending");}
+    catch(e){toast("Restore failed — "+e.message);b.disabled=false;b.textContent="Restore";}
+  });
   document.querySelectorAll("#main tbody tr[data-pi]").forEach(tr=>tr.onclick=e=>{if(e.target.closest(".maplink")||e.target.closest("[data-open]"))return;openOrder(tr.dataset.pi);});
   document.querySelectorAll("[data-open]").forEach(b=>b.onclick=e=>{e.stopPropagation();openOrder(b.dataset.open);});
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{activeView=b.dataset.goto;render();});

@@ -224,6 +224,8 @@
     <div class="grp">SETUP</div>
     <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
     <a data-view="auditors"><span class="ico">&#9673;</span>Auditors &amp; caps</a>
+    <div class="grp">RECORDS</div>
+    <a data-view="deleted"><span class="ico">🗑</span>Deleted Orders<span class="ct" id="cDeleted"></span></a>
   </nav>
   <main id="main"></main>
 </div>
@@ -355,7 +357,7 @@ const FLOW=["pending","created","scheduled","assigned","completed"];
 
 function mapUrl(addr){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);}
 
-let ORDERS=[];
+let ORDERS=[],DELETED=[];
 
 /* ============== SUPABASE LOAD ============== */
 async function loadAuditors(){
@@ -370,12 +372,12 @@ async function loadOrders(){
   try{
     const rows=await sbGet('audit_orders?select=*&order=created_at.desc');
     if(!Array.isArray(rows)){return;}
-    ORDERS=rows.map(r=>({
+    const mapRow=r=>({
       id:r.id,
       pi:r.pi||'',
       po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
       skus:r.skus||[],
-      auditTicked:r.audit_ticked||[],
+      auditTicked:r.audit_ticked||null,
       bm:r.bm||'—',
       name:r.customer_name||'',
       phone:r.phone||'',
@@ -388,8 +390,11 @@ async function loadOrders(){
       auditorName:r.auditor_name||null,
       auditorEmail:r.auditor_email||null,
       log:r.log||[]
-    }));
-    render();
+    });
+    DELETED=rows.filter(r=>r.status==='deleted').map(mapRow);
+    ORDERS=rows.filter(r=>r.status!=='deleted').map(mapRow);
+    const drawerOpen=document.querySelector("#drawer")&&document.querySelector("#drawer").classList.contains("show");
+    if(!drawerOpen)render();else counts();
   }catch(e){console.error('loadOrders',e);}
 }
 
@@ -400,7 +405,7 @@ const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
 const auditorById=id=>AUDITORS.find(a=>a.id===id);
 function getAuditorName(o){if(!o.auditor)return null;const a=auditorById(o.auditor);return a?a.name:(o.auditorName||'?');}
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="pin">&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
 
@@ -415,6 +420,7 @@ function counts(){
   $("#cOrders").textContent=ORDERS.length;
   $("#cToday").textContent=ORDERS.filter(o=>o.date===dstr(today)).length;
   $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule").length;
+  if($("#cDeleted"))$("#cDeleted").textContent=DELETED.length||'';
 }
 
 /* ============== RENDER ============== */
@@ -428,6 +434,7 @@ function render(){
   else if(activeView==="calendar")m.innerHTML=calendarView();
   else if(activeView==="slots")m.innerHTML=slotsView();
   else if(activeView==="auditors")m.innerHTML=auditorsView();
+  else if(activeView==="deleted")m.innerHTML=deletedView();
   wire();
 }
 function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
@@ -561,7 +568,7 @@ function openOrder(pi){
   $("#scrim").classList.add("show");$("#drawer").classList.add("show");
   wireDrawer(o);
 }
-function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;}
+function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;render();}
 
 function stepper(o){
   let reached=FLOW.indexOf(o.status);
@@ -580,7 +587,7 @@ function drawerBody(o){
     <div class="k">PI ID</div><div class="v">${o.pi}</div>
     <div class="k">PO numbers</div><div class="v">${o.po.join(", ")}</div>
     <div class="k">SKUs in cart</div><div class="v"><div class="pill-list">${skupills}</div></div>
-    <div class="k">Audit ticked for</div><div class="v">${o.auditTicked.join(", ")||"—"}</div>
+    <div class="k">Audit ticked for</div><div class="v">${Array.isArray(o.auditTicked)?o.auditTicked.join(", ")||"—":"—"}</div>
     <div class="k">BM</div><div class="v">${o.bm}</div></div></div>`;
   html+=`<div class="sec"><h3>Customer</h3><div class="kv">
     <div class="k">Name</div><div class="v">${o.name}</div>
@@ -620,10 +627,27 @@ function drawerBody(o){
       <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
       <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div></div>`;
   } else if(o.status==="completed"){
+    const ticked=o.auditTicked;
+    const hasRooms=ticked&&!Array.isArray(ticked)&&Array.isArray(ticked.rooms)&&ticked.rooms.length;
+    const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
+    const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer','primer']];
+    const roomsHtml=hasRooms?ticked.rooms.map((r,i)=>{
+      const fields=r.type==='wallpaper'?WP:FL;
+      const meas=fields.filter(([,k])=>r.calc&&r.calc[k]).map(([l,k])=>`<div class="k">${l}</div><div class="v">${r.calc[k]}</div>`).join('');
+      return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">
+        <div style="font-weight:800;color:var(--navy);margin-bottom:8px">Room ${i+1}: ${r.name||'—'} <span style="font-weight:600;color:var(--muted);font-size:11.5px">${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU: ${r.sku||'NA'}</span></div>
+        ${meas?`<div class="kv">${meas}</div>`:'<div style="color:var(--muted);font-size:12px">No measurements recorded.</div>'}
+        ${r.notes?`<div style="margin-top:8px;font-size:12px;color:var(--muted)">Notes: ${r.notes}</div>`:''}
+      </div>`;
+    }).join(''):'';
     html+=`<div class="sec"><h3>Completed</h3><div class="kv">
-      <div class="k">Auditor</div><div class="v">${getAuditorName(o)}</div>
-      <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
-      <div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">JobCard PDF generated. Status pushed to BM ${o.bm}'s CRM against ${o.phone}.</div></div>`;
+      <div class="k">Auditor</div><div class="v">${getAuditorName(o)||ticked?.auditor||'—'}</div>
+      <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
+      ${hasRooms?`<div class="k">Rooms</div><div class="v">${ticked.rooms.length}</div>`:''}
+      ${hasRooms&&ticked.sign?`<div class="k">Signed by</div><div class="v">${ticked.sign.name||'—'}</div>`:''}</div>
+      ${hasRooms?`<div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">Job Card PDF generated and signed by client.</div>`:`<div class="note" style="border-color:var(--amber);color:var(--amber);background:var(--amberbg)">This audit was completed before detailed room capture was available. No room data on record.</div>`}
+      ${roomsHtml?`<div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Rooms audited</div>${roomsHtml}</div>`:''}
+    </div>`;
   }
 
   html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${l.t}</div><div class="td">${l.d}${l.by==='auto'?' · auto from auditor':l.by==='manual'?' · manual':''}</div></div>`).join("")}</div></div>`;
@@ -631,9 +655,9 @@ function drawerBody(o){
 }
 
 function serviceCreationPanel(o){
-  // build initial draft groups from auditTicked guess
-  const flooringTicked=o.auditTicked.some(x=>/floor/i.test(x));
-  const wallTicked=o.auditTicked.some(x=>/wall/i.test(x));
+  const at=Array.isArray(o.auditTicked)?o.auditTicked:[];
+  const flooringTicked=at.some(x=>/floor/i.test(x));
+  const wallTicked=at.some(x=>/wall/i.test(x));
   return `<div class="sec"><h3>Service creation</h3>
     <div class="note">Customer, phone, address and BM are pulled from the order automatically. Add SKU Code, SKU Name, and an optional link for each category being audited.</div>
     <div class="field"><label>Customer name <span class="autofill">auto</span></label><input value="${o.name}" disabled></div>
@@ -780,15 +804,31 @@ function wireDrawer(o){
     await loadOrders();toast("Assigned "+a.name+" · customer notified");openOrder(o.pi);};
 
   if($("#delOrder"))$("#delOrder").onclick=async()=>{
-    if(!confirm("Delete order "+o.pi+" for "+o.name+"?\n\nThis cannot be undone."))return;
+    if(!confirm("Move order "+o.pi+" to Deleted Orders?\nIt will be stored and can be recovered from the Deleted Orders section."))return;
     const btn=$("#delOrder");btn.disabled=true;btn.textContent="Deleting…";
     try{
-      if(o.id)await sbDel('audit_orders',o.id);
-      ORDERS=ORDERS.filter(x=>x.pi!==o.pi);
-      closeDrawer();render();toast("Order "+o.pi+" deleted");
-    }catch(e){toast("Delete failed — "+e.message);btn.disabled=false;btn.textContent="🗑 Delete";}
+      if(o.id)await sbPatch('audit_orders',o.id,{status:'deleted'});
+      closeDrawer();await loadOrders();toast("Order "+o.pi+" moved to Deleted Orders");
+    }catch(e){toast("Delete failed — "+e.message);btn.disabled=false;btn.innerHTML="🗑 Delete";}
   };
 
+}
+
+/* ============== DELETED ORDERS ============== */
+function deletedView(){
+  const rows=DELETED.map(o=>`<tr>
+    <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
+    <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+    <td style="max-width:180px">${mapLink(o.addr)}</td>
+    <td>${fmtDate(o.date)}</td>
+    <td>${o.auditor?getAuditorName(o):'<span style="color:var(--muted)">—</span>'}</td>
+    <td><button class="btn primary sm" data-restore="${o.id}" data-pi="${o.pi}">Restore</button></td></tr>`).join("");
+  return `<div class="crumbs">Site Audit / Deleted Orders</div>
+  <div class="pagehead"><div><h1>Deleted Orders</h1><p>Deleted orders are stored permanently here and can be restored to Pending at any time.</p></div></div>
+  <div class="tablecard"><table>
+    <thead><tr><th>PI / PO</th><th>Customer</th><th>Address</th><th>Date</th><th>Auditor</th><th></th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">No deleted orders.</td></tr>`}</tbody>
+  </table></div>`;
 }
 
 /* ============== GLOBAL WIRING ============== */
@@ -798,6 +838,11 @@ function wire(){
   document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
   document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{filterStatus=s.dataset.stat;render();});
   document.querySelectorAll("[data-rebook]").forEach(b=>b.onclick=e=>{e.stopPropagation();openOrder(b.dataset.rebook);});
+  document.querySelectorAll("[data-restore]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.restore,pi=b.dataset.pi;b.disabled=true;b.textContent="Restoring…";
+    try{await sbPatch('audit_orders',id,{status:'pending'});await loadOrders();toast("Order "+pi+" restored to Pending");}
+    catch(e){toast("Restore failed — "+e.message);b.disabled=false;b.textContent="Restore";}
+  });
   document.querySelectorAll("[data-cap]").forEach(inp=>inp.onchange=()=>{setCap(inp.dataset.cap,inp.dataset.date,parseInt(inp.value)||0);});
   if($("#saveCaps"))$("#saveCaps").onclick=()=>{toast("Auditor caps saved");render();};
   if($("#saveSlots"))$("#saveSlots").onclick=()=>{document.querySelectorAll(".slotedit").forEach(i=>SLOTS[i.dataset.i].label=i.value);toast("Slot timings saved");render();};
