@@ -780,7 +780,9 @@ function wireDrawer(o){
   document.querySelectorAll("[data-sched]").forEach(btn=>btn.onclick=()=>{
     const sj=o.subjobs.find(s=>s.id===btn.dataset.sched);
     const box=document.querySelector(`[data-schedbox="${sj.id}"]`);
-    box.innerHTML=`<div class="field" style="margin-top:10px"><label>Install date (call customer on delivery day)</label><input type="date" id="sd_${sj.id}" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+    const minInstDate=(o.deliveryDate&&o.deliveryDate>=dstr(today))?o.deliveryDate:dstr(today);
+    const defInstDate=minInstDate>dstr(addDays(1))?minInstDate:dstr(addDays(1));
+    box.innerHTML=`<div class="field" style="margin-top:10px"><label>Install date — must be on or after delivery (${fmtDate(o.deliveryDate)})</label><input type="date" id="sd_${sj.id}" min="${minInstDate}" value="${defInstDate}"></div>
       <div class="field"><label>Slot</label><div class="slotgrid" id="sg_${sj.id}"></div></div>
       <button class="btn navy sm" id="confirmSched_${sj.id}" disabled>Confirm slot</button>`;
     let pickedSlot=null;
@@ -789,10 +791,10 @@ function wireDrawer(o){
       const grid=document.getElementById("sg_"+sj.id);
       const pool=INSTALLERS.filter(i=>i.type===sj.type);
       grid.innerHTML=SLOTS.map(s=>{
-        // capacity check across installers of this type (window-agnostic day cap, shown per window for UX)
+        // count installers who individually have capacity for this specific order
         let free;
-        if(sj.type==="flooring"){const used=pool.reduce((a,i)=>a+flLoad(i.id,date),0);free=pool.length*FLOOR_DAY_CAP-used;}
-        else {const used=pool.reduce((a,i)=>a+wpSlotLoad(i.id,date),0);const need=slotsForWp(sj.items[0]&&sj.items[0].rolls);free=Math.floor((pool.length*WP_DAY_SLOTS-used)/need);}
+        if(sj.type==="flooring"){free=pool.filter(i=>flLoad(i.id,date)<FLOOR_DAY_CAP).length;}
+        else{const need=slotsForWp(sj.items[0]&&sj.items[0].rolls);free=pool.filter(i=>(wpSlotLoad(i.id,date)+need)<=WP_DAY_SLOTS).length;}
         const full=free<=0;
         return `<div class="slot ${pickedSlot===s.id?'on':''} ${full?'full':''}" data-s="${s.id}"><div class="w">${s.label}</div><div class="cap">${full?'Full':free+' free'}</div></div>`;
       }).join("");

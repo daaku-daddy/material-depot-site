@@ -18,8 +18,9 @@
   header .me b{color:#fff;font-size:14px;}
   .wrap{padding:16px 16px 40px;}
   /* big day tabs */
-  .days{display:flex;gap:10px;margin-bottom:18px;}
-  .day{flex:1;background:#fff;border:2px solid var(--line);border-radius:14px;padding:12px 6px;text-align:center;cursor:pointer;}
+  .days{display:flex;gap:10px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .days::-webkit-scrollbar{display:none;}
+  .day{flex:0 0 88px;background:#fff;border:2px solid var(--line);border-radius:14px;padding:12px 6px;text-align:center;cursor:pointer;}
   .day.on{background:var(--navy);color:#fff;border-color:var(--navy);}
   .day .dn{font-size:13px;font-weight:700;opacity:.85;}
   .day .dd{font-size:22px;font-weight:800;}
@@ -230,7 +231,7 @@ function listView(){
   autoFlip();
   if($("#meName"))$("#meName").textContent=ME.name;
   if($("#meType"))$("#meType").textContent=(ME.type==="wallpaper"?"Wallpaper":"Flooring")+" Installer";
-  const days=[today,addDays(1),addDays(2)];
+  const days=Array.from({length:7},(_,i)=>addDays(i));
   const tabs=days.map(d=>{const ds=dstr(d);const n=JOBS.filter(j=>j.date===ds).length;
     return `<div class="day ${selDay===ds?'on':''}" data-day="${ds}">
       <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
