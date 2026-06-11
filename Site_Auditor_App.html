@@ -470,7 +470,10 @@ function reviewAndSign(o){
     o.status="completed";
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:"Today "+now,by:"auto"});
-    if(o.id){try{await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});}catch(e){toast("Saved locally — sync failed, will retry");}}
+    if(o.id){try{
+      const ticked={auditor:ME.name,date:dstr(new Date()),rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||''}))};
+      await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});
+    }catch(e){toast("Saved locally — sync failed, will retry");}}
     toast("Building PDF…");
     await genPDF(o);
     $("#jcScreen").classList.add("hide");

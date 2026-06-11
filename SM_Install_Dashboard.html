@@ -375,6 +375,7 @@ async function loadOrders(){
       phone:r.phone||'',
       addr:r.addr||'',
       matchedAudit:r.matched_audit||false,
+      auditBy:(r.service&&r.service.audit_by)||null,
       deliveryDate:r.delivery_date||null,
       customWp:r.custom_wp||false,
       status:r.status||'pending',
@@ -468,7 +469,7 @@ function ordersView(){
     const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c}</span>`).join("");
     const dd=new Date(o.deliveryDate+"T00:00");const delayed=o.status==="deliv_delayed";
     const delivCls=delayed?"delayed":(o.status==="deliv_ontime"||["created","scheduled","assigned","partial","completed"].includes(o.status)?"ontime":"");
-    const auditBadge=o.matchedAudit?'<span class="auditbadge ok">Audit ✓</span>':'<span class="auditbadge miss">No audit!</span>';
+    const auditBadge=o.auditBy==='material_depot'?'<span class="auditbadge ok">MD Audit</span>':o.auditBy==='customer'?'<span class="auditbadge ok">Cust Audit</span>':'';
     const opsFlag=opsCallDue(o)?' <span class="auditbadge miss">Call Ops</span>':'';
     return `<tr data-pi="${o.pi}">
       <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
@@ -612,16 +613,20 @@ function drawerBody(o){
     <div class="k">PO numbers</div><div class="v">${o.po.join(", ")}</div>
     <div class="k">SKUs in cart</div><div class="v"><div class="pill-list">${skupills}</div></div>
     <div class="k">BM</div><div class="v">${o.bm}</div>
-    <div class="k">Prior audit</div><div class="v">${o.matchedAudit?'<span class="auditbadge ok">Matched ✓</span>':'<span class="auditbadge miss">None found — cannot install</span>'}</div>
+    <div class="k">Site audit</div><div class="v">${o.auditBy==='material_depot'?'<span class="auditbadge ok">Material Depot ✓</span>':o.auditBy==='customer'?'<span class="auditbadge ok">Customer ✓</span>':'<span class="auditbadge miss">Not set</span>'}</div>
   </div></div>`;
   html+=`<div class="sec"><h3>Customer</h3><div class="kv">
     <div class="k">Name</div><div class="v">${o.name}</div>
     <div class="k">Phone</div><div class="v">${o.phone}</div>
     <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div></div></div>`;
 
-  if(!o.matchedAudit){
-    html+=`<div class="note red"><b>Blocked.</b> No completed Site Audit matches this customer (phone + address). Installation can't proceed until a prior audit exists. Escalate to the BM / auditor.</div>`;
-  }
+  // ---- AUDIT TYPE selector ----
+  html+=`<div class="sec"><h3>Site audit type</h3>
+    <div class="note">Who completed the site audit? This controls what the installer sees on their app.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn ${o.auditBy==='material_depot'?'navy':'gray'}" id="auditByMD">Material Depot audit</button>
+      <button class="btn ${o.auditBy==='customer'?'primary':'gray'}" id="auditByCust">Customer self-audit</button>
+    </div></div>`;
 
   // ---- DELIVERY stage (first) ----
   const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
@@ -704,7 +709,6 @@ function serviceCreationPanel(o){
 
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">&#128465; Delete</button>`;
-  if(!o.matchedAudit)return del+`<button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="pending")return del+`<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
   if(o.status==="deliv_delayed")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markOnTime">Now on time</button>`;
   if(o.status==="deliv_ontime")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
@@ -719,6 +723,16 @@ function wireDrawer(o){
   if(o.service){draft.flooring=(o.service.flooring||[]).map(x=>({...x}));draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));}
   $("#dwClose").onclick=closeDrawer;
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
+
+  // audit type selection
+  const setAuditBy=async(val)=>{
+    o.auditBy=val;o.service=o.service||{};o.service.audit_by=val;
+    o.log.push({t:"Site audit type: "+(val==='material_depot'?'Material Depot':'Customer self-audit'),d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('install_orders',o.id,{service:o.service,log:o.log});
+    await loadOrders();toast("Audit type saved");openOrder(o.pi);
+  };
+  if($("#auditByMD"))$("#auditByMD").onclick=()=>setAuditBy("material_depot");
+  if($("#auditByCust"))$("#auditByCust").onclick=()=>setAuditBy("customer");
 
   // manual status
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);});
@@ -752,7 +766,7 @@ function wireDrawer(o){
   if($("#createService"))$("#createService").onclick=async()=>{
     const fl=draft.flooring.filter(r=>r.sku||r.num),wp=draft.wallpaper.filter(r=>r.sku||r.num);
     if(!fl.length&&!wp.length){toast("Add at least one SKU");return;}
-    o.service={flooring:fl,wallpaper:wp};
+    o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
     o.subjobs=[];
     if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,installer_email:null,status:"created"});
     if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,installer_email:null,status:"created"});

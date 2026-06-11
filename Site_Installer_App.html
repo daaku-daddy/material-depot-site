@@ -197,6 +197,7 @@ async function loadJobs(){
             slot:sj.slot||null,
             status:sj.status==='assigned'?'scheduled':sj.status,
             sku:(sj.items||[]).map(it=>({num:it.num||'',name:it.sku||it.name||''})),
+            auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
             jobcard:existing[r.pi+'_'+sj.id]||null,
             parentLog:r.log||[]
@@ -285,6 +286,7 @@ function detailBody(j){
   } else if(j.status==="atsite"){
     stage=`<div class="bigstage"><div class="lbl">Step 3 of 3</div><div class="now">At the site</div>
       <div class="say">Do the installation, then fill the card and take photos.</div>
+      ${j.auditBy==='material_depot'?`<button class="bigbtn ghost" id="viewAuditBtn">View site audit report</button>`:''}
       <button class="bigbtn navy" id="openJC">${j.jobcard?'Continue installation card':'Start installation card'}</button></div>`;
   } else if(j.status==="completed"){
     stage=`<div class="bigstage"><div class="lbl">Done</div><div class="now" style="color:var(--green)">Completed</div>
@@ -303,7 +305,7 @@ function detailBody(j){
         <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
         <div class="k">Your BM</div><div class="v">${j.bm}</div>
       </div>
-      <button class="bigbtn ghost" id="viewAudit" style="margin-top:14px">View site audit report</button>
+      ${j.auditBy==='material_depot'?`<button class="bigbtn ghost" id="viewAudit" style="margin-top:14px">View site audit report</button>`:''}
     </div>`;
 }
 function wireDetail(j){
@@ -333,36 +335,39 @@ function wireDetail(j){
   if($("#no"))$("#no").onclick=()=>adv("reschedule","Sent to office to reschedule");
   if($("#reached"))$("#reached").onclick=()=>adv("atsite","You are at the site");
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(j);
+  if($("#viewAuditBtn"))$("#viewAuditBtn").onclick=()=>openAudit(j);
   if($("#viewAudit"))$("#viewAudit").onclick=()=>openAudit(j);
   if($("#dlPdf"))$("#dlPdf").onclick=()=>{if(j.jobcard)genPDF(j);};
 }
 
 /* ============== AUDIT REPORT (read-only) ============== */
-function openAudit(j){
+async function openAudit(j){
   $("#auSub").textContent=j.pi+" · "+j.name;
-  const a=j.audit;
-  if(!a||!a.rooms){
-    $("#auBody").innerHTML=`<div class="note blue">No site audit report is linked to this job.</div>`;
-    $("#auditScreen").classList.remove("hide");
-    $("#auBack").onclick=()=>$("#auditScreen").classList.add("hide");
-    return;
-  }
-  const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH']];
-  const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer needed','primer']];
-  const rooms=a.rooms.map((r,i)=>{
-    const fields=r.type==='wallpaper'?WP:FL;
-    const imgs=(r.sketch||r.photo)?`<div class="imgs">${r.sketch?`<img src="${r.sketch}">`:''}${r.photo?`<img src="${r.photo}">`:''}</div>`:`<div class="note blue" style="margin:0 0 10px">No diagram / photo saved in this audit.</div>`;
-    const calc=fields.map(([lbl,k])=>r.calc[k]?`<div><b>${lbl}:</b> ${r.calc[k]}</div>`:'').join("");
-    return `<div class="auroom"><div class="rh">Room ${i+1}: ${r.name}</div>${imgs}<div class="calc">${calc||'<span style="color:var(--muted)">No measurements recorded.</span>'}</div></div>`;
-  }).join("");
-  $("#auBody").innerHTML=`<div class="note blue">This is what the site auditor measured. Read only — you cannot change it.</div>
-    <div class="panel"><h2>Audit info</h2><div class="kvbig">
-      <div class="k">Auditor</div><div class="v">${a.auditor}</div>
-      <div class="k">Audit date</div><div class="v">${a.date}</div>
-      <div class="k">Rooms audited</div><div class="v">${a.rooms.length}</div></div></div>
-    ${rooms}`;
+  $("#auBody").innerHTML=`<div class="note blue">Loading audit report…</div>`;
   $("#auditScreen").classList.remove("hide");
   $("#auBack").onclick=()=>$("#auditScreen").classList.add("hide");
+  try{
+    const rows=await sbGet('audit_orders?phone=eq.'+encodeURIComponent(j.phone)+'&status=eq.completed&order=created_at.desc&limit=1&select=audit_ticked,auditor_name,date');
+    const a=(Array.isArray(rows)&&rows[0]&&rows[0].audit_ticked)?rows[0].audit_ticked:null;
+    if(!a||!a.rooms||!a.rooms.length){
+      $("#auBody").innerHTML=`<div class="note blue">No completed Material Depot site audit found for this phone number.</div>`;return;
+    }
+    const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
+    const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer needed','primer']];
+    const rooms=a.rooms.map((r,i)=>{
+      const fields=r.type==='wallpaper'?WP:FL;
+      const calc=fields.map(([lbl,k])=>r.calc&&r.calc[k]?`<div><b>${lbl}:</b> ${r.calc[k]}</div>`:'').join("");
+      return `<div class="auroom"><div class="rh">Room ${i+1}: ${r.name||'—'}</div>
+        <div class="calc">${calc||'<span style="color:var(--muted)">No measurements recorded.</span>'}</div>
+        ${r.notes?`<div class="note" style="margin:8px 0 0">${r.notes}</div>`:''}</div>`;
+    }).join("");
+    $("#auBody").innerHTML=`<div class="note blue">Material Depot site audit — read only.</div>
+      <div class="panel"><h2>Audit info</h2><div class="kvbig">
+        <div class="k">Auditor</div><div class="v">${a.auditor||rows[0].auditor_name||'—'}</div>
+        <div class="k">Audit date</div><div class="v">${a.date?fmtDate(a.date):'—'}</div>
+        <div class="k">Rooms audited</div><div class="v">${a.rooms.length}</div></div></div>
+      ${rooms}`;
+  }catch(e){$("#auBody").innerHTML=`<div class="note red">Couldn't load audit report — check your connection.</div>`;}
 }
 
 /* ============== INSTALLATION CARD (simple) ============== */
