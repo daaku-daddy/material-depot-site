@@ -496,7 +496,48 @@ function finishCard(j){
     if(!r.sku.trim()){toast("Enter the SKU code");return;}
     if(!r.photos||!r.photos.length){toast("Take a photo for "+(r.name||"each room"));return;}
   }
-  // sign screen
+  document.querySelector(".footer").classList.add("hide");
+  const roomCards=jcRooms.map((r,i)=>{
+    const photos=(r.photos||[]).map(p=>`<img src="${p}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;border:2px solid var(--line);flex:0 0 auto;">`).join('');
+    return `<div class="panel" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px">
+        <span style="background:var(--navy);color:#fff;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:800">Room ${i+1}</span>
+        <b style="font-size:17px">${r.name}</b>
+        ${r.sku?`<span style="font-size:13px;color:var(--muted)">SKU: ${r.sku}</span>`:''}
+      </div>
+      ${photos?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">${photos}</div>`:''}
+      ${r.comments?`<div style="font-size:14px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px">${r.comments}</div>`:''}
+    </div>`;
+  }).join('');
+  $("#jcBody").innerHTML=`
+    <div class="panel" style="background:var(--bg);margin-bottom:14px">
+      <h2 style="margin:0 0 12px">Job summary</h2>
+      <div class="kvbig">
+        <div class="k">Customer</div><div class="v">${j.name}</div>
+        <div class="k">PI No.</div><div class="v">${j.pi}</div>
+        <div class="k">Address</div><div class="v">${j.addr}</div>
+        <div class="k">Installer</div><div class="v">${ME.name}</div>
+        <div class="k">Date</div><div class="v">${fmtDate(j.date)}</div>
+        <div class="k">Rooms</div><div class="v">${jcRooms.length}</div>
+      </div>
+    </div>
+    ${roomCards}
+    <button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Sign &amp; complete &#8594;</button>
+    <button class="bigbtn ghost" id="backToRoomsFromPreview">&#8592; Back to rooms</button>`;
+  $("#proceedSign").onclick=()=>signAndFinish(j);
+  $("#backToRoomsFromPreview").onclick=()=>{
+    document.querySelector(".footer").classList.remove("hide");
+    const saved=collectRooms();
+    jcJob=j;jcRooms=[];jcSeq=0;
+    $("#jcBody").innerHTML=`<div class="note blue">Fill one block per room. Each room needs a photo after installation. <span class="reqstar">★</span> = required.</div><div id="roomsWrap"></div>`;
+    saved.forEach(r=>addRoom(r));
+    $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};autosave();$("#jcScreen").classList.add("hide");openDetail(j.pi+'|'+j.sjId);};
+    $("#jcAddRoom").onclick=()=>{addRoom();autosave();};
+    $("#jcDone").onclick=()=>finishCard(j);
+  };
+}
+
+function signAndFinish(j){
   $("#jcBody").innerHTML=`
     <div class="panel"><h2>Customer signature <span class="reqstar">★</span></h2>
       <div class="note">Show the phone to the customer. Ask them to sign that the installation is done and they are happy.</div>
@@ -505,11 +546,10 @@ function finishCard(j){
       <div class="fieldgap" style="margin-top:12px"><label>Customer name</label><input id="signName" value="${j.name}"></div>
     </div>
     <button class="bigbtn green" id="reallyDone">Save &amp; finish job</button>
-    <button class="bigbtn ghost" id="backRooms" style="margin-top:10px">Back to rooms</button>`;
-  document.querySelector(".footer").classList.add("hide");
+    <button class="bigbtn ghost" id="backToPreviewFromSign" style="margin-top:10px">&#8592; Back to preview</button>`;
   jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
-  $("#backRooms").onclick=()=>{document.querySelector(".footer").classList.remove("hide");const saved=collectRooms();openJobCard(j);jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
+  $("#backToPreviewFromSign").onclick=()=>finishCard(j);
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value}};

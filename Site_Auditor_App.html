@@ -495,12 +495,52 @@ function showSaveStatus(state){
 
 /* ============== REVIEW + SIGN ============== */
 function reviewAndSign(o){
-  // validate at least a room name
   if(jcRooms.length===0){toast("Add at least one room");return;}
   $("#jcFooter").classList.add("hide");
+  const roomCards=jcRooms.map((r,i)=>{
+    const fields=fieldsFor(r.type);
+    const meas=fields.filter(f=>r.calc&&r.calc[f.k]).map(f=>`<div class="k">${f.label}</div><div class="v">${r.calc[f.k]}</div>`).join('');
+    const photos=(r.photos||[]).map(p=>`<img src="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:0 0 auto;">`).join('');
+    let sketchImg='';
+    if(r._sketch&&r._sketch.strokes&&r._sketch.strokes.length){try{sketchImg=`<img src="${r._sketch.export()}" style="width:100%;border-radius:8px;border:1px solid var(--line);margin-bottom:8px;">`;}catch(e){}}
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+        <span style="background:var(--navy);color:#fff;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800">Room ${i+1}</span>
+        <b style="font-size:15px">${r.name||'(unnamed)'}</b>
+        <span style="font-size:11px;background:${r.type==='wallpaper'?'var(--purplebg)':'#fff4d6'};color:${r.type==='wallpaper'?'var(--purple)':'#7a5800'};border-radius:6px;padding:2px 8px;font-weight:700">${r.type==='wallpaper'?'Wallpaper':'Flooring'}</span>
+        ${r.sku?`<span style="font-size:11.5px;color:var(--muted)">SKU: ${r.sku}</span>`:''}
+      </div>
+      ${meas?`<div class="kv" style="margin-bottom:10px">${meas}</div>`:'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">No measurements recorded.</div>'}
+      ${sketchImg}
+      ${photos?`<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px">${photos}</div>`:''}
+      ${r.notes?`<div style="font-size:12.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:9px">${r.notes}</div>`:''}
+    </div>`;
+  }).join('');
+  $("#jcBody").innerHTML=`
+    <div class="card" style="background:var(--lighter);margin-bottom:12px">
+      <h2 style="margin:0 0 10px">Job summary</h2>
+      <div class="kv">
+        <div class="k">Client</div><div class="v">${o.name}</div>
+        <div class="k">PI No.</div><div class="v">${o.pi}</div>
+        <div class="k">Address</div><div class="v">${o.addr}</div>
+        <div class="k">Auditor</div><div class="v">${ME.name}</div>
+        <div class="k">Date</div><div class="v">${fmtDate(o.date)}</div>
+        <div class="k">Rooms</div><div class="v">${jcRooms.length}</div>
+      </div>
+    </div>
+    ${roomCards}
+    <div class="actions" style="margin-bottom:24px">
+      <button class="btn ghost" id="backToRooms">&#8592; Back to rooms</button>
+      <button class="btn green" id="proceedSign">Sign &amp; complete &#8594;</button>
+    </div>`;
+  $("#backToRooms").onclick=()=>{$("#jcFooter").classList.remove("hide");renderJCHeader();const saved=collectRooms();jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
+  $("#proceedSign").onclick=()=>signAndComplete(o);
+}
+
+function signAndComplete(o){
   const roomSummary=jcRooms.map((r,i)=>`<div class="kv" style="margin-bottom:8px"><div class="k">Room ${i+1}</div><div class="v">${r.name||'(unnamed)'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU ${r.sku||'NA'}</div></div>`).join("");
   $("#jcBody").innerHTML=`
-   <div class="card"><h2>Review</h2><div class="kv">
+   <div class="card"><h2>Summary</h2><div class="kv">
      <div class="k">Client</div><div class="v">${o.name}</div>
      <div class="k">PI</div><div class="v">${o.pi}</div>
      <div class="k">Rooms</div><div class="v">${jcRooms.length}</div></div>
@@ -516,12 +556,12 @@ function reviewAndSign(o){
      </div>
    </div>
    <div class="actions" style="margin-bottom:24px">
-     <button class="btn ghost" id="backToRooms">&#8592; Back to rooms</button>
+     <button class="btn ghost" id="backToPreview">&#8592; Back to preview</button>
      <button class="btn green" id="finishAudit">Generate PDF &amp; complete</button>
    </div>`;
   const sc=$("#signCanvas");jcSignPad=new SignPad(sc);setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
-  $("#backToRooms").onclick=()=>{$("#jcFooter").classList.remove("hide");renderJCHeader();const saved=collectRooms();jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
+  $("#backToPreview").onclick=()=>reviewAndSign(o);
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
     const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
