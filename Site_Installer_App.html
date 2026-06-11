@@ -85,9 +85,11 @@
   .roomtop .rn{font-weight:800;font-size:17px;}
   .roomtop .rm{border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:9px;padding:7px 12px;font-weight:800;font-size:14px;cursor:pointer;}
   .fieldgap{margin-bottom:14px;}
-  .photobox{border:2px dashed var(--blue);border-radius:14px;padding:18px;text-align:center;cursor:pointer;color:var(--blue);font-weight:800;font-size:16px;}
-  .photobox.has{border-style:solid;padding:8px;}
-  .photobox img{width:100%;border-radius:10px;display:block;}
+  .photobox{border:2px solid var(--line);border-radius:14px;overflow:hidden;}
+  .photobox.has{border-color:var(--blue);}
+  .photobox img{width:100%;display:block;}
+  .photo-btns{display:flex;gap:8px;margin-top:8px;}
+  .photo-btns .btn{flex:1;justify-content:center;padding:13px 8px;font-size:14px;}
   .reqstar{color:var(--red);}
   .addroom{width:100%;background:#fff;border:2px dashed var(--blue);color:var(--blue);border-radius:16px;padding:18px;font-weight:800;font-size:18px;cursor:pointer;margin-bottom:16px;}
   canvas.sign{width:100%;height:190px;border:2px dashed var(--blue);border-radius:14px;background:#fff;touch-action:none;display:block;}
@@ -423,11 +425,17 @@ function addRoom(restore){
   const f2=el('div','fieldgap');f2.innerHTML='<label>SKU Code <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;f2.appendChild(sI);block.appendChild(f2);
 
   const f3=el('div','fieldgap');f3.innerHTML='<label>Photo after installation <span class="reqstar">★</span></label>';
-  const file=document.createElement('input');file.type='file';file.accept='image/*';file.capture='environment';file.style.display='none';
-  const pbox=el('div','photobox'+(room.photo?' has':''));pbox.innerHTML=room.photo?`<img src="${room.photo}">`:'&#128247; Tap to take / upload photo';
-  pbox.onclick=()=>file.click();
-  file.onchange=()=>{const f=file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photo=rd.result;pbox.classList.add('has');pbox.innerHTML=`<img src="${room.photo}">`;};rd.readAsDataURL(f);};
-  f3.appendChild(pbox);f3.appendChild(file);block.appendChild(f3);
+  const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
+  const fileGal=document.createElement('input');fileGal.type='file';fileGal.accept='image/*';fileGal.style.display='none';
+  const pbox=el('div','photobox'+(room.photo?' has':''));pbox.style.display=room.photo?'block':'none';
+  if(room.photo)pbox.innerHTML=`<img src="${room.photo}">`;
+  const onPh=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photo=rd.result;pbox.innerHTML=`<img src="${room.photo}">`;pbox.classList.add('has');pbox.style.display='block';};rd.readAsDataURL(f);};
+  const pbtns=el('div','photo-btns');
+  const btnCam=el('button','btn ghost','📷 Camera');const btnGal=el('button','btn ghost','🖼 Gallery');
+  btnCam.onclick=()=>fileCam.click();btnGal.onclick=()=>fileGal.click();
+  fileCam.onchange=()=>onPh(fileCam.files[0]);fileGal.onchange=()=>onPh(fileGal.files[0]);
+  pbtns.appendChild(fileCam);pbtns.appendChild(fileGal);pbtns.appendChild(btnCam);pbtns.appendChild(btnGal);
+  f3.appendChild(pbox);f3.appendChild(pbtns);block.appendChild(f3);
 
   const f4=el('div','fieldgap');f4.innerHTML='<label>Comments (if any)</label>';const cI=document.createElement('textarea');cI.placeholder='Anything to note...';cI.value=room.comments;cI.oninput=()=>room.comments=cI.value;f4.appendChild(cI);block.appendChild(f4);
 
