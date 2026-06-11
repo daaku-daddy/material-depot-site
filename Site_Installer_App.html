@@ -181,7 +181,7 @@ async function loadJobs(){
     const rows=await sbGet('install_orders?select=*&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
     // Preserve existing jobcard data
-    const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'_'+j.sjId]=j.jobcard;});
+    const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'|'+j.sjId]=j.jobcard;});
     const newJobs=[];
     rows.forEach(r=>{
       (r.subjobs||[]).forEach(sj=>{
@@ -201,7 +201,7 @@ async function loadJobs(){
             sku:(sj.items||[]).map(it=>({num:it.num||'',name:it.sku||it.name||''})),
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
-            jobcard:existing[r.pi+'_'+sj.id]||null,
+            jobcard:existing[r.pi+'|'+sj.id]||null,
             parentLog:r.log||[]
           });
         }
@@ -237,7 +237,7 @@ function listView(){
       <div class="dd">${d.getDate()}</div><div class="ct">${n} job${n!==1?'s':''}</div></div>`;}).join("");
   const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(j=>j.status!=="completed"),done=list.filter(j=>j.status==="completed");
-  const card=j=>`<div class="jobcard" data-key="${j.pi}_${j.sjId}">
+  const card=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}">
     <div class="time">${slotLabel(j.slot)}</div>
     <div class="nm">${j.name}</div>
     <div class="ad">${j.addr}</div>
@@ -256,7 +256,7 @@ function renderList(){$("#listView").innerHTML=listView();
 /* ============== DETAIL (one clear action) ============== */
 let curKey=null;
 function openDetail(key){
-  curKey=key;const [pi,sjId]=key.split('_');const j=JOBS.find(x=>x.pi===pi&&x.sjId===sjId);if(!j)return;
+  curKey=key;const idx=key.indexOf('|');const pi=key.slice(0,idx);const sjId=key.slice(idx+1);const j=JOBS.find(x=>x.pi===pi&&x.sjId===sjId);if(!j)return;
   $("#detName").textContent=j.name;
   $("#detSub").textContent=fmtDate(j.date)+" · "+slotLabel(j.slot);
   $("#detBody").innerHTML=detailBody(j);
@@ -330,7 +330,7 @@ function wireDetail(j){
         }
       }catch(e){j.status=prev;toast("Network error — try again");return;}
     }
-    await loadJobs();toast(msg);openDetail(j.pi+'_'+j.sjId);
+    await loadJobs();toast(msg);openDetail(j.pi+'|'+j.sjId);
   };
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Now: call the customer");
   if($("#yes"))$("#yes").onclick=()=>adv("onway","Marked: on the way");
@@ -394,7 +394,7 @@ function openJobCard(j){
     <div id="roomsWrap"></div>`;
   $("#jcScreen").classList.remove("hide");
   if(j.jobcard&&j.jobcard.rooms&&j.jobcard.rooms.length)j.jobcard.rooms.forEach(r=>addRoom(r));else addRoom();
-  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};$("#jcScreen").classList.add("hide");openDetail(j.pi+'_'+j.sjId);};
+  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};$("#jcScreen").classList.add("hide");openDetail(j.pi+'|'+j.sjId);};
   $("#jcAddRoom").onclick=()=>addRoom();
   $("#jcDone").onclick=()=>finishCard(j);
 }
@@ -466,7 +466,7 @@ function finishCard(j){
     await loadJobs();
     document.querySelector(".footer").classList.remove("hide");
     $("#jcScreen").classList.add("hide");
-    openDetail(j.pi+'_'+j.sjId);
+    openDetail(j.pi+'|'+j.sjId);
     toast("Job finished & sent to office");
   };
 }
