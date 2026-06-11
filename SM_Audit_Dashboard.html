@@ -382,6 +382,8 @@ async function loadOrders(){
       slot:r.slot||null,
       date:r.date||null,
       auditor:r.auditor_id||null,
+      auditorName:r.auditor_name||null,
+      auditorEmail:r.auditor_email||null,
       log:r.log||[]
     }));
     render();
@@ -393,6 +395,7 @@ const $=s=>document.querySelector(s);
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});};
 const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
 const auditorById=id=>AUDITORS.find(a=>a.id===id);
+function getAuditorName(o){if(!o.auditor)return null;const a=auditorById(o.auditor);return a?a.name:(o.auditorName||'?');}
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
 function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="pin">&#128205;</span>${addr}</a>`;}
@@ -447,7 +450,7 @@ function ordersView(){
     return true;
   }).map(o=>{
     const skupills=o.skus.map(s=>`<span class="skupill ${s.audit?'audit':''}">${s.c}</span>`).join("");
-    const aud=o.auditor?`<span class="audtag">${auditorById(o.auditor).name}</span>`:`<span class="audtag none">Unassigned</span>`;
+    const aud=o.auditor?`<span class="audtag">${getAuditorName(o)}</span>`:`<span class="audtag none">Unassigned</span>`;
     return `<tr data-pi="${o.pi}">
       <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
       <td><div class="pill-list">${skupills}</div></td>
@@ -475,7 +478,7 @@ function scheduleView(){
     <td><b>${slotLabel(o.slot)}</b></td><td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
     <td style="max-width:170px">${mapLink(o.addr)}</td>
-    <td>${o.auditor?auditorById(o.auditor).name:'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
+    <td>${o.auditor?getAuditorName(o):'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
     <td>${chip(o.status)}</td></tr>`).join("");
   return `<div class="crumbs">Site Audit / Today's schedule</div>
   <div class="pagehead"><div><h1>Today — ${fmtDate(dstr(today))}</h1><p>Live view of today's audits and auditor progress.</p></div></div>
@@ -491,7 +494,7 @@ function reschedView(){
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
     <td style="max-width:170px">${mapLink(o.addr)}</td>
     <td>${fmtDate(o.date)} · ${slotLabel(o.slot)}</td>
-    <td>${o.auditor?auditorById(o.auditor).name:"—"}</td>
+    <td>${o.auditor?getAuditorName(o):"—"}</td>
     <td><button class="btn primary sm" data-rebook="${o.pi}">Call &amp; rebook</button></td></tr>`).join("");
   return `<div class="crumbs">Site Audit / To reschedule</div>
   <div class="pagehead"><div><h1>To reschedule</h1><p>Auto-flagged when an auditor marks an order To Reschedule. Call the customer and rebook.</p></div></div>
@@ -602,9 +605,9 @@ function drawerBody(o){
       <div class="note">Only auditors under their daily cap on ${fmtDate(o.date)} are selectable. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div></div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
-    const a=auditorById(o.auditor);
+    const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
     html+=`<div class="sec"><h3>Assignment</h3><div class="kv">
-      <div class="k">Auditor</div><div class="v">${a.name} (${a.phone})</div>
+      <div class="k">Auditor</div><div class="v">${getAuditorName(o)} (${aPhone})</div>
       <div class="k">Slot</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
       <div class="k">Live status</div><div class="v">${chip(o.status)}</div></div>
       <div class="note">Auditor's live steps appear here automatically. Customer was notified of the auditor by SMS.</div></div>`;
@@ -614,9 +617,8 @@ function drawerBody(o){
       <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
       <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div></div>`;
   } else if(o.status==="completed"){
-    const a=auditorById(o.auditor);
     html+=`<div class="sec"><h3>Completed</h3><div class="kv">
-      <div class="k">Auditor</div><div class="v">${a.name}</div>
+      <div class="k">Auditor</div><div class="v">${getAuditorName(o)}</div>
       <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
       <div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">JobCard PDF generated. Status pushed to BM ${o.bm}'s CRM against ${o.phone}.</div></div>`;
   }
@@ -655,7 +657,7 @@ function drawerFoot(o){
   if(["created","call_na"].includes(o.status))return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
   if(o.status==="reschedule")return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Rebook slot</button>`;
-  if(["assigned","onway","atsite"].includes(o.status))return `<button class="btn gray" id="dClose">Close</button><button class="btn ghost" id="simStep">&#9654; Simulate next auditor step</button>`;
+  if(["assigned","onway","atsite"].includes(o.status))return `<button class="btn gray" id="dClose">Close</button>`;
   return `<button class="btn gray" id="dClose">Close</button>`;
 }
 
@@ -769,11 +771,6 @@ function wireDrawer(o){
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
     toast("Assigned "+a.name+" · customer notified");render();openOrder(o.pi);};
 
-  // ---- simulate auditor live steps ----
-  if($("#simStep"))$("#simStep").onclick=()=>{
-    const next={assigned:"onway",onway:"atsite",atsite:"completed"}[o.status];o.status=next;
-    const msg={onway:"Auditor confirmed pre-call · On the way",atsite:"Auditor arrived · At site",completed:"Audit completed · JobCard PDF generated · pushed to BM CRM"}[next];
-    o.log.push({t:msg,d:"Just now",by:"auto"});toast(STATUS[next].l+" (from auditor)");render();openOrder(o.pi);};
 }
 
 /* ============== GLOBAL WIRING ============== */
@@ -864,7 +861,7 @@ async function submitAddOrder(){
 }
 document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
 
-Promise.all([loadAuditors(),loadOrders()]).then(()=>{setInterval(loadOrders,30000);});
+Promise.all([loadAuditors(),loadOrders()]).then(()=>{setInterval(loadOrders,10000);});
 </script>
 </body>
 </html>

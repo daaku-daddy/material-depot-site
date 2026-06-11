@@ -17,28 +17,17 @@
   .card h1{font-size:19px;margin:0 0 4px;color:var(--navy);}
   .card .sub{font-size:13.5px;color:var(--muted);margin:0 0 20px;line-height:1.45;}
   label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin:0 0 7px;}
-  input{width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;font-size:16px;background:#fff;color:var(--ink);}
+  input[type=email]{width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;font-size:16px;background:#fff;color:var(--ink);}
   input:focus{outline:none;border-color:var(--blue);}
-  .otpwrap{display:flex;gap:8px;justify-content:space-between;}
-  .otpwrap input{text-align:center;font-size:22px;font-weight:800;padding:13px 0;letter-spacing:0;}
+  .pinwrap{display:flex;gap:10px;justify-content:center;}
+  .pinwrap input{text-align:center;font-size:28px;font-weight:800;padding:12px 0;width:68px;flex:0 0 auto;border:2px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);}
+  .pinwrap input:focus{outline:none;border-color:var(--blue);}
   .btn{width:100%;border:0;border-radius:12px;padding:15px;font-size:16px;font-weight:800;cursor:pointer;margin-top:18px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;}
   .btn:disabled{opacity:.45;cursor:not-allowed;}
-  .btn.alt{background:#fff;color:var(--blue);border:2px solid var(--blue);margin-top:10px;}
   .err{background:var(--redbg);color:var(--red);border-radius:10px;padding:11px 13px;font-size:13px;font-weight:600;margin-top:14px;display:none;}
   .err.show{display:block;}
-  .otpdemo{background:var(--amberbg);color:var(--amber);border-radius:10px;padding:11px 13px;font-size:13px;font-weight:700;margin-top:14px;text-align:center;}
-  .meta{font-size:12.5px;color:var(--muted);margin-top:14px;text-align:center;}
-  .meta a{color:var(--blue);font-weight:700;cursor:pointer;text-decoration:none;}
   .roleline{display:flex;align-items:center;gap:10px;background:var(--greenbg);color:var(--green);border-radius:12px;padding:13px 15px;font-weight:700;font-size:14px;margin-top:16px;}
   .roleline .ic{font-size:20px;}
-  .demo{margin-top:18px;border-top:1px solid var(--line);padding-top:16px;}
-  .demo .dt{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin-bottom:10px;text-align:center;}
-  .demolist{display:grid;gap:8px;}
-  .demobtn{display:flex;align-items:center;gap:11px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 12px;cursor:pointer;text-align:left;}
-  .demobtn:hover{border-color:var(--blue);background:#f7faff;}
-  .demobtn .av{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;flex:0 0 auto;}
-  .demobtn .nm{font-weight:700;font-size:13.5px;color:var(--ink);} .demobtn .rl{font-size:11.5px;color:var(--muted);}
-  .demobtn .em{margin-left:auto;font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;}
   .footnote{text-align:center;color:#8aa0bf;font-size:11.5px;margin-top:20px;}
   .back{background:none;border:0;color:var(--blue);font-weight:700;font-size:13.5px;cursor:pointer;padding:0;margin-bottom:8px;}
   .spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;}
@@ -52,9 +41,7 @@
     <div class="t">MATERIAL DEPOT</div>
     <div class="h">Installations &amp; Audit</div>
   </div>
-
   <div class="card" id="card"></div>
-
   <div class="footnote">Your access is set by an Admin. The dashboard you see depends on your role.</div>
 </div>
 
@@ -63,29 +50,50 @@ const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 
 const ROLE_FILES={
-  admin:       {label:"Admin",           file:"Admin.html",             color:"#5b3aa6", note:"Admin console"},
-  service_mgr: {label:"Service Manager", file:"SM_Audit_Dashboard.html",color:"#1F3A5F", note:"Site Audit + Installations"},
-  site_auditor:{label:"Site Auditor",    file:"Site_Auditor_App.html",  color:"#2E6CA8", note:"Field audit app"},
-  installer:   {label:"Site Installer",  file:"Site_Installer_App.html",color:"#1f7a3f", note:"Field installation app"},
+  admin:       {label:"Admin",           file:"Admin.html",             color:"#5b3aa6",note:"Admin console"},
+  service_mgr: {label:"Service Manager", file:"SM_Audit_Dashboard.html",color:"#1F3A5F",note:"Site Audit + Installations"},
+  site_auditor:{label:"Site Auditor",    file:"Site_Auditor_App.html",  color:"#2E6CA8",note:"Field audit app"},
+  installer:   {label:"Site Installer",  file:"Site_Installer_App.html",color:"#1f7a3f",note:"Field installation app"},
 };
+
 const $=s=>document.querySelector(s);
-let state={email:"",otp:"",sentCode:"",user:null};
-function genCode(){return String(Math.floor(100000+Math.random()*900000));}
-function initials(n){return n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
+let state={email:"",user:null};
+
+async function patchProfile(id,body){
+  const r=await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}`,{
+    method:'PATCH',
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+    body:JSON.stringify(body)
+  });
+  return r.json();
+}
+
+const PIN4=()=>[0,1,2,3].map(()=>`<input type="text" inputmode="numeric" maxlength="1" autocomplete="off">`).join('');
+
+function wirePinBoxes(boxes,onChange){
+  const sync=()=>onChange(boxes.map(b=>b.value).join(''));
+  boxes.forEach((b,i)=>{
+    b.oninput=()=>{b.value=b.value.replace(/\D/g,'').slice(0,1);if(b.value&&i<boxes.length-1)boxes[i+1].focus();sync();};
+    b.onkeydown=e=>{if(e.key==='Backspace'&&!b.value&&i>0)boxes[i-1].focus();};
+    b.onpaste=e=>{const t=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,4);if(t){e.preventDefault();t.split('').forEach((c,k)=>{if(boxes[k])boxes[k].value=c;});boxes[Math.min(t.length,boxes.length-1)].focus();sync();}};
+  });
+}
 
 /* ---- Screen 1: email ---- */
 function emailScreen(){
   $("#card").innerHTML=`
     <h1>Sign in</h1>
-    <p class="sub">Enter your Material Depot email. We'll send a one-time code to verify it's you.</p>
+    <p class="sub">Enter your Material Depot email to continue.</p>
     <label>Work email</label>
     <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@materialdepot.com" value="${state.email}">
     <div class="err" id="err"></div>
-    <button class="btn" id="send">Send code</button>`;
-  $("#email").oninput=e=>state.email=e.target.value.trim();
+    <button class="btn" id="send">Continue</button>`;
+  const ei=$("#email");
+  ei.oninput=e=>state.email=e.target.value.trim();
   $("#send").onclick=trySend;
-  $("#email").onkeydown=e=>{if(e.key==='Enter')trySend();};
+  ei.onkeydown=e=>{if(e.key==='Enter')trySend();};
 }
+
 async function trySend(){
   const err=$("#err");err.classList.remove("show");
   const email=(state.email||"").toLowerCase();
@@ -97,49 +105,95 @@ async function trySend(){
       {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
     const rows=await res.json();
     if(!Array.isArray(rows)||rows.length===0){
-      err.innerHTML="This email isn't approved for access yet. Ask an Admin to add you.";err.classList.add("show");
-      btn.disabled=false;btn.textContent="Send code";return;
+      err.textContent="This email isn't approved for access yet. Ask an Admin to add you.";err.classList.add("show");
+      btn.disabled=false;btn.textContent="Continue";return;
     }
-    state.user=rows[0];state.sentCode=genCode();state.otp="";
-    otpScreen();
+    state.user=rows[0];
+    if(state.user.passcode)enterPasscodeScreen();
+    else createPasscodeScreen();
   }catch(e){
     err.textContent="Network error — please try again.";err.classList.add("show");
-    btn.disabled=false;btn.textContent="Send code";
+    btn.disabled=false;btn.textContent="Continue";
   }
 }
 
-/* ---- Screen 2: OTP ---- */
-function otpScreen(){
+/* ---- Screen 2a: create passcode (first login) ---- */
+function createPasscodeScreen(){
   $("#card").innerHTML=`
     <button class="back" id="back">&#8592; Change email</button>
-    <h1>Enter the code</h1>
-    <p class="sub">We sent a 6-digit code to <b>${state.email}</b>. It expires in 10 minutes.</p>
-    <div class="otpwrap" id="otpwrap">
-      ${[0,1,2,3,4,5].map(i=>`<input maxlength="1" inputmode="numeric" data-i="${i}">`).join("")}
-    </div>
-    <div class="otpdemo">Demo code (no SMS gateway): <b>${state.sentCode}</b></div>
+    <h1>Create your passcode</h1>
+    <p class="sub">First time here — set a 4-digit passcode. You'll use it every time you sign in.</p>
+    <label>New passcode</label>
+    <div class="pinwrap" id="pw1">${PIN4()}</div>
+    <label style="margin-top:18px">Confirm passcode</label>
+    <div class="pinwrap" id="pw2">${PIN4()}</div>
     <div class="err" id="err"></div>
-    <button class="btn" id="verify" disabled>Verify &amp; continue</button>
-    <button class="btn alt" id="resend">Resend code</button>`;
+    <button class="btn" id="setpin" disabled>Set passcode &amp; sign in</button>`;
   $("#back").onclick=emailScreen;
-  const boxes=[...document.querySelectorAll("#otpwrap input")];
-  boxes[0].focus();
-  boxes.forEach((b,i)=>{
-    b.oninput=()=>{b.value=b.value.replace(/\D/g,'');if(b.value&&i<5)boxes[i+1].focus();sync();};
-    b.onkeydown=e=>{if(e.key==='Backspace'&&!b.value&&i>0)boxes[i-1].focus();if(e.key==='Enter')tryVerify();};
-    b.onpaste=e=>{const t=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);if(t){e.preventDefault();t.split('').forEach((c,k)=>{if(boxes[k])boxes[k].value=c;});sync();boxes[Math.min(t.length,5)].focus();}};
-  });
-  function sync(){state.otp=boxes.map(b=>b.value).join("");$("#verify").disabled=state.otp.length!==6;}
-  $("#verify").onclick=tryVerify;
-  $("#resend").onclick=()=>{state.sentCode=genCode();otpScreen();};
+  const b1=[...document.querySelectorAll('#pw1 input')];
+  const b2=[...document.querySelectorAll('#pw2 input')];
+  function checkReady(){$("#setpin").disabled=!(b1.every(b=>b.value)&&b2.every(b=>b.value));}
+  wirePinBoxes(b1,val=>{if(val.length===4)b2[0].focus();checkReady();});
+  wirePinBoxes(b2,()=>checkReady());
+  b1[0].focus();
+  $("#setpin").onclick=tryCreate;
 }
-function tryVerify(){
+
+async function tryCreate(){
   const err=$("#err");err.classList.remove("show");
-  if(state.otp!==state.sentCode){err.textContent="That code doesn't match. Check and try again.";err.classList.add("show");return;}
+  const p1=[...document.querySelectorAll('#pw1 input')].map(b=>b.value).join('');
+  const p2=[...document.querySelectorAll('#pw2 input')].map(b=>b.value).join('');
+  if(p1.length!==4){err.textContent="Enter a 4-digit passcode.";err.classList.add("show");return;}
+  if(p1!==p2){
+    err.textContent="Passcodes don't match — try again.";err.classList.add("show");
+    [...document.querySelectorAll('#pw2 input')].forEach(b=>b.value='');
+    document.querySelector('#pw2 input').focus();
+    $("#setpin").disabled=true;return;
+  }
+  const btn=$("#setpin");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Saving…';
+  try{
+    await patchProfile(state.user.id,{passcode:p1});
+    state.user.passcode=p1;
+    successScreen();
+  }catch(e){
+    err.textContent="Network error — please try again.";err.classList.add("show");
+    btn.disabled=false;btn.innerHTML="Set passcode &amp; sign in";
+  }
+}
+
+/* ---- Screen 2b: enter passcode ---- */
+function enterPasscodeScreen(){
+  $("#card").innerHTML=`
+    <button class="back" id="back">&#8592; Change email</button>
+    <h1>Enter your passcode</h1>
+    <p class="sub">Welcome back, <b>${state.user.name.split(' ')[0]}</b>. Enter your 4-digit passcode.</p>
+    <div class="pinwrap" id="pw">${PIN4()}</div>
+    <div class="err" id="err"></div>
+    <button class="btn" id="verify" disabled>Sign in</button>`;
+  $("#back").onclick=emailScreen;
+  const boxes=[...document.querySelectorAll('#pw input')];
+  wirePinBoxes(boxes,val=>{
+    $("#verify").disabled=val.length!==4;
+    if(val.length===4)tryEnter();
+  });
+  boxes[0].focus();
+  $("#verify").onclick=tryEnter;
+}
+
+function tryEnter(){
+  const err=$("#err");err.classList.remove("show");
+  const pin=[...document.querySelectorAll('#pw input')].map(b=>b.value).join('');
+  if(pin.length!==4)return;
+  if(pin!==state.user.passcode){
+    err.textContent="Incorrect passcode. Try again.";err.classList.add("show");
+    [...document.querySelectorAll('#pw input')].forEach(b=>b.value='');
+    document.querySelector('#pw input').focus();
+    $("#verify").disabled=true;return;
+  }
   successScreen();
 }
 
-/* ---- Screen 3: success + route ---- */
+/* ---- Screen 3: success ---- */
 function successScreen(){
   const r=ROLE_FILES[state.user.role];
   sessionStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role}));

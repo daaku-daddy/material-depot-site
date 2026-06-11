@@ -170,8 +170,7 @@ let ORDERS=[];
 async function loadJobs(){
   try{
     const rows=await sbGet('audit_orders?auditor_email=eq.'+encodeURIComponent(ME.email)+'&select=*&order=created_at.desc');
-    if(!Array.isArray(rows)){return;}
-    // Preserve existing jobcard data (in-memory only, not in DB yet)
+    if(!Array.isArray(rows)){renderList();return;}
     const existing={};ORDERS.forEach(o=>{if(o.jobcard)existing[o.pi]=o.jobcard;});
     ORDERS=rows.map(r=>({
       id:r.id,
@@ -182,15 +181,15 @@ async function loadJobs(){
       bm:r.bm||'',
       date:r.date||null,
       slot:r.slot||null,
-      status:r.status==='assigned'?'scheduled':r.status, // SM "assigned" → auditor sees "scheduled"
+      status:r.status==='assigned'?'scheduled':r.status,
       skus:r.skus||[],
       log:r.log||[],
       jobcard:existing[r.pi]||null
     }));
     renderList();
-  }catch(e){console.error('loadJobs',e);}
+  }catch(e){console.error('loadJobs',e);renderList();}
 }
-setInterval(loadJobs,30000);
+setInterval(loadJobs,10000);
 
 /* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
 const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
@@ -201,7 +200,7 @@ const fieldsFor=t=>t==='wallpaper'?WALL_FIELDS:FLOOR_FIELDS;
 const $=s=>document.querySelector(s);
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});};
 const slotLabel=id=>(SLOTS[id]||{}).label||"—";
-function chip(st){const s=STATUS[st];return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function chip(st){const s=STATUS[st]||{l:st,c:'c-scheduled'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function imgFmt(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
@@ -227,11 +226,11 @@ function listView(){
     return `<div class="daychip ${selDay===ds?'on':''}" data-day="${ds}">
       <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
       <div class="dd">${d.getDate()}</div><div class="ct">${n} audit${n!==1?'s':''}</div></div>`;}).join("");
-  const list=ORDERS.filter(o=>o.date===selDay).sort((a,b)=>a.slot.localeCompare(b.slot));
+  const list=ORDERS.filter(o=>o.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(o=>o.status!=="completed");
   const done=list.filter(o=>o.status==="completed");
   const card=o=>{
-    const skus=o.skus.map(s=>`<span class="skupill ${s.type==='wallpaper'?'wp':'fl'}">${s.type==='wallpaper'?'Wallpaper':'Flooring'} · ${s.sku}</span>`).join("");
+    const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}</span>`).join("");
     return `<div class="ocard" data-pi="${o.pi}">
       <div class="top"><div><div class="nm">${o.name}</div><div class="pi">${o.pi} · BM ${o.bm}</div></div>
         <div class="slot"><div class="w">${slotLabel(o.slot)}</div>${chip(o.status)}</div></div>
@@ -263,7 +262,7 @@ function openDetail(pi){
   wireDetail(o);
 }
 function detailBody(o){
-  const skus=o.skus.map(s=>`<span class="skupill ${s.type==='wallpaper'?'wp':'fl'}">${s.type==='wallpaper'?'Wallpaper':'Flooring'} · ${s.sku}${s.num?(' · '+s.num):''}</span>`).join(" ")||"NA";
+  const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}${s.n&&s.n!==s.c?' · '+s.n:''}</span>`).join(" ")||"NA";
   let stage="";
   if(o.status==="scheduled"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">Scheduled</div>
@@ -469,11 +468,14 @@ function reviewAndSign(o){
     jcSign={img:jcSignPad.export(),name:$("#signName").value};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
+    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:"Today "+now,by:"auto"});
+    if(o.id){try{await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});}catch(e){toast("Saved locally — sync failed, will retry");}}
     toast("Building PDF…");
     await genPDF(o);
     $("#jcScreen").classList.add("hide");
     openDetail(o.pi);
-    toast("Audit completed · sent to SM & BM CRM");
+    toast("Audit completed · SM notified");
   };
 }
 
@@ -541,6 +543,7 @@ function renderSketchData(r){
 
 $("#jcBack").onclick=()=>{$("#jcScreen").classList.add("hide");};
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
+renderList();
 loadJobs();
 </script>
 </body>

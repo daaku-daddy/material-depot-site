@@ -277,13 +277,14 @@ async function renderOverview(m){
     <div class="card">
       <div class="card-head"><h2>Team Members</h2><button class="btn-primary" style="margin-left:auto" onclick="openAddUser()">+ Add User</button></div>
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Passcode</th><th>Added</th><th>Actions</th></tr></thead>
         <tbody>
           ${list.length?list.slice(0,6).map(u=>`
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div class="user-av" style="background:${ROLES[u.role]?.color||'#999'}">${initials(u.name)}</div><b>${u.name}</b></div></td>
               <td style="color:var(--muted);font-family:monospace;font-size:12px">${u.email}</td>
               <td>${roleBadge(u.role)}</td>
+              <td>${u.passcode?`<code style="background:var(--amberbg);color:var(--amber);border-radius:6px;padding:2px 8px;font-size:13px;font-weight:800">${u.passcode}</code>`:'<span style="color:var(--muted)">—</span>'}</td>
               <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
               <td><div style="display:flex;gap:6px">
                 <button class="btn-icon" onclick='openEditRole(${JSON.stringify(u)})'>✏️ Edit Role</button>
@@ -324,13 +325,14 @@ function drawUsersTable(m){
         <button class="btn-primary" onclick="openAddUser()">+ Add User</button>
       </div>
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Added</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Passcode</th><th>Added</th><th>Actions</th></tr></thead>
         <tbody>
           ${filtered.length?filtered.map(u=>`
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div class="user-av" style="background:${ROLES[u.role]?.color||'#999'}">${initials(u.name)}</div><b>${u.name}</b></div></td>
               <td style="color:var(--muted);font-family:monospace;font-size:12px">${u.email}</td>
               <td>${roleBadge(u.role)}</td>
+              <td>${u.passcode?`<code style="background:var(--amberbg);color:var(--amber);border-radius:6px;padding:2px 8px;font-size:13px;font-weight:800">${u.passcode}</code>`:'<span style="color:var(--muted)">—</span>'}</td>
               <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
               <td><div style="display:flex;gap:6px">
                 <button class="btn-icon" onclick='openEditRole(${JSON.stringify(u)})'>✏️ Edit Role</button>
