@@ -212,36 +212,18 @@ function initials(n){return(n||'').split(' ').map(x=>x[0]).join('').slice(0,2).t
 function fmtDate(s){if(!s)return '—';const d=new Date(s);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
 
 const JOB_STATUS={
-  pending:   {l:'Pending',    c:'c-pending'},
-  scheduled: {l:'Scheduled',  c:'c-scheduled'},
-  onway:     {l:'On the Way', c:'c-onway'},
-  atsite:    {l:'At Site',    c:'c-atsite'},
-  completed: {l:'Completed',  c:'c-completed'},
-  reschedule:{l:'Reschedule', c:'c-reschedule'},
+  pending:    {l:'Pending',      c:'c-pending'},
+  assigned:   {l:'Assigned',     c:'c-scheduled'},
+  callpending:{l:'Call Pending', c:'c-scheduled'},
+  scheduled:  {l:'Scheduled',    c:'c-scheduled'},
+  onway:      {l:'On the Way',   c:'c-onway'},
+  atsite:     {l:'At Site',      c:'c-atsite'},
+  completed:  {l:'Completed',    c:'c-completed'},
+  reschedule: {l:'Reschedule',   c:'c-reschedule'},
 };
 function jobChip(s){const st=JOB_STATUS[s]||{l:s,c:'c-pending'};return `<span class="chip ${st.c}"><span class="dot"></span>${st.l}</span>`;}
 
-const MOCK_JOBS=[
-  {id:'AUD-2026-050',type:'audit',  customer:'Vikram Mehta',    addr:'Whitefield, Bangalore',        assignee:null,            status:'pending',   date:null},
-  {id:'AUD-2026-049',type:'audit',  customer:'Sunita Reddy',    addr:'Indiranagar, Bangalore',       assignee:'Imran Sheikh',  status:'onway',     date:'2026-06-10'},
-  {id:'INS-2026-032',type:'install',customer:'Anand Kulkarni',  addr:'Marathahalli, Bangalore',      assignee:'Faisal Khan',   status:'scheduled', date:'2026-06-11'},
-  {id:'INS-2026-031',type:'install',customer:'Deepa Krishnan',  addr:'HSR Layout, Bangalore',        assignee:'Mahesh Pawar',  status:'atsite',    date:'2026-06-10'},
-  {id:'AUD-2026-048',type:'audit',  customer:'Rahul Sharma',    addr:'Koramangala, Bangalore',       assignee:'Rakesh Kumar',  status:'completed', date:'2026-06-09'},
-  {id:'AUD-2026-047',type:'audit',  customer:'Meena Iyer',      addr:'JP Nagar, Bangalore',          assignee:'Rakesh Kumar',  status:'completed', date:'2026-06-08'},
-  {id:'INS-2026-030',type:'install',customer:'Suresh Rao',      addr:'Electronic City, Bangalore',   assignee:'Mahesh Pawar',  status:'completed', date:'2026-06-07'},
-  {id:'AUD-2026-046',type:'audit',  customer:'Kavita Patel',    addr:'Banashankari, Bangalore',      assignee:'Suresh Babu',   status:'scheduled', date:'2026-06-11'},
-  {id:'INS-2026-029',type:'install',customer:'Rajan Thomas',    addr:'Hebbal, Bangalore',            assignee:'Faisal Khan',   status:'pending',   date:null},
-  {id:'AUD-2026-045',type:'audit',  customer:'Pooja Singh',     addr:'BTM Layout, Bangalore',        assignee:'Anand Verma',   status:'reschedule',date:'2026-06-09'},
-];
-
-const MOCK_PERF=[
-  {name:'Rakesh Kumar', role:'site_auditor',total:48,done:42,pending:4,monthly:12,pct:88},
-  {name:'Imran Sheikh', role:'site_auditor',total:35,done:30,pending:5,monthly:9, pct:91},
-  {name:'Suresh Babu',  role:'site_auditor',total:28,done:24,pending:4,monthly:7, pct:86},
-  {name:'Anand Verma',  role:'site_auditor',total:31,done:27,pending:3,monthly:8, pct:87},
-  {name:'Mahesh Pawar', role:'installer',   total:29,done:25,pending:3,monthly:7, pct:85},
-  {name:'Faisal Khan',  role:'installer',   total:22,done:20,pending:2,monthly:6, pct:93},
-];
+let realJobs=[];
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
 function showModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('overlay').style.display='flex';}
@@ -260,20 +242,24 @@ async function renderView(v){
   const m=document.getElementById('main');
   if(v==='overview')     await renderOverview(m);
   else if(v==='users')   await renderUsers(m);
-  else if(v==='roleviewer') renderRoleViewer(m);
-  else if(v==='jobs')    renderJobs(m);
-  else if(v==='perf')    renderPerf(m);
+  else if(v==='roleviewer') await renderRoleViewer(m);
+  else if(v==='jobs')    await renderJobs(m);
+  else if(v==='perf')    await renderPerf(m);
 }
 
 /* ---- OVERVIEW ---- */
 async function renderOverview(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
-  const users=await sbGet('profiles?select=*&order=created_at.desc');
+  const [users,auditActive,installActive]=await Promise.all([
+    sbGet('profiles?select=*&order=created_at.desc'),
+    sbGet('audit_orders?status=in.(assigned,onway,atsite)&select=id'),
+    sbGet('install_orders?status=in.(scheduled,onway,atsite)&select=id'),
+  ]);
   const list=Array.isArray(users)?users:[];
   const c={admin:0,service_mgr:0,site_auditor:0,installer:0};
   list.forEach(u=>{if(c[u.role]!==undefined)c[u.role]++;});
   const total=list.length;
-  const active=MOCK_JOBS.filter(j=>['onway','atsite','scheduled'].includes(j.status)).length;
+  const active=(Array.isArray(auditActive)?auditActive.length:0)+(Array.isArray(installActive)?installActive.length:0);
   document.getElementById('users-count').textContent=total;
 
   m.innerHTML=`
@@ -457,46 +443,120 @@ async function deleteUser(id,name){
 }
 
 /* ---- ROLE VIEWER ---- */
-let activeRoleView=null;
-function renderRoleViewer(m){
+let rvRole=null, rvPersonEmail=null, rvPersons={}, rvSmTab='audit';
+
+async function renderRoleViewer(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  const users=await sbGet('profiles?role=neq.admin&select=id,name,email,role&order=name.asc');
+  rvPersons={};
+  if(Array.isArray(users)) users.forEach(u=>{if(!rvPersons[u.role])rvPersons[u.role]=[];rvPersons[u.role].push(u);});
+  drawRoleViewer(m);
+}
+
+function drawRoleViewer(m){
+  const persons=rvRole?(rvPersons[rvRole]||[]):[];
+  let frameHtml='';
+  if(rvRole&&rvPersonEmail){
+    const p=persons.find(x=>x.email===rvPersonEmail);
+    const smTabs=rvRole==='service_mgr'?`<div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="filt-btn${rvSmTab==='audit'?' active':''}" onclick="setSmTab('audit')">Audit Dashboard</button>
+      <button class="filt-btn${rvSmTab==='install'?' active':''}" onclick="setSmTab('install')">Install Dashboard</button>
+    </div>`:'';
+    frameHtml=smTabs+`<div class="iframe-wrap" id="rv-iframe-wrap">
+      <div class="loading-row"><span class="spinner"></span> Loading ${p?p.name+"'s":'their'} view…</div>
+    </div>`;
+  } else if(rvRole&&!persons.length){
+    frameHtml=`<div class="card"><div class="empty"><div class="e-ico">👥</div><div class="e-msg">No ${ROLES[rvRole].label}s found. Add team members in Users.</div></div></div>`;
+  } else {
+    frameHtml=`<div class="card"><div class="empty"><div class="e-ico">👆</div><div class="e-msg">${rvRole?'Select a person above to view their dashboard':'Select a role above to preview their dashboard'}</div></div></div>`;
+  }
+
   m.innerHTML=`
     <div class="page-head"><h1>Role Viewer</h1><p>Preview exactly what each role sees when they log in.</p></div>
     <div class="role-cards">
-      ${['service_mgr','site_auditor','installer'].map(k=>`
-        <div class="role-card${activeRoleView===k?' active':''}" onclick="setRoleView('${k}')">
+      ${['service_mgr','site_auditor','installer'].map(k=>{
+        const cnt=(rvPersons[k]||[]).length;
+        return `<div class="role-card${rvRole===k?' active':''}" onclick="setRoleView('${k}')">
           <div class="rc-ico">${ROLE_ICONS[k]}</div>
           <div class="rc-name">${ROLES[k].label}</div>
-          <div class="rc-desc">${ROLE_DESCS[k]}</div>
-        </div>`).join('')}
+          <div class="rc-desc">${cnt} ${cnt===1?'member':'members'}</div>
+        </div>`;
+      }).join('')}
     </div>
-    <div id="rv-frame">
-      ${activeRoleView
-        ?`<div class="iframe-wrap"><iframe src="${ROLES[activeRoleView].file}" title="${ROLES[activeRoleView].label}"></iframe></div>`
-        :`<div class="card"><div class="empty"><div class="e-ico">👆</div><div class="e-msg">Select a role above to preview their dashboard</div></div></div>`}
-    </div>`;
+    ${rvRole&&persons.length?`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      ${persons.map(p=>`<button class="filt-btn${rvPersonEmail===p.email?' active':''}" onclick="setRvPerson('${p.email}')">${p.name}</button>`).join('')}
+    </div>`:''}
+    <div id="rv-frame">${frameHtml}</div>`;
+
+  if(rvRole&&rvPersonEmail) loadRvIframe();
 }
 
-function setRoleView(k){activeRoleView=k;renderRoleViewer(document.getElementById('main'));}
+function loadRvIframe(){
+  const persons=rvPersons[rvRole]||[];
+  const person=persons.find(p=>p.email===rvPersonEmail);
+  if(!person) return;
+  const wrap=document.getElementById('rv-iframe-wrap');
+  if(!wrap) return;
+  const file=rvRole==='service_mgr'
+    ?(rvSmTab==='audit'?'SM_Audit_Dashboard.html':'SM_Install_Dashboard.html')
+    :ROLES[rvRole].file;
+  const adminSession=sessionStorage.getItem('md_user');
+  sessionStorage.setItem('md_user',JSON.stringify({name:person.name,email:person.email,role:rvRole}));
+  const iframe=document.createElement('iframe');
+  iframe.style.cssText='width:100%;height:100%;border:0';
+  iframe.onload=()=>{ sessionStorage.setItem('md_user',adminSession); };
+  iframe.src=file;
+  wrap.innerHTML='';
+  wrap.appendChild(iframe);
+}
+
+function setRoleView(k){rvRole=k;rvPersonEmail=null;drawRoleViewer(document.getElementById('main'));}
+function setRvPerson(email){rvPersonEmail=email;drawRoleViewer(document.getElementById('main'));}
+function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'));}
 
 /* ---- JOBS OVERVIEW ---- */
 let jobsFilter='all';
-let jobsTeam=[];
+
 async function renderJobs(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
-  const users=await sbGet('profiles?select=name,role&role=neq.admin&order=name.asc');
-  jobsTeam=Array.isArray(users)?users.filter(u=>u.role!=='admin'):[];
-  const fieldNames=jobsTeam.map(u=>u.name);
-  MOCK_JOBS.forEach((j,i)=>{if(j.assignee)j.assignee=fieldNames[i%fieldNames.length]||j.assignee;});
+  const [auditRes,installRes,profileRes]=await Promise.all([
+    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&order=created_at.desc'),
+    sbGet('install_orders?select=pi,customer_name,addr,subjobs,status,delivery_date&order=created_at.desc'),
+    sbGet('profiles?select=name,email&role=neq.admin'),
+  ]);
+  const nameMap={};
+  if(Array.isArray(profileRes)) profileRes.forEach(p=>{nameMap[p.email]=p.name;});
+  realJobs=[];
+  if(Array.isArray(auditRes)){
+    auditRes.forEach(r=>realJobs.push({
+      id:r.pi||'—', type:'audit',
+      customer:r.customer_name||'—', addr:r.addr||'—',
+      assignee:r.auditor_name||(r.auditor_email?nameMap[r.auditor_email]:null),
+      status:r.status||'pending', date:r.date||null,
+    }));
+  }
+  if(Array.isArray(installRes)){
+    installRes.forEach(r=>{
+      const emails=[...new Set((r.subjobs||[]).filter(sj=>sj.installer_email).map(sj=>sj.installer_email))];
+      realJobs.push({
+        id:r.pi||'—', type:'install',
+        customer:r.customer_name||'—', addr:r.addr||'—',
+        assignee:emails.length?emails.map(e=>nameMap[e]||e.split('@')[0]).join(', '):null,
+        status:r.status||'pending', date:r.delivery_date||null,
+      });
+    });
+  }
   drawJobs(m);
 }
+
 function drawJobs(m){
-  const jc={total:MOCK_JOBS.length,active:0,done:0,unassigned:0};
-  MOCK_JOBS.forEach(j=>{
-    if(['onway','atsite','scheduled'].includes(j.status))jc.active++;
+  const jc={total:realJobs.length,active:0,done:0,unassigned:0};
+  realJobs.forEach(j=>{
+    if(['assigned','onway','atsite','scheduled'].includes(j.status))jc.active++;
     if(j.status==='completed')jc.done++;
     if(!j.assignee)jc.unassigned++;
   });
-  const filtered=MOCK_JOBS.filter(j=>{
+  const filtered=realJobs.filter(j=>{
     if(jobsFilter==='audit')return j.type==='audit';
     if(jobsFilter==='install')return j.type==='install';
     if(JOB_STATUS[jobsFilter])return j.status===jobsFilter;
@@ -505,17 +565,17 @@ function drawJobs(m){
 
   m.innerHTML=`
     <div class="page-head"><h1>Jobs Overview</h1><p>All audit and installation jobs across your team.</p></div>
-    <div class="notice">⚡ Showing sample data — live sync from dashboards coming in the next update.</div>
     <div class="stats" style="grid-template-columns:repeat(4,1fr)">
       <div class="stat-card"><div class="val">${jc.total}</div><div class="lbl">Total Jobs</div></div>
       <div class="stat-card"><div class="val">${jc.active}</div><div class="lbl">Active Now</div></div>
       <div class="stat-card"><div class="val">${jc.done}</div><div class="lbl">Completed</div></div>
       <div class="stat-card"><div class="val">${jc.unassigned}</div><div class="lbl">Unassigned</div></div>
     </div>
+    ${!realJobs.length?'<div class="card"><div class="empty"><div class="e-ico">📋</div><div class="e-msg">No jobs yet — orders will appear here once Service Managers start adding them.</div></div></div>':`
     <div class="card">
       <div class="toolbar">
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${['all','audit','install','pending','scheduled','onway','atsite','completed','reschedule'].map(f=>`
+          ${['all','audit','install','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
             <button class="filt-btn${jobsFilter===f?' active':''}" onclick="setJobFilter('${f}')">
               ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':JOB_STATUS[f]?.l||f}
             </button>`).join('')}
@@ -524,7 +584,7 @@ function drawJobs(m){
       <table>
         <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th><th>Location</th><th>Assigned To</th><th>Status</th><th>Date</th></tr></thead>
         <tbody>
-          ${filtered.map(j=>`
+          ${filtered.length?filtered.map(j=>`
             <tr>
               <td><b style="font-family:monospace;font-size:12px;color:var(--navy)">${j.id}</b></td>
               <td><span style="background:${j.type==='audit'?'#fff4d6':'var(--greenbg)'};color:${j.type==='audit'?'#7a5800':'var(--green)'};border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">${j.type==='audit'?'Audit':'Install'}</span></td>
@@ -533,45 +593,84 @@ function drawJobs(m){
               <td>${j.assignee||'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
               <td>${jobChip(j.status)}</td>
               <td style="color:var(--muted)">${j.date||'—'}</td>
-            </tr>`).join('')}
+            </tr>`).join('')
+          :'<tr><td colspan="7"><div class="empty"><div class="e-ico">🔍</div><div class="e-msg">No jobs match this filter</div></div></td></tr>'}
         </tbody>
       </table>
-    </div>`;
+    </div>`}`;
 }
 function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));}
 
 /* ---- PERFORMANCE ---- */
 async function renderPerf(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
-  const users=await sbGet('profiles?select=*&role=neq.admin&order=name.asc');
-  const field=Array.isArray(users)?users.filter(u=>u.role!=='admin'):[];
+  const [usersRes,auditRes,installRes]=await Promise.all([
+    sbGet('profiles?select=*&role=neq.admin&order=name.asc'),
+    sbGet('audit_orders?select=auditor_email,status,created_at,created_by_email'),
+    sbGet('install_orders?select=subjobs,status,created_at,created_by_email'),
+  ]);
+  const field=Array.isArray(usersRes)?usersRes.filter(u=>u.role!=='admin'):[];
   if(!field.length){
     m.innerHTML=`<div class="page-head"><h1>Performance</h1></div><div class="card"><div class="empty"><div class="e-ico">📊</div><div class="e-msg">No field staff found. Add users with Site Auditor or Installer roles first.</div></div></div>`;
     return;
   }
+  const auditOrders=Array.isArray(auditRes)?auditRes:[];
+  const installOrders=Array.isArray(installRes)?installRes:[];
+  const now=new Date();
+  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  const statsFor=u=>{
+    if(u.role==='site_auditor'){
+      const mine=auditOrders.filter(o=>o.auditor_email===u.email);
+      const total=mine.length, done=mine.filter(o=>o.status==='completed').length;
+      const monthly=mine.filter(o=>(o.created_at||'').startsWith(ym)).length;
+      return {total,done,pending:total-done,monthly,pct:total?Math.round(done/total*100):0};
+    }
+    if(u.role==='installer'){
+      let total=0,done=0,monthly=0;
+      installOrders.forEach(o=>{
+        (o.subjobs||[]).forEach(sj=>{
+          if(sj.installer_email===u.email){
+            total++;
+            if(sj.status==='completed')done++;
+            if((o.created_at||'').startsWith(ym))monthly++;
+          }
+        });
+      });
+      return {total,done,pending:total-done,monthly,pct:total?Math.round(done/total*100):0};
+    }
+    // service_mgr: orders they created
+    const myA=auditOrders.filter(o=>o.created_by_email===u.email);
+    const myI=installOrders.filter(o=>o.created_by_email===u.email);
+    const total=myA.length+myI.length;
+    const done=myA.filter(o=>o.status==='completed').length+myI.filter(o=>o.status==='completed').length;
+    const monthly=myA.filter(o=>(o.created_at||'').startsWith(ym)).length+myI.filter(o=>(o.created_at||'').startsWith(ym)).length;
+    return {total,done,pending:total-done,monthly,pct:total?Math.round(done/total*100):0};
+  };
+
   m.innerHTML=`
-    <div class="page-head"><h1>Performance</h1><p>Jobs completed, pending and on-time rate per team member.</p></div>
-    <div class="notice">⚡ Job numbers are sample data — will reflect live data once job sync is enabled. Names are live from your team.</div>
+    <div class="page-head"><h1>Performance</h1><p>Completion stats per team member, computed from live order data.</p></div>
     <div class="perf-grid">
-      ${field.map((u,i)=>{
+      ${field.map(u=>{
         const color=ROLES[u.role]?.color||'#999';
-        const stats=MOCK_PERF[i%MOCK_PERF.length];
-        const pct=stats.pct;
-        const pctColor=pct>=90?'var(--green)':pct>=80?'var(--amber)':'var(--red)';
+        const s=statsFor(u);
+        const pctColor=s.pct>=90?'var(--green)':s.pct>=75?'var(--amber)':'var(--red)';
+        const pctDisplay=s.total?s.pct+'%':'—';
         return `<div class="perf-card">
           <div class="pc-head">
             <div class="pc-av" style="background:${color}">${initials(u.name)}</div>
             <div><div class="pc-name">${u.name}</div><div class="pc-role">${ROLES[u.role]?.label||u.role}</div></div>
           </div>
-          <div class="perf-row"><span>Total Jobs</span><span class="pr-val">${stats.total}</span></div>
-          <div class="perf-row"><span>Completed</span><span class="pr-val" style="color:var(--green)">${stats.done}</span></div>
-          <div class="perf-row"><span>Pending</span><span class="pr-val" style="color:var(--amber)">${stats.pending}</span></div>
-          <div class="perf-row"><span>This Month</span><span class="pr-val">${stats.monthly}</span></div>
-          <div class="perf-row"><span>On-Time Rate</span><span class="pr-val" style="color:${pctColor}">${pct}%</span></div>
-          <div style="height:5px;background:var(--line);border-radius:5px;margin-top:10px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:${pctColor};border-radius:5px;transition:width .5s"></div>
-          </div>
-        </div>`;}).join('')}
+          <div class="perf-row"><span>Total Jobs</span><span class="pr-val">${s.total}</span></div>
+          <div class="perf-row"><span>Completed</span><span class="pr-val" style="color:var(--green)">${s.done}</span></div>
+          <div class="perf-row"><span>Pending</span><span class="pr-val" style="color:var(--amber)">${s.pending}</span></div>
+          <div class="perf-row"><span>This Month</span><span class="pr-val">${s.monthly}</span></div>
+          <div class="perf-row"><span>Completion Rate</span><span class="pr-val" style="color:${s.total?pctColor:'var(--muted)'}">${pctDisplay}</span></div>
+          ${s.total?`<div style="height:5px;background:var(--line);border-radius:5px;margin-top:10px;overflow:hidden">
+            <div style="height:100%;width:${s.pct}%;background:${pctColor};border-radius:5px;transition:width .5s"></div>
+          </div>`:''}
+        </div>`;
+      }).join('')}
     </div>`;
 }
 
