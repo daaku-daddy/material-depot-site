@@ -666,7 +666,6 @@ function drawerBody(o){
         <div class="actions" style="margin-top:10px">
           ${sj.status==='created'||!sj.date?`<button class="btn navy sm" data-sched="${sj.id}">Schedule install</button>`:''}
           ${sj.date&&!sj.installer?`<button class="btn primary sm" data-assign="${sj.id}">Assign installer</button>`:''}
-          ${["assigned","onway","atsite"].includes(sj.status)?`<button class="btn ghost sm" data-simsj="${sj.id}">&#9654; Simulate installer step</button>`:''}
         </div>
         <div data-schedbox="${sj.id}"></div>
         <div data-assignbox="${sj.id}"></div>
@@ -704,12 +703,13 @@ function serviceCreationPanel(o){
 }
 
 function drawerFoot(o){
-  if(!o.matchedAudit)return `<button class="btn gray" id="dClose">Close</button>`;
-  if(o.status==="pending")return `<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
-  if(o.status==="deliv_delayed")return `<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markOnTime">Now on time</button>`;
-  if(o.status==="deliv_ontime")return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
-  if(o.status==="created")return `<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="callCustomer" disabled>Schedule from sub-jobs above</button>`;
-  return `<button class="btn gray" id="dClose">Close</button>`;
+  const del=`<button class="btn danger" id="delOrder">&#128465; Delete</button>`;
+  if(!o.matchedAudit)return del+`<button class="btn gray" id="dClose">Close</button>`;
+  if(o.status==="pending")return del+`<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
+  if(o.status==="deliv_delayed")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markOnTime">Now on time</button>`;
+  if(o.status==="deliv_ontime")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
+  if(o.status==="created")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="callCustomer" disabled>Schedule from sub-jobs above</button>`;
+  return del+`<button class="btn gray" id="dClose">Close</button>`;
 }
 
 /* ============== DRAWER WIRING ============== */
@@ -819,14 +819,14 @@ function wireDrawer(o){
     };
   });
 
-  // ---- simulate installer step per sub-job ----
-  document.querySelectorAll("[data-simsj]").forEach(btn=>btn.onclick=()=>{
-    const sj=o.subjobs.find(s=>s.id===btn.dataset.simsj);
-    const next={assigned:"onway",onway:"atsite",atsite:"completed"}[sj.status];sj.status=next;
-    const a=installerById(sj.installer);
-    const msg={onway:a.name+" on the way",atsite:a.name+" at site",completed:sj.type+" installed ("+a.name+")"}[next];
-    syncParent(o);o.log.push({t:msg,d:"Just now",by:"auto"});toast(STATUS[next].l+" (from installer)");render();openOrder(o.pi);
-  });
+  // ---- delete order ----
+  if($("#delOrder"))$("#delOrder").onclick=async()=>{
+    if(!confirm("Delete this install order permanently? This cannot be undone."))return;
+    try{
+      if(o.id)await sbDel('install_orders',o.id);
+      closeDrawer();await loadOrders();toast("Order deleted");
+    }catch(e){toast("Couldn't delete — try again");}
+  };
 }
 
 // roll the parent status up from sub-jobs

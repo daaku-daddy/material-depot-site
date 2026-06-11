@@ -137,7 +137,7 @@ const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
-async function sbPatch(t,id,b){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});}
+async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}
 function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
@@ -146,7 +146,7 @@ const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'floo
 
 /* ============== DATA ============== */
 const today=new Date();today.setHours(0,0,0,0);
-function dstr(d){return d.toISOString().slice(0,10);}
+function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 const SLOTS={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
 const STATUS={
@@ -159,12 +159,25 @@ const STATUS={
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
+// roll the parent install_order status up from its sub-jobs (mirrors SM dashboard syncParent)
+function rollupStatus(subjobs,fallback){
+  if(!subjobs||!subjobs.length)return fallback;
+  const sts=subjobs.map(s=>s.status);
+  if(sts.every(s=>s==="completed"))return "completed";
+  if(sts.some(s=>s==="completed")&&sts.some(s=>s!=="completed"))return "partial";
+  if(sts.some(s=>["onway","atsite"].includes(s)))return sts.find(s=>["onway","atsite"].includes(s));
+  if(sts.some(s=>s==="reschedule"))return "reschedule";
+  if(sts.some(s=>s==="assigned"))return "assigned";
+  if(sts.some(s=>s==="scheduled"))return "scheduled";
+  return fallback;
+}
+
 let JOBS=[];
 
 async function loadJobs(){
   try{
     const rows=await sbGet('install_orders?select=*&order=created_at.desc');
-    if(!Array.isArray(rows)){return;}
+    if(!Array.isArray(rows)){renderList();return;}
     // Preserve existing jobcard data
     const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'_'+j.sjId]=j.jobcard;});
     const newJobs=[];
@@ -193,20 +206,20 @@ async function loadJobs(){
     });
     JOBS=newJobs;
     renderList();
-  }catch(e){console.error('loadJobs',e);}
+  }catch(e){console.error('loadJobs',e);renderList();}
 }
-setInterval(loadJobs,30000);
+setInterval(loadJobs,10000);
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
 function fmtDate(ds){if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
 const slotLabel=id=>(SLOTS[id]||{}).label||"—";
-function badge(st){const s=STATUS[st];return `<span class="badge ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function badge(st){const s=STATUS[st]||{l:st,c:"b-scheduled"};return `<span class="badge ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function imgFmt(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
 function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
-function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)){const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
+function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)&&SLOTS[o.slot]){const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
 
 /* ============== LIST ============== */
 let selDay=dstr(today);
@@ -219,7 +232,7 @@ function listView(){
     return `<div class="day ${selDay===ds?'on':''}" data-day="${ds}">
       <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
       <div class="dd">${d.getDate()}</div><div class="ct">${n} job${n!==1?'s':''}</div></div>`;}).join("");
-  const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>a.slot.localeCompare(b.slot));
+  const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(j=>j.status!=="completed"),done=list.filter(j=>j.status==="completed");
   const card=j=>`<div class="jobcard" data-key="${j.pi}_${j.sjId}">
     <div class="time">${slotLabel(j.slot)}</div>
@@ -303,16 +316,17 @@ function wireDetail(j){
     if(j.id&&j.sjId){
       try{
         // Need to update this specific subjob's status in the parent order's subjobs array
-        const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log');
+        const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
         if(Array.isArray(parentRows)&&parentRows[0]){
           const subjobs=parentRows[0].subjobs||[];
           const sj=subjobs.find(s=>s.id===j.sjId);
           if(sj){sj.status=st==='scheduled'?'assigned':st;}
-          await sbPatch('install_orders',j.id,{subjobs,log:j.parentLog});
+          const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
+          await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
         }
       }catch(e){j.status=prev;toast("Network error — try again");return;}
     }
-    toast(msg);openDetail(j.pi+'_'+j.sjId);
+    await loadJobs();toast(msg);openDetail(j.pi+'_'+j.sjId);
   };
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Now: call the customer");
   if($("#yes"))$("#yes").onclick=()=>adv("onway","Marked: on the way");
@@ -327,6 +341,12 @@ function wireDetail(j){
 function openAudit(j){
   $("#auSub").textContent=j.pi+" · "+j.name;
   const a=j.audit;
+  if(!a||!a.rooms){
+    $("#auBody").innerHTML=`<div class="note blue">No site audit report is linked to this job.</div>`;
+    $("#auditScreen").classList.remove("hide");
+    $("#auBack").onclick=()=>$("#auditScreen").classList.add("hide");
+    return;
+  }
   const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH']];
   const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer needed','primer']];
   const rooms=a.rooms.map((r,i)=>{
@@ -367,7 +387,7 @@ function openJobCard(j){
     <div id="roomsWrap"></div>`;
   $("#jcScreen").classList.remove("hide");
   if(j.jobcard&&j.jobcard.rooms&&j.jobcard.rooms.length)j.jobcard.rooms.forEach(r=>addRoom(r));else addRoom();
-  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};$("#jcScreen").classList.add("hide");openDetail(j.pi);};
+  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};$("#jcScreen").classList.add("hide");openDetail(j.pi+'_'+j.sjId);};
   $("#jcAddRoom").onclick=()=>addRoom();
   $("#jcDone").onclick=()=>finishCard(j);
 }
@@ -421,12 +441,25 @@ function finishCard(j){
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value}};
-    j.status="completed";
+    const prev=j.status;j.status="completed";
+    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:"Today "+now,by:"auto"});
     toast("Saving...");
+    try{
+      const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
+      if(Array.isArray(parentRows)&&parentRows[0]){
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===j.sjId);
+        if(sj){sj.status="completed";sj.jobcard=j.jobcard;}
+        const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
+        await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
+      }
+    }catch(e){j.status=prev;toast("Network error — couldn't save. Try again");return;}
     await genPDF(j);
+    await loadJobs();
     document.querySelector(".footer").classList.remove("hide");
     $("#jcScreen").classList.add("hide");
-    openDetail(j.pi);
+    openDetail(j.pi+'_'+j.sjId);
     toast("Job finished & sent to office");
   };
 }
@@ -469,7 +502,7 @@ async function genPDF(j){
 }
 
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
-loadJobs();
+renderList();loadJobs();
 </script>
 </body>
 </html>
