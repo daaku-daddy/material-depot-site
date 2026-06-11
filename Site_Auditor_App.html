@@ -184,7 +184,7 @@ async function loadJobs(){
       status:r.status==='assigned'?'scheduled':r.status,
       skus:r.skus||[],
       log:r.log||[],
-      jobcard:existing[r.pi]||null
+      jobcard:existing[r.pi]||(r.audit_ticked&&r.audit_ticked.sign?{rooms:r.audit_ticked.rooms||[],sign:r.audit_ticked.sign}:null)
     }));
     renderList();
   }catch(e){console.error('loadJobs',e);renderList();}
@@ -318,7 +318,14 @@ function wireDetail(o){
   if($("#custNo"))$("#custNo").onclick=()=>adv("reschedule","Sent to SM for reschedule");
   if($("#atSite"))$("#atSite").onclick=()=>adv("atsite","At site — open the Job Card");
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(o);
-  if($("#dlPdf"))$("#dlPdf").onclick=()=>{if(o.jobcard)genPDF(o);};
+  if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
+    if(!o.jobcard){
+      const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
+      if(Array.isArray(rows)&&rows[0]&&rows[0].audit_ticked&&rows[0].audit_ticked.sign)
+        o.jobcard={rooms:rows[0].audit_ticked.rooms||[],sign:rows[0].audit_ticked.sign};
+    }
+    if(o.jobcard)genPDF(o);else toast("Job card not available");
+  };
 }
 
 /* ============== JOB CARD ============== */
@@ -471,7 +478,7 @@ function reviewAndSign(o){
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:"Today "+now,by:"auto"});
     if(o.id){try{
-      const ticked={auditor:ME.name,date:dstr(new Date()),rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||''}))};
+      const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photo:r.photo||null,sketchStrokes:r.sketchStrokes||[]}))};
       await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});
     }catch(e){toast("Saved locally — sync failed, will retry");}}
     toast("Building PDF…");

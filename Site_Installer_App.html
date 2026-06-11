@@ -202,7 +202,7 @@ async function loadJobs(){
             sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||''})),
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
-            jobcard:existing[r.pi+'|'+sj.id]||null,
+            jobcard:existing[r.pi+'|'+sj.id]||sj.jobcard||null,
             parentLog:r.log||[]
           });
         }
@@ -340,7 +340,16 @@ function wireDetail(j){
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(j);
   if($("#viewAuditBtn"))$("#viewAuditBtn").onclick=()=>openAudit(j);
   if($("#viewAudit"))$("#viewAudit").onclick=()=>openAudit(j);
-  if($("#dlPdf"))$("#dlPdf").onclick=()=>{if(j.jobcard)genPDF(j);};
+  if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
+    if(!j.jobcard){
+      const rows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs');
+      if(Array.isArray(rows)&&rows[0]){
+        const sj=(rows[0].subjobs||[]).find(s=>s.id===j.sjId);
+        if(sj&&sj.jobcard)j.jobcard=sj.jobcard;
+      }
+    }
+    if(j.jobcard)genPDF(j);else toast("Job card not available");
+  };
 }
 
 /* ============== AUDIT REPORT (read-only) ============== */

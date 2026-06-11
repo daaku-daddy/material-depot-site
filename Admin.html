@@ -4,6 +4,8 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Material Depot — Admin Console</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;
@@ -168,6 +170,7 @@
       <button class="nav-item" data-view="roleviewer"><span class="ico">👁</span>Role Viewer</button>
       <button class="nav-item" data-view="jobs"><span class="ico">📋</span>Jobs Overview</button>
       <button class="nav-item" data-view="perf"><span class="ico">📊</span>Performance</button>
+      <button class="nav-item" data-view="jobcards"><span class="ico">📄</span>Job Cards</button>
     </nav>
 
     <main id="main"></main>
@@ -245,6 +248,7 @@ async function renderView(v){
   else if(v==='roleviewer') await renderRoleViewer(m);
   else if(v==='jobs')    await renderJobs(m);
   else if(v==='perf')    await renderPerf(m);
+  else if(v==='jobcards') await renderJobCards(m);
 }
 
 /* ---- OVERVIEW ---- */
@@ -693,6 +697,148 @@ async function renderPerf(m){
         </div>`;
       }).join('')}
     </div>`;
+}
+
+/* ---- JOB CARDS ---- */
+const FLOOR_FIELDS_A=[{k:'area',label:'Area (sq.ft)'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
+const WALL_FIELDS_A=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type'},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed'}];
+function fieldsForA(t){return t==='wallpaper'?WALL_FIELDS_A:FLOOR_FIELDS_A;}
+function imgFmtA(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
+function renderSketchA(r){
+  if(!r.sketchStrokes||!r.sketchStrokes.length)return null;
+  const W=1000,H=500;const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);const s=Math.round(22*(W/360));x.fillStyle='#b2b8c1';
+  for(let yy=s;yy<H;yy+=s)for(let xx=s;xx<W;xx+=s){x.beginPath();x.arc(xx,yy,2,0,7);x.fill();}
+  x.strokeStyle='#1F3A5F';x.lineWidth=3.2;x.lineJoin='round';x.lineCap='round';
+  for(const st of r.sketchStrokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}
+  return c.toDataURL('image/jpeg',0.85);
+}
+function fmtDateA(ds){if(!ds)return '—';const d=new Date(ds+'T00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+
+function genAuditPDF(order,ticked){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
+  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const rooms=ticked.rooms||[];
+  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);
+    doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Site Audit Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  header();
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+    body:[['Proforma Invoice No.',order.pi||''],['Client Name',order.customer_name||''],['Client Mobile',order.phone||''],['Site Address',order.addr||''],['BM',order.bm||''],['Auditor',ticked.auditor||'—'],['Date',fmtDateA(order.date)]]});
+  y=doc.lastAutoTable.finalY+10;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
+    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+  rooms.forEach((r,i)=>{
+    doc.addPage();y=M;header();
+    const fields=fieldsForA(r.type);
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc&&r.calc[f.k])||''])});
+    y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    const sketchImg=renderSketchA(r);
+    if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
+    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(r.photo,imgFmtA(r.photo),M+colW+12,y+6,colW,ih);}catch(e){}}
+    y+=ih+18;
+    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
+  });
+  doc.addPage();y=M;header();
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+  doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  doc.setFontSize(10);doc.setTextColor(...muted);
+  doc.text('Client name: '+((ticked.sign&&ticked.sign.name)||order.customer_name||''),M,y);y+=18;
+  doc.text('Date: '+fmtDateA(order.date),M,y);
+  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
+  if(ticked.sign&&ticked.sign.img){try{doc.addImage(ticked.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+  doc.save(('SiteAudit_'+(order.customer_name||'client')+'_'+(order.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
+}
+
+function genInstallPDF(order,sj,jobcard,installerName){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
+  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const rooms=jobcard.rooms||[];
+  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Installation Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  header();
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+    body:[['Proforma Invoice No.',order.pi||''],['Client Name',order.customer_name||''],['Client Mobile',order.phone||''],['Site Address',order.addr||''],['BM',order.bm||''],['Installer',installerName||'—'],['Type',sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDateA(sj.date)]]});
+  y=doc.lastAutoTable.finalY+10;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-'])});
+  rooms.forEach((r,i)=>{
+    doc.addPage();y=M;header();
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-'),M,y+10);y+=24;
+    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Photo after installation',M,y);const iw=W-2*M;const ih=iw*0.6;try{doc.addImage(r.photo,imgFmtA(r.photo),M,y+6,iw,ih);}catch(e){}y+=ih+18;}
+    if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
+  });
+  doc.addPage();y=M;header();
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+  doc.text(doc.splitTextToSize("I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((jobcard.sign&&jobcard.sign.name)||order.customer_name||''),M,y);y+=18;doc.text('Date: '+fmtDateA(sj.date),M,y);
+  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
+  if(jobcard.sign&&jobcard.sign.img){try{doc.addImage(jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+  doc.save(('Installation_'+(order.customer_name||'client')+'_'+(order.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
+}
+
+let jcFilter='all';
+async function renderJobCards(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  const [auditRes,installRes,usersRes]=await Promise.all([
+    sbGet('audit_orders?status=eq.completed&select=*&order=created_at.desc'),
+    sbGet('install_orders?select=*&order=created_at.desc'),
+    sbGet('profiles?select=email,name'),
+  ]);
+  const auditOrders=Array.isArray(auditRes)?auditRes:[];
+  const installOrders=Array.isArray(installRes)?installRes:[];
+  const nameMap={};if(Array.isArray(usersRes))usersRes.forEach(u=>{nameMap[u.email]=u.name;});
+  const cards=[];
+  auditOrders.forEach(r=>{
+    if(r.audit_ticked&&r.audit_ticked.sign)
+      cards.push({type:'audit',date:r.date||'',pi:r.pi||'',name:r.customer_name||'',assigned:r.audit_ticked.auditor||nameMap[r.auditor_email]||'—',order:r,ticked:r.audit_ticked});
+  });
+  installOrders.forEach(r=>{
+    (r.subjobs||[]).forEach(sj=>{
+      if(sj.status==='completed'&&sj.jobcard&&sj.jobcard.sign)
+        cards.push({type:'install',subtype:sj.type||'flooring',date:sj.date||'',pi:r.pi||'',name:r.customer_name||'',assigned:nameMap[sj.installer_email]||sj.installer_email||'—',order:r,sj,jobcard:sj.jobcard});
+    });
+  });
+  const filtered=(jcFilter==='all'?cards:cards.filter(c=>c.type===jcFilter)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  window._jcCards=filtered;
+  m.innerHTML=`
+    <div class="page-head"><h1>Job Cards</h1><p>All completed job cards from site audits and installations. Click Download PDF to regenerate at any time.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      ${['all','audit','install'].map(f=>`<button class="filt-btn${jcFilter===f?' active':''}" onclick="setJcFilter('${f}')">${f==='all'?'All Cards':f==='audit'?'Site Audits':'Installations'}</button>`).join('')}
+    </div>
+    ${!filtered.length?`<div class="card"><div class="empty"><div class="e-ico">📄</div><div class="e-msg">No completed job cards found${jcFilter!=='all'?' for this filter':''}.</div></div></div>`:`
+    <div class="card">
+      <table>
+        <thead><tr><th>Type</th><th>PI No.</th><th>Customer</th><th>Assigned To</th><th>Date</th><th></th></tr></thead>
+        <tbody>
+          ${filtered.map((c,i)=>`<tr>
+            <td><span style="background:${c.type==='audit'?'#fff4d6':'var(--greenbg)'};color:${c.type==='audit'?'#7a5800':'var(--green)'};border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">${c.type==='audit'?'Audit':('Install · '+(c.subtype==='wallpaper'?'Wallpaper':'Flooring'))}</span></td>
+            <td><b style="font-family:monospace;font-size:12px;color:var(--navy)">${c.pi}</b></td>
+            <td><b>${c.name}</b></td>
+            <td style="color:var(--muted)">${c.assigned}</td>
+            <td style="color:var(--muted)">${c.date?new Date(c.date+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}):'—'}</td>
+            <td><button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="dlJobCard(${i})">Download PDF</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`}`;
+}
+function setJcFilter(f){jcFilter=f;renderJobCards(document.getElementById('main'));}
+function dlJobCard(i){
+  const c=window._jcCards[i];if(!c)return;
+  if(c.type==='audit')genAuditPDF(c.order,c.ticked);
+  else genInstallPDF(c.order,c.sj,c.jobcard,c.assigned);
 }
 
 /* ---- INIT ---- */
