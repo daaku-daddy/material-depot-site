@@ -433,9 +433,17 @@ function openEditRole(u){
       </div>
     </div>
     <div class="modal-foot">
+      <button class="btn-cancel" style="margin-right:auto;color:var(--amber);border-color:var(--amber);border:1px solid" onclick="resetPasscode('${u.id}','${u.name.replace(/'/g,"\\'")}')">Reset passcode</button>
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-primary" onclick="submitEditRole('${u.id}','${u.name.replace(/'/g,"\\'")}')">Save Changes</button>
     </div>`);
+}
+
+async function resetPasscode(id,name){
+  if(!confirm(`Reset ${name}'s passcode? They will be asked to create a new one on their next sign-in.`))return;
+  await sbPatch('profiles',id,{passcode:null});
+  closeModal();
+  toast(`✓ ${name}'s passcode has been reset`);
 }
 
 async function submitEditRole(id,name){

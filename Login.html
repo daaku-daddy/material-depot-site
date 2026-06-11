@@ -169,8 +169,10 @@ function enterPasscodeScreen(){
     <p class="sub">Welcome back, <b>${state.user.name.split(' ')[0]}</b>. Enter your 4-digit passcode.</p>
     <div class="pinwrap" id="pw">${PIN4()}</div>
     <div class="err" id="err"></div>
-    <button class="btn" id="verify" disabled>Sign in</button>`;
+    <button class="btn" id="verify" disabled>Sign in</button>
+    <button class="back" id="chgpin" style="display:block;margin-top:14px;text-align:center;width:100%">Change passcode</button>`;
   $("#back").onclick=emailScreen;
+  $("#chgpin").onclick=changePasscodeScreen;
   const boxes=[...document.querySelectorAll('#pw input')];
   wirePinBoxes(boxes,val=>{
     $("#verify").disabled=val.length!==4;
@@ -191,6 +193,62 @@ function tryEnter(){
     $("#verify").disabled=true;return;
   }
   successScreen();
+}
+
+/* ---- Screen 2c: change passcode ---- */
+function changePasscodeScreen(){
+  $("#card").innerHTML=`
+    <button class="back" id="back">&#8592; Back</button>
+    <h1>Change passcode</h1>
+    <p class="sub">Enter your current passcode, then choose a new one.</p>
+    <label>Current passcode</label>
+    <div class="pinwrap" id="pwcur">${PIN4()}</div>
+    <label style="margin-top:18px">New passcode</label>
+    <div class="pinwrap" id="pwnew">${PIN4()}</div>
+    <label style="margin-top:18px">Confirm new passcode</label>
+    <div class="pinwrap" id="pwcon">${PIN4()}</div>
+    <div class="err" id="err"></div>
+    <button class="btn" id="savep" disabled>Update passcode &amp; sign in</button>`;
+  $("#back").onclick=enterPasscodeScreen;
+  const bCur=[...document.querySelectorAll('#pwcur input')];
+  const bNew=[...document.querySelectorAll('#pwnew input')];
+  const bCon=[...document.querySelectorAll('#pwcon input')];
+  function checkReady(){document.getElementById('savep').disabled=!(bCur.every(b=>b.value)&&bNew.every(b=>b.value)&&bCon.every(b=>b.value));}
+  wirePinBoxes(bCur,val=>{if(val.length===4)bNew[0].focus();checkReady();});
+  wirePinBoxes(bNew,val=>{if(val.length===4)bCon[0].focus();checkReady();});
+  wirePinBoxes(bCon,()=>checkReady());
+  bCur[0].focus();
+  document.getElementById('savep').onclick=tryChangePasscode;
+}
+
+async function tryChangePasscode(){
+  const err=$("#err");err.classList.remove("show");
+  const cur=[...document.querySelectorAll('#pwcur input')].map(b=>b.value).join('');
+  const p1=[...document.querySelectorAll('#pwnew input')].map(b=>b.value).join('');
+  const p2=[...document.querySelectorAll('#pwcon input')].map(b=>b.value).join('');
+  if(cur!==state.user.passcode){
+    err.textContent="Current passcode is incorrect.";err.classList.add("show");
+    [...document.querySelectorAll('#pwcur input')].forEach(b=>b.value='');
+    document.querySelector('#pwcur input').focus();
+    document.getElementById('savep').disabled=true;return;
+  }
+  if(p1===cur){err.textContent="New passcode must be different from your current one.";err.classList.add("show");return;}
+  if(p1!==p2){
+    err.textContent="New passcodes don't match — try again.";err.classList.add("show");
+    [...document.querySelectorAll('#pwnew input')].forEach(b=>b.value='');
+    [...document.querySelectorAll('#pwcon input')].forEach(b=>b.value='');
+    document.querySelector('#pwnew input').focus();
+    document.getElementById('savep').disabled=true;return;
+  }
+  const btn=document.getElementById('savep');btn.disabled=true;btn.innerHTML='<span class="spin"></span> Saving…';
+  try{
+    await patchProfile(state.user.id,{passcode:p1});
+    state.user.passcode=p1;
+    successScreen();
+  }catch(e){
+    err.textContent="Network error — please try again.";err.classList.add("show");
+    btn.disabled=false;btn.innerHTML="Update passcode &amp; sign in";
+  }
 }
 
 /* ---- Screen 3: success ---- */
