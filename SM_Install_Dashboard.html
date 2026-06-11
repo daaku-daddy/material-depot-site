@@ -309,8 +309,9 @@ const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
-async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});return r.json();}
-async function sbPatch(t,id,b){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});}
+async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}
+async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
+async function sbDel(t,id){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
 function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
@@ -920,7 +921,7 @@ async function submitAddOrder(){
       log:[logEntry],
       created_by_email:SESSION.email
     });
-    const row=Array.isArray(saved)?saved[0]:null;
+    const row=Array.isArray(saved)?saved[0]:saved;
     ORDERS.unshift({
       id:row?row.id:null,
       pi,po,skus,bm,name,phone,addr,
@@ -933,9 +934,9 @@ async function submitAddOrder(){
     });
     closeAddOrder();
     render();
-    toast("✓ Installation order "+pi+" added");
+    toast("✓ Installation order "+pi+" saved");
   }catch(e){
-    err.textContent="Failed to save order. Check network and try again.";err.classList.add("show");
+    err.textContent="Save failed: "+e.message;err.classList.add("show");
   }
   document.getElementById("ao-submit").disabled=false;
 }
