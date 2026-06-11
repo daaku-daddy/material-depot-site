@@ -283,7 +283,7 @@ async function renderOverview(m){
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div class="user-av" style="background:${ROLES[u.role]?.color||'#999'}">${initials(u.name)}</div><b>${u.name}</b></div></td>
               <td style="color:var(--muted);font-family:monospace;font-size:12px">${u.email}</td>
-              <td>${roleBadge(u.role)}</td>
+              <td>${roleBadge(u.role)}${u.role==='installer'?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${(u.installer_type||'flooring')==='wallpaper'?'Wallpaper':'Flooring'}</span>`:''}</td>
               <td>${u.passcode?`<code style="background:var(--amberbg);color:var(--amber);border-radius:6px;padding:2px 8px;font-size:13px;font-weight:800">${u.passcode}</code>`:'<span style="color:var(--muted)">—</span>'}</td>
               <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
               <td><div style="display:flex;gap:6px">
@@ -331,7 +331,7 @@ function drawUsersTable(m){
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div class="user-av" style="background:${ROLES[u.role]?.color||'#999'}">${initials(u.name)}</div><b>${u.name}</b></div></td>
               <td style="color:var(--muted);font-family:monospace;font-size:12px">${u.email}</td>
-              <td>${roleBadge(u.role)}</td>
+              <td>${roleBadge(u.role)}${u.role==='installer'?`<span style="font-size:11px;color:var(--muted);margin-left:6px">${(u.installer_type||'flooring')==='wallpaper'?'Wallpaper':'Flooring'}</span>`:''}</td>
               <td>${u.passcode?`<code style="background:var(--amberbg);color:var(--amber);border-radius:6px;padding:2px 8px;font-size:13px;font-weight:800">${u.passcode}</code>`:'<span style="color:var(--muted)">—</span>'}</td>
               <td style="color:var(--muted)">${fmtDate(u.created_at)}</td>
               <td><div style="display:flex;gap:6px">
@@ -353,12 +353,19 @@ function openAddUser(){
       <div class="form-group"><label>Full Name</label><input id="f-name" placeholder="e.g. Priya Sharma"></div>
       <div class="form-group"><label>Work Email</label><input id="f-email" type="email" placeholder="name@materialdepot.com"></div>
       <div class="form-group"><label>Role</label>
-        <select id="f-role">
+        <select id="f-role" onchange="document.getElementById('f-itype-row').style.display=this.value==='installer'?'block':'none'">
           <option value="">— Select a role —</option>
           <option value="service_mgr">Service Manager</option>
           <option value="site_auditor">Site Auditor</option>
           <option value="installer">Site Installer</option>
           <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-group" id="f-itype-row" style="display:none">
+        <label>Installer Domain</label>
+        <select id="f-itype">
+          <option value="flooring">Wooden Flooring</option>
+          <option value="wallpaper">Wallpaper</option>
         </select>
       </div>
       <div class="form-error" id="f-err"></div>
@@ -380,8 +387,10 @@ async function submitAddUser(){
   if(!name){err.textContent='Please enter a full name.';err.classList.add('show');return;}
   if(!email||!email.endsWith('@materialdepot.com')){err.textContent='Email must end in @materialdepot.com';err.classList.add('show');return;}
   if(!role){err.textContent='Please select a role.';err.classList.add('show');return;}
+  const itypeEl=document.getElementById('f-itype');
+  const installer_type=role==='installer'&&itypeEl?itypeEl.value:'flooring';
   btn.disabled=true;btn.textContent='Adding…';
-  const res=await sbPost('profiles',{name,email,role});
+  const res=await sbPost('profiles',{name,email,role,installer_type});
   btn.disabled=false;btn.innerHTML='Add User';
   if(res&&(res.code||res.error)){
     const msg=res.message||'';
@@ -394,6 +403,7 @@ async function submitAddUser(){
 }
 
 function openEditRole(u){
+  const curType=u.installer_type||'flooring';
   showModal(`
     <div class="modal-head"><h3>Edit Role</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
@@ -403,11 +413,18 @@ function openEditRole(u){
         <div style="margin-left:auto">${roleBadge(u.role)}</div>
       </div>
       <div class="form-group"><label>New Role</label>
-        <select id="e-role">
+        <select id="e-role" onchange="document.getElementById('e-itype-row').style.display=this.value==='installer'?'block':'none'">
           <option value="service_mgr" ${u.role==='service_mgr'?'selected':''}>Service Manager</option>
           <option value="site_auditor" ${u.role==='site_auditor'?'selected':''}>Site Auditor</option>
           <option value="installer" ${u.role==='installer'?'selected':''}>Site Installer</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+        </select>
+      </div>
+      <div class="form-group" id="e-itype-row" style="display:${u.role==='installer'?'block':'none'}">
+        <label>Installer Domain</label>
+        <select id="e-itype">
+          <option value="flooring" ${curType==='flooring'?'selected':''}>Wooden Flooring</option>
+          <option value="wallpaper" ${curType==='wallpaper'?'selected':''}>Wallpaper</option>
         </select>
       </div>
     </div>
@@ -419,7 +436,9 @@ function openEditRole(u){
 
 async function submitEditRole(id,name){
   const role=document.getElementById('e-role').value;
-  await sbPatch('profiles',id,{role});
+  const itypeEl=document.getElementById('e-itype');
+  const installer_type=role==='installer'&&itypeEl?itypeEl.value:'flooring';
+  await sbPatch('profiles',id,{role,installer_type});
   closeModal();
   toast(`✓ ${name}'s role updated to ${ROLES[role].label}`);
   await renderUsers(document.getElementById('main'));

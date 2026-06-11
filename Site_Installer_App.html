@@ -143,6 +143,8 @@ function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'
 const SESSION=getSession();
 if(!SESSION||SESSION.role!=='installer'){window.location.href='Login.html';}
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'flooring',zone:''};
+// fetch own profile to get installer_type
+(async()=>{try{const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(ME.email)+'&select=installer_type&limit=1');if(Array.isArray(rows)&&rows[0]&&rows[0].installer_type)ME.type=rows[0].installer_type;}catch(e){}})();
 
 /* ============== DATA ============== */
 const today=new Date();today.setHours(0,0,0,0);

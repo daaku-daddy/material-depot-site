@@ -356,8 +356,8 @@ let ORDERS=[];
 /* ============== SUPABASE LOAD ============== */
 async function loadInstallers(){
   try{
-    const rows=await sbGet('profiles?role=eq.installer&select=id,name,email');
-    INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:'flooring',zone:'',phone:''}));
+    const rows=await sbGet('profiles?role=eq.installer&select=id,name,email,installer_type');
+    INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:''}));
   }catch(e){console.error('loadInstallers',e);}
 }
 
