@@ -124,7 +124,8 @@
 
 <div class="screen hide" id="jcScreen">
   <div class="shead"><button class="back" id="jcBack">&#8592;</button>
-    <div><div class="ti">Installation Card</div><div class="su" id="jcSub"></div></div></div>
+    <div><div class="ti">Installation Card</div><div class="su" id="jcSub"></div></div>
+    <div id="autosaveStatus" style="margin-left:auto;font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;padding-right:4px"></div></div>
   <div class="sbody" id="jcBody"></div>
   <div class="footer">
     <button class="bigbtn ghost" id="jcAddRoom" style="flex:1">+ Add room</button>
@@ -408,49 +409,92 @@ function openJobCard(j){
     <div class="note blue">Fill one block per room. Each room needs a photo after installation. <span class="reqstar">★</span> = required.</div>
     <div id="roomsWrap"></div>`;
   $("#jcScreen").classList.remove("hide");
-  if(j.jobcard&&j.jobcard.rooms&&j.jobcard.rooms.length)j.jobcard.rooms.forEach(r=>addRoom(r));else addRoom();
-  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};$("#jcScreen").classList.add("hide");openDetail(j.pi+'|'+j.sjId);};
-  $("#jcAddRoom").onclick=()=>addRoom();
+  // restore from localStorage draft first, then DB jobcard
+  let rooms=null;
+  try{const d=JSON.parse(localStorage.getItem('md_install_'+j.pi+'_'+j.sjId)||'null');if(d&&d.rooms&&d.rooms.length)rooms=d.rooms;}catch(e){}
+  if(!rooms&&j.jobcard&&j.jobcard.rooms&&j.jobcard.rooms.length)rooms=j.jobcard.rooms;
+  if(rooms&&rooms.length)rooms.forEach(r=>addRoom(r));else addRoom();
+  $("#jcBack").onclick=()=>{j.jobcard={rooms:collectRooms()};autosave();$("#jcScreen").classList.add("hide");openDetail(j.pi+'|'+j.sjId);};
+  $("#jcAddRoom").onclick=()=>{addRoom();autosave();};
   $("#jcDone").onclick=()=>finishCard(j);
 }
 function addRoom(restore){
   const id=++jcSeq;
-  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),photo:restore?restore.photo:null,comments:restore?restore.comments:''};
+  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[], comments:restore?restore.comments:''};
   const block=el('div','roomblock');block.dataset.id=id;
   const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+id));
-  const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();};top.appendChild(rm);block.appendChild(top);
+  const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();autosave();};top.appendChild(rm);block.appendChild(top);
 
-  const f1=el('div','fieldgap');f1.innerHTML='<label>Room name <span class="reqstar">★</span></label>';const nI=el('input');nI.placeholder='e.g. Living Room';nI.value=room.name;nI.oninput=()=>room.name=nI.value;f1.appendChild(nI);block.appendChild(f1);
+  const f1=el('div','fieldgap');f1.innerHTML='<label>Room name <span class="reqstar">★</span></label>';const nI=el('input');nI.placeholder='e.g. Living Room';nI.value=room.name;nI.oninput=()=>{room.name=nI.value;autosave();};f1.appendChild(nI);block.appendChild(f1);
 
-  const f2=el('div','fieldgap');f2.innerHTML='<label>SKU Code <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;f2.appendChild(sI);block.appendChild(f2);
+  const f2=el('div','fieldgap');f2.innerHTML='<label>SKU Code <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>{room.sku=sI.value;autosave();};f2.appendChild(sI);block.appendChild(f2);
 
-  const f3=el('div','fieldgap');f3.innerHTML='<label>Photo after installation <span class="reqstar">★</span></label>';
+  const f3=el('div','fieldgap');f3.innerHTML='<label>Photos after installation <span class="reqstar">★</span></label>';
   const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
-  const fileGal=document.createElement('input');fileGal.type='file';fileGal.accept='image/*';fileGal.style.display='none';
-  const pbox=el('div','photobox'+(room.photo?' has':''));pbox.style.display=room.photo?'block':'none';
-  if(room.photo)pbox.innerHTML=`<img src="${room.photo}">`;
-  const onPh=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photo=rd.result;pbox.innerHTML=`<img src="${room.photo}">`;pbox.classList.add('has');pbox.style.display='block';};rd.readAsDataURL(f);};
+  const fileGal=document.createElement('input');fileGal.type='file';fileGal.accept='image/*';fileGal.multiple=true;fileGal.style.display='none';
+  const photoGrid=el('div');photoGrid.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;';
+  function renderPhotoGrid(){
+    photoGrid.innerHTML='';
+    (room.photos||[]).forEach((ph,idx)=>{
+      const wrap=el('div');wrap.style.cssText='position:relative;width:80px;height:80px;flex:0 0 auto;';
+      const img=el('img');img.src=ph;img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;';
+      const rmb=el('button');rmb.textContent='×';rmb.style.cssText='position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1;padding:0;';
+      rmb.onclick=()=>{room.photos.splice(idx,1);renderPhotoGrid();autosave();};
+      wrap.appendChild(img);wrap.appendChild(rmb);photoGrid.appendChild(wrap);
+    });
+  }
+  renderPhotoGrid();
+  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=async()=>{const comp=await compress(rd.result,1200,0.7);room.photos.push(comp||rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromFile(f);fileCam.value='';};
+  fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromFile(f);fileGal.value='';};
   const pbtns=el('div','photo-btns');
   const btnCam=el('button','btn ghost','📷 Camera');const btnGal=el('button','btn ghost','🖼 Gallery');
   btnCam.onclick=()=>fileCam.click();btnGal.onclick=()=>fileGal.click();
-  fileCam.onchange=()=>onPh(fileCam.files[0]);fileGal.onchange=()=>onPh(fileGal.files[0]);
   pbtns.appendChild(fileCam);pbtns.appendChild(fileGal);pbtns.appendChild(btnCam);pbtns.appendChild(btnGal);
-  f3.appendChild(pbox);f3.appendChild(pbtns);block.appendChild(f3);
+  f3.appendChild(photoGrid);f3.appendChild(pbtns);block.appendChild(f3);
 
-  const f4=el('div','fieldgap');f4.innerHTML='<label>Comments (if any)</label>';const cI=document.createElement('textarea');cI.placeholder='Anything to note...';cI.value=room.comments;cI.oninput=()=>room.comments=cI.value;f4.appendChild(cI);block.appendChild(f4);
+  const f4=el('div','fieldgap');f4.innerHTML='<label>Comments (if any)</label>';const cI=document.createElement('textarea');cI.placeholder='Anything to note...';cI.value=room.comments;cI.oninput=()=>{room.comments=cI.value;autosave();};f4.appendChild(cI);block.appendChild(f4);
 
   $("#roomsWrap").appendChild(block);
   room._photoEl=pbox;jcRooms.push(room);
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
-function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,photo:r.photo,comments:r.comments}));}
+function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,photos:r.photos||[],comments:r.comments}));}
+let _autosaveTimer=null;
+function autosave(){
+  if(!jcJob)return;
+  const key='md_install_'+jcJob.pi+'_'+jcJob.sjId;
+  try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}
+  showSaveStatus('saving');
+  clearTimeout(_autosaveTimer);
+  _autosaveTimer=setTimeout(async()=>{
+    if(!jcJob||!jcJob.id||!jcJob.sjId){showSaveStatus('local');return;}
+    try{
+      const parentRows=await sbGet('install_orders?id=eq.'+jcJob.id+'&select=subjobs');
+      if(Array.isArray(parentRows)&&parentRows[0]){
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===jcJob.sjId);
+        const draftRooms=collectRooms().map(({photos,...rest})=>rest);
+        if(sj)sj.jobcard={draft:true,rooms:draftRooms};
+        await sbPatch('install_orders',jcJob.id,{subjobs});
+      }
+      showSaveStatus('saved');
+    }catch(e){showSaveStatus('local');}
+  },3000);
+}
+function showSaveStatus(state){
+  const s=document.getElementById('autosaveStatus');if(!s)return;
+  if(state==='saving'){s.textContent='Saving…';s.style.color='var(--amber)';}
+  else if(state==='saved'){s.textContent='✓ Saved';s.style.color='var(--green)';}
+  else{s.textContent='✓ Saved locally';s.style.color='var(--muted)';}
+}
 
 function finishCard(j){
   if(jcRooms.length===0){toast("Add at least one room");return;}
   for(const r of jcRooms){
     if(!r.name.trim()){toast("Enter a room name");return;}
     if(!r.sku.trim()){toast("Enter the SKU code");return;}
-    if(!r.photo){toast("Take a photo for "+(r.name||"each room"));return;}
+    if(!r.photos||!r.photos.length){toast("Take a photo for "+(r.name||"each room"));return;}
   }
   // sign screen
   $("#jcBody").innerHTML=`
@@ -481,6 +525,7 @@ function finishCard(j){
         if(sj){sj.status="completed";sj.jobcard=j.jobcard;}
         const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
         await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
+        try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
       }
     }catch(e){j.status=prev;toast("Network error — couldn't save. Try again");return;}
     await genPDF(j);
@@ -510,7 +555,9 @@ async function genPDF(j){
     doc.addPage();y=M;header();
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-'),M,y+10);y+=24;
-    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Photo after installation',M,y);const iw=W-2*M;const ih=iw*0.6;try{doc.addImage(r.photo,imgFmt(r.photo),M,y+6,iw,ih);}catch(e){}y+=ih+18;}
+    const rPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
+    const piw=W-2*M,pih=piw*0.6;
+    for(let pi=0;pi<rPhotos.length;pi++){if(y+pih+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(pi===0?'Photo after installation':'Additional photo '+(pi+1),M,y);try{doc.addImage(rPhotos[pi],imgFmt(rPhotos[pi]),M,y+6,piw,pih);}catch(e){}y+=pih+18;}
     if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
   });
 
@@ -568,8 +615,10 @@ function genAuditPDF(){
     y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
     const sketchImg=auRenderSketch(r);
     if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(r.photo,imgFmt(r.photo),M+colW+12,y+6,colW,ih);}catch(e){}}
+    const auPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
+    if(auPhotos.length){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(auPhotos[0],imgFmt(auPhotos[0]),M+colW+12,y+6,colW,ih);}catch(e){}}
     y+=ih+18;
+    for(let ap=1;ap<auPhotos.length;ap++){if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(auPhotos[ap],imgFmt(auPhotos[ap]),M,y+6,aw,ah);}catch(e){}y+=ah+18;}
     if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.notes,W-2*M),M,y);}
   });
   doc.addPage();y=M;header();

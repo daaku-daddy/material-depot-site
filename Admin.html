@@ -747,8 +747,10 @@ function genAuditPDF(order,ticked){
     y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
     const sketchImg=renderSketchA(r);
     if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(r.photo,imgFmtA(r.photo),M+colW+12,y+6,colW,ih);}catch(e){}}
+    const rPhotosA=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
+    if(rPhotosA.length){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(rPhotosA[0],imgFmtA(rPhotosA[0]),M+colW+12,y+6,colW,ih);}catch(e){}}
     y+=ih+18;
+    for(let ap=1;ap<rPhotosA.length;ap++){if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(rPhotosA[ap],imgFmtA(rPhotosA[ap]),M,y+6,aw,ah);}catch(e){}y+=ah+18;}
     if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
   });
   doc.addPage();y=M;header();
@@ -781,7 +783,9 @@ function genInstallPDF(order,sj,jobcard,installerName){
     doc.addPage();y=M;header();
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-'),M,y+10);y+=24;
-    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Photo after installation',M,y);const iw=W-2*M;const ih=iw*0.6;try{doc.addImage(r.photo,imgFmtA(r.photo),M,y+6,iw,ih);}catch(e){}y+=ih+18;}
+    const rPhotosI=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
+    const aiw=W-2*M,aih=aiw*0.6;
+    for(let ip=0;ip<rPhotosI.length;ip++){if(y+aih+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(ip===0?'Photo after installation':'Additional photo '+(ip+1),M,y);try{doc.addImage(rPhotosI[ip],imgFmtA(rPhotosI[ip]),M,y+6,aiw,aih);}catch(e){}y+=aih+18;}
     if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
   });
   doc.addPage();y=M;header();
