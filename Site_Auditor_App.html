@@ -150,7 +150,7 @@ document.getElementById('meName').textContent=ME.name;
 /* ============== DATA ============== */
 const AUDIT_SKU="SVC-AUDIT-001";
 const today=new Date();today.setHours(0,0,0,0);
-function dstr(d){return d.toISOString().slice(0,10);}
+function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 const SLOTS={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
 

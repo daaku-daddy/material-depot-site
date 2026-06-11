@@ -322,7 +322,7 @@ let SLOTS=[{id:"s1",label:"9 AM – 12 PM"},{id:"s2",label:"12 PM – 3 PM"},{id
 let AUDITORS=[];
 
 const today=new Date();today.setHours(0,0,0,0);
-function dstr(d){return d.toISOString().slice(0,10);}
+function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 
 // PER-AUDITOR, PER-DATE caps. CAPS[auditorId][yyyy-mm-dd] = number. Default applied if absent.
