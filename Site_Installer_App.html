@@ -364,6 +364,7 @@ async function openAudit(j){
     if(!a||!a.rooms||!a.rooms.length){
       $("#auBody").innerHTML=`<div class="note blue">No completed Material Depot site audit found for this phone number.</div>`;return;
     }
+    _auTicked=a;_auOrder={pi:j.pi,name:j.name,phone:j.phone,addr:j.addr,bm:j.bm,date:rows[0].date||null};
     const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
     const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer needed','primer']];
     const rooms=a.rooms.map((r,i)=>{
@@ -378,7 +379,9 @@ async function openAudit(j){
         <div class="k">Auditor</div><div class="v">${a.auditor||rows[0].auditor_name||'—'}</div>
         <div class="k">Audit date</div><div class="v">${a.date?fmtDate(a.date):'—'}</div>
         <div class="k">Rooms audited</div><div class="v">${a.rooms.length}</div></div></div>
-      ${rooms}`;
+      ${rooms}
+      <button class="bigbtn ghost" id="dlAuditPdf" style="margin-top:8px">Download Audit PDF</button>`;
+    if($("#dlAuditPdf"))$("#dlAuditPdf").onclick=()=>genAuditPDF();
   }catch(e){$("#auBody").innerHTML=`<div class="note red">Couldn't load audit report — check your connection.</div>`;}
 }
 
@@ -516,6 +519,62 @@ async function genPDF(j){
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
 
   const fn=('Installation_'+(j.name||'client')+'_'+(j.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');doc.save(fn);
+}
+
+/* audit PDF for installer read-only view */
+const AU_FL=[{k:'area',label:'Area (sq.ft)'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
+const AU_WP=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type'},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed'}];
+function auFieldsFor(t){return t==='wallpaper'?AU_WP:AU_FL;}
+function auRenderSketch(r){
+  if(!r.sketchStrokes||!r.sketchStrokes.length)return null;
+  const W=1000,H=500;const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);const s=Math.round(22*(W/360));x.fillStyle='#b2b8c1';
+  for(let yy=s;yy<H;yy+=s)for(let xx=s;xx<W;xx+=s){x.beginPath();x.arc(xx,yy,2,0,7);x.fill();}
+  x.strokeStyle='#1F3A5F';x.lineWidth=3.2;x.lineJoin='round';x.lineCap='round';
+  for(const st of r.sketchStrokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}
+  return c.toDataURL('image/jpeg',0.85);
+}
+let _auTicked=null,_auOrder=null;
+function genAuditPDF(){
+  const a=_auTicked,o=_auOrder;if(!a||!o)return;
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
+  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const rooms=a.rooms||[];
+  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);
+    doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Site Audit Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  header();
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+    body:[['Proforma Invoice No.',o.pi],['Client Name',o.name],['Client Mobile',o.phone],['Site Address',o.addr],['BM',o.bm],['Auditor',a.auditor||'—'],['Date',fmtDate(o.date)]]});
+  y=doc.lastAutoTable.finalY+10;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
+    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+  rooms.forEach((r,i)=>{
+    doc.addPage();y=M;header();
+    const fields=auFieldsFor(r.type);
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc&&r.calc[f.k])||''])});
+    y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    const sketchImg=auRenderSketch(r);
+    if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
+    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(r.photo,imgFmt(r.photo),M+colW+12,y+6,colW,ih);}catch(e){}}
+    y+=ih+18;
+    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.notes,W-2*M),M,y);}
+  });
+  doc.addPage();y=M;header();
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+  doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  doc.setFontSize(10);doc.setTextColor(...muted);
+  doc.text('Client name: '+((a.sign&&a.sign.name)||o.name),M,y);y+=18;doc.text('Date: '+fmtDate(o.date),M,y);
+  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
+  if(a.sign&&a.sign.img){try{doc.addImage(a.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+  doc.save(('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
 }
 
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};

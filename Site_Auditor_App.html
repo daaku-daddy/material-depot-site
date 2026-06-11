@@ -18,8 +18,8 @@
   header .me{margin-left:auto;text-align:right;font-size:11px;color:#cdd8e8;line-height:1.25;}
   header .me b{color:#fff;font-size:13px;}
   .wrap{padding:14px 14px 90px;}
-  .daystrip{display:flex;gap:8px;margin-bottom:14px;}
-  .daychip{flex:1;background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;cursor:pointer;}
+  .daystrip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px;}
+  .daychip{flex:0 0 88px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;cursor:pointer;}
   .daychip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
   .daychip .dn{font-size:11px;font-weight:700;opacity:.8;}
   .daychip .dd{font-size:18px;font-weight:800;margin-top:1px;}
@@ -221,7 +221,7 @@ function autoFlip(){
 let selDay=dstr(today);
 function listView(){
   autoFlip();
-  const days=[today,addDays(1),addDays(2)];
+  const days=Array.from({length:7},(_,i)=>addDays(i));
   const strip=days.map(d=>{const ds=dstr(d);const n=ORDERS.filter(o=>o.date===ds).length;
     return `<div class="daychip ${selDay===ds?'on':''}" data-day="${ds}">
       <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
@@ -288,8 +288,11 @@ function detailBody(o){
       <div class="actions"><button class="btn navy" id="openJC">${o.jobcard?'Resume Job Card':'Open Job Card'}</button></div></div>`;
   } else if(o.status==="completed"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big" style="color:var(--green)">Site Audit Completed</div>
-      <div class="desc">JobCard PDF generated and pushed to the Service Manager &amp; BM CRM.</div>
-      <div class="actions"><button class="btn ghost" id="dlPdf">Download Job Card PDF</button></div></div>`;
+      <div class="desc">Job card submitted. You can add more rooms or details by reopening the job card.</div>
+      <div class="actions">
+        <button class="btn navy" id="openJC">Edit / Add Rooms</button>
+        <button class="btn ghost" id="dlPdf">Download Job Card PDF</button>
+      </div></div>`;
   }
   return stage+`
     <div class="card"><h2>Customer</h2><div class="kv">
@@ -484,7 +487,9 @@ function reviewAndSign(o){
     toast("Building PDF…");
     await genPDF(o);
     $("#jcScreen").classList.add("hide");
-    openDetail(o.pi);
+    $("#detailScreen").classList.add("hide");
+    await loadJobs();
+    renderList();
     toast("Audit completed · SM notified");
   };
 }
