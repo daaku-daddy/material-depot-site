@@ -711,7 +711,7 @@ async function renderPerf(m){
 const FLOOR_FIELDS_A=[{k:'area',label:'Area (sq.ft)'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
 const WALL_FIELDS_A=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type'},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed'}];
 function fieldsForA(t){return t==='wallpaper'?WALL_FIELDS_A:FLOOR_FIELDS_A;}
-function imgFmtA(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
+function imgFmtA(d){if(/webp/i.test(d.slice(0,20)))return 'WEBP';return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
 function renderSketchA(r){
   if(!r.sketchStrokes||!r.sketchStrokes.length)return null;
   const W=1000,H=500;const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');

@@ -224,8 +224,8 @@ const slotLabel=id=>(SLOTS[id]||{}).label||"—";
 function badge(st){const s=STATUS[st]||{l:st,c:"b-scheduled"};return `<span class="badge ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
-function imgFmt(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
-function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
+function imgFmt(d){if(/webp/i.test(d.slice(0,20)))return 'WEBP';return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
+function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);const webp=o.toDataURL('image/webp',q);if(webp.startsWith('data:image/webp')){res(webp);return;}res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
 function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)&&SLOTS[o.slot]){const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
 
 /* ============== LIST ============== */
@@ -422,7 +422,7 @@ function addRoom(restore){
   const id=++jcSeq;
   const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[], comments:restore?restore.comments:''};
   const block=el('div','roomblock');block.dataset.id=id;
-  const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+id));
+  const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+(jcRooms.length+1)));
   const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();autosave();};top.appendChild(rm);block.appendChild(top);
 
   const f1=el('div','fieldgap');f1.innerHTML='<label>Room name <span class="reqstar">★</span></label>';const nI=el('input');nI.placeholder='e.g. Living Room';nI.value=room.name;nI.oninput=()=>{room.name=nI.value;autosave();};f1.appendChild(nI);block.appendChild(f1);
@@ -444,7 +444,7 @@ function addRoom(restore){
     });
   }
   renderPhotoGrid();
-  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=async()=>{const comp=await compress(rd.result,1200,0.7);room.photos.push(comp||rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=async()=>{const comp=await compress(rd.result,1600,0.85);room.photos.push(comp||rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromFile(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromFile(f);fileGal.value='';};
   const pbtns=el('div','photo-btns');

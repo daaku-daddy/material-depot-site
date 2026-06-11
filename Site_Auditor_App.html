@@ -205,7 +205,7 @@ function chip(st){const s=STATUS[st]||{l:st,c:'c-scheduled'};return `<span class
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function imgFmt(d){return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
-function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
+function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);const webp=o.toDataURL('image/webp',q);if(webp.startsWith('data:image/webp')){res(webp);return;}res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
 
 // "3 hours before slot start" auto flip scheduled->callpending (simulated against now)
 function autoFlip(){
@@ -407,7 +407,7 @@ function addRoom(restore){
   const initType=restore?restore.type:(jcOrder.skus[0]?jcOrder.skus[0].type:'flooring');
   const room={id,type:initType,name:restore?restore.name:'',sku:restore?restore.sku:'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[], calc:restore?Object.assign({},restore.calc):{},notes:restore?restore.notes:''};
   const card=el('div','card');card.dataset.id=id;
-  const head=el('div','roomhead');head.appendChild(el('div','rn','Room / Space '+id));
+  const head=el('div','roomhead');head.appendChild(el('div','rn','Room / Space '+(jcRooms.length+1)));
   const rm=el('button','btn warn sm','Remove');rm.style.flex='0 0 auto';rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);card.remove();renumber();autosave();};head.appendChild(rm);card.appendChild(head);
 
   // type toggle
@@ -437,7 +437,7 @@ function addRoom(restore){
     });
   }
   renderPhotoGrid();
-  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=async()=>{const comp=await compress(rd.result,1200,0.7);room.photos.push(comp||rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=async()=>{const comp=await compress(rd.result,1600,0.85);room.photos.push(comp||rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromFile(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromFile(f);fileGal.value='';};
   const prow=el('div','photo-row');prow.style.marginTop='8px';
