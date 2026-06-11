@@ -311,7 +311,7 @@ function wireDetail(o){
     // Map auditor status back to SM status vocabulary for DB
     const dbStatus=st==='scheduled'?'assigned':st;
     if(o.id){try{await sbPatch('audit_orders',o.id,{status:dbStatus,log:o.log});}catch(e){o.status=prev;toast("Network error — try again");return;}}
-    toast(msg);openDetail(o.pi);
+    await loadJobs();toast(msg);openDetail(o.pi);
   };
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Moved to Call Pending");
   if($("#custYes"))$("#custYes").onclick=()=>adv("onway","On the way — SM notified");

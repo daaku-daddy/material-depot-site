@@ -721,11 +721,11 @@ function wireDrawer(o){
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
 
   // manual status
-  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});toast("Status: "+STATUS[st].l);render();openOrder(o.pi);});
+  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);});
 
   // delivery outcomes
-  if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});toast("Delivery on time — create service next");render();openOrder(o.pi);};
-  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:"Delivery delayed — BM asked to inform client. New date: "+fmtDate(nd),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});toast("Marked delivery delayed");render();openOrder(o.pi);};
+  if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Delivery on time — create service next");openOrder(o.pi);};
+  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:"Delivery delayed — BM asked to inform client. New date: "+fmtDate(nd),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});await loadOrders();toast("Marked delivery delayed");openOrder(o.pi);};
 
   // service creation
   function renderSkuRows(grp){
@@ -759,7 +759,7 @@ function wireDrawer(o){
     o.status="created";
     o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
-    toast("Service created — "+o.subjobs.length+" sub-job(s)");render();openOrder(o.pi);
+    await loadOrders();toast("Service created — "+o.subjobs.length+" sub-job(s)");openOrder(o.pi);
   };
 
   // ---- per-subjob schedule ----
@@ -790,7 +790,7 @@ function wireDrawer(o){
       sj.date=document.getElementById("sd_"+sj.id).value;sj.slot=pickedSlot;sj.status="scheduled";
       syncParent(o);o.log.push({t:sj.type+" install scheduled: "+fmtDate(sj.date)+" · "+slotLabel(sj.slot),d:"Just now",by:"manual"});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
-      toast("Sub-job scheduled");render();openOrder(o.pi);
+      await loadOrders();toast("Sub-job scheduled");openOrder(o.pi);
     };
   });
 
@@ -815,7 +815,7 @@ function wireDrawer(o){
       sj.installer_email=a.email||null;
       syncParent(o);o.log.push({t:sj.type+" installer assigned: "+a.name+" · SMS sent to customer",d:"Just now",by:"manual"});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
-      toast("Assigned "+a.name);render();openOrder(o.pi);
+      await loadOrders();toast("Assigned "+a.name);openOrder(o.pi);
     };
   });
 

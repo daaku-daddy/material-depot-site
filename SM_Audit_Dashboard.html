@@ -691,7 +691,7 @@ function wireDrawer(o){
       if(tIdx<FLOW.indexOf("scheduled")){patch.slot=null;patch.date=null;}
       await sbPatch('audit_orders',o.id,patch);
     }
-    toast("Moved back to "+STATUS[target].l);render();openOrder(o.pi);
+    await loadOrders();toast("Moved back to "+STATUS[target].l);openOrder(o.pi);
   });
 
   // manual status override
@@ -700,7 +700,7 @@ function wireDrawer(o){
     o.status=st;
     o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,log:o.log});
-    toast("Status: "+STATUS[st].l);render();openOrder(o.pi);
+    await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
   });
 
   // ---- service creation interactions ----
@@ -735,7 +735,7 @@ function wireDrawer(o){
                   (wp.length?(" | Wallpaper: "+wp.map(r=>r.sku+(r.num?" ("+r.num+")":"")).join(", ")):"");
     o.log.push({t:"Service created — "+(summary||"NA (no SKU fixed)"),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,service:o.service,log:o.log});
-    toast("Service created");render();openOrder(o.pi);
+    await loadOrders();toast("Service created");openOrder(o.pi);
   };
 
   // ---- slot booking ----
@@ -753,7 +753,7 @@ function wireDrawer(o){
   if($("#bookSlot"))$("#bookSlot").onclick=async()=>{o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
     o.log.push({t:"Slot booked: "+fmtDate(o.date)+" · "+slotLabel(o.slot),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,slot:o.slot,date:o.date,log:o.log});
-    toast("Slot booked — "+fmtDate(o.date));render();openOrder(o.pi);};
+    await loadOrders();toast("Slot booked — "+fmtDate(o.date));openOrder(o.pi);};
 
   // ---- auditor assignment ----
   if($("#auditorList")){
@@ -771,7 +771,7 @@ function wireDrawer(o){
   if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
     o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:"Just now",by:"manual"});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
-    toast("Assigned "+a.name+" · customer notified");render();openOrder(o.pi);};
+    await loadOrders();toast("Assigned "+a.name+" · customer notified");openOrder(o.pi);};
 
   if($("#delOrder"))$("#delOrder").onclick=async()=>{
     if(!confirm("Delete order "+o.pi+" for "+o.name+"?\n\nThis cannot be undone."))return;
