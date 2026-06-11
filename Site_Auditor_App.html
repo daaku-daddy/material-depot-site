@@ -398,7 +398,7 @@ function addRoom(restore){
 
   const g=el('div','grid2');
   const nW=el('div','full');nW.appendChild(el('label',null,'Room name'));const nI=el('input');nI.placeholder='e.g. Master Bedroom';nI.value=room.name;nI.oninput=()=>room.name=nI.value;nW.appendChild(nI);g.appendChild(nW);
-  const sW=el('div','full');sW.appendChild(el('label',null,'SKU number (write NA if none)'));const sI=el('input');sI.placeholder='e.g. '+(room.sku||'WP-9020 / NA');sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;sW.appendChild(sI);g.appendChild(sW);
+  const sW=el('div','full');sW.appendChild(el('label',null,'SKU Code (write NA if none)'));const sI=el('input');sI.placeholder='e.g. '+(room.sku||'WP-9020 / NA');sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;sW.appendChild(sI);g.appendChild(sW);
   card.appendChild(g);
 
   // photo

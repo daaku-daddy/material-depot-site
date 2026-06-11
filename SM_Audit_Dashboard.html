@@ -138,9 +138,11 @@
   .switch.on{background:var(--green);}
   .switch:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s;}
   .switch.on:after{left:18px;}
-  .skurow{display:flex;gap:8px;margin-bottom:7px;}
-  .skurow input{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;}
-  .skurow .del{border:0;background:#fbeae8;color:var(--red);border-radius:8px;width:34px;cursor:pointer;font-weight:800;flex:0 0 auto;}
+  .skurow{margin-bottom:10px;background:var(--lighter);border-radius:9px;padding:8px;}
+  .skurow .sr-top{display:flex;gap:6px;align-items:center;}
+  .skurow .sr-top input{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;}
+  .skurow input.link{width:100%;box-sizing:border-box;margin-top:5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;}
+  .skurow .del{border:0;background:#fbeae8;color:var(--red);border-radius:8px;width:34px;height:34px;cursor:pointer;font-weight:800;flex:0 0 auto;}
   .addsku{border:1px dashed var(--blue);background:#fff;color:var(--blue);border-radius:8px;padding:7px;font-weight:700;font-size:12.5px;cursor:pointer;width:100%;}
   .stepline{display:flex;gap:0;margin-bottom:8px;}
   .step{flex:1;text-align:center;position:relative;cursor:pointer;}
@@ -633,7 +635,7 @@ function serviceCreationPanel(o){
   const flooringTicked=o.auditTicked.some(x=>/floor/i.test(x));
   const wallTicked=o.auditTicked.some(x=>/wall/i.test(x));
   return `<div class="sec"><h3>Service creation</h3>
-    <div class="note">Customer, phone, address and BM are pulled from the order automatically. Add SKU + SKU number rows for each category being audited.</div>
+    <div class="note">Customer, phone, address and BM are pulled from the order automatically. Add SKU Code, SKU Name, and an optional link for each category being audited.</div>
     <div class="field"><label>Customer name <span class="autofill">auto</span></label><input value="${o.name}" disabled></div>
     <div class="field"><label>Phone <span class="autofill">auto</span></label><input value="${o.phone}" disabled></div>
     <div class="field"><label>Address <span class="autofill">auto</span></label><input value="${o.addr}" disabled></div>
@@ -707,9 +709,13 @@ function wireDrawer(o){
   function renderSkuRows(grp){
     const box=document.querySelector(`[data-rows="${grp}"]`);if(!box)return;
     box.innerHTML=draft[grp].map((r,i)=>`<div class="skurow">
-      <input placeholder="SKU code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
-      <input placeholder="SKU number" value="${r.num||''}" data-grp="${grp}" data-i="${i}" data-f="num">
-      <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button></div>`).join("");
+      <div class="sr-top">
+        <input placeholder="SKU Code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
+        <input placeholder="SKU Name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name">
+        <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button>
+      </div>
+      <input class="link" placeholder="SKU Link (optional)" value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link">
+    </div>`).join("");
     box.querySelectorAll("input").forEach(inp=>inp.oninput=()=>{draft[inp.dataset.grp][inp.dataset.i][inp.dataset.f]=inp.value;});
     box.querySelectorAll("[data-delrow]").forEach(btn=>btn.onclick=()=>{draft[btn.dataset.delrow].splice(+btn.dataset.i,1);renderSkuRows(grp);updateNANote();});
   }
@@ -718,21 +724,21 @@ function wireDrawer(o){
     const grp=sw.dataset.tog;const on=!sw.classList.contains("on");sw.classList.toggle("on",on);
     const rows=document.querySelector(`[data-rows="${grp}"]`),add=document.querySelector(`[data-add="${grp}"]`);
     rows.classList.toggle("hide",!on);add.classList.toggle("hide",!on);
-    if(on&&draft[grp].length===0){draft[grp].push({sku:"",num:""});renderSkuRows(grp);}
+    if(on&&draft[grp].length===0){draft[grp].push({sku:"",name:"",link:""});renderSkuRows(grp);}
     if(!on)draft[grp]=[];
     updateNANote();
   });
-  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push({sku:"",num:""});renderSkuRows(grp);updateNANote();});
+  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push({sku:"",name:"",link:""});renderSkuRows(grp);updateNANote();});
   if($("#statusMenu")){ if(draft.flooring.length)renderSkuRows("flooring"); if(draft.wallpaper.length)renderSkuRows("wallpaper"); }
   // initial render of any prefilled rows
   if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
   if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
 
   if($("#createService"))$("#createService").onclick=async()=>{
-    const fl=draft.flooring.filter(r=>r.sku||r.num),wp=draft.wallpaper.filter(r=>r.sku||r.num);
+    const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name);
     o.service={flooring:fl,wallpaper:wp};o.status="created";
-    const summary=(fl.length?("Flooring: "+fl.map(r=>r.sku+(r.num?" ("+r.num+")":"")).join(", ")):"")+
-                  (wp.length?(" | Wallpaper: "+wp.map(r=>r.sku+(r.num?" ("+r.num+")":"")).join(", ")):"");
+    const summary=(fl.length?("Flooring: "+fl.map(r=>r.sku+(r.name?" · "+r.name:"")).join(", ")):"")+
+                  (wp.length?(" | Wallpaper: "+wp.map(r=>r.sku+(r.name?" · "+r.name:"")).join(", ")):"");
     o.log.push({t:"Service created — "+(summary||"NA (no SKU fixed)"),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,service:o.service,log:o.log});
     await loadOrders();toast("Service created");openOrder(o.pi);

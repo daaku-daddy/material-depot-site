@@ -199,7 +199,7 @@ async function loadJobs(){
             date:sj.date||null,
             slot:sj.slot||null,
             status:sj.status==='assigned'?'scheduled':sj.status,
-            sku:(sj.items||[]).map(it=>({num:it.num||'',name:it.sku||it.name||''})),
+            sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||''})),
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
             jobcard:existing[r.pi+'|'+sj.id]||null,
@@ -304,7 +304,7 @@ function detailBody(j){
         <div class="k">Customer</div><div class="v">${j.name}</div>
         <div class="k">Phone</div><div class="v">${j.phone}</div>
         <div class="k">Address</div><div class="v">${j.addr}</div>
-        <div class="k">Product</div><div class="v">${j.sku.map(s=>s.name+" ("+s.num+")").join(", ")}</div>
+        <div class="k">Product</div><div class="v">${j.sku.map(s=>[s.code,s.skuName].filter(Boolean).join(' · ')+(s.link?` <a href="${s.link}" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>`:'')).join("<br>")}</div>
         <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
         <div class="k">Your BM</div><div class="v">${j.bm}</div>
       </div>
@@ -401,14 +401,14 @@ function openJobCard(j){
 }
 function addRoom(restore){
   const id=++jcSeq;
-  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].num:''),photo:restore?restore.photo:null,comments:restore?restore.comments:''};
+  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),photo:restore?restore.photo:null,comments:restore?restore.comments:''};
   const block=el('div','roomblock');block.dataset.id=id;
   const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+id));
   const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();};top.appendChild(rm);block.appendChild(top);
 
   const f1=el('div','fieldgap');f1.innerHTML='<label>Room name <span class="reqstar">★</span></label>';const nI=el('input');nI.placeholder='e.g. Living Room';nI.value=room.name;nI.oninput=()=>room.name=nI.value;f1.appendChild(nI);block.appendChild(f1);
 
-  const f2=el('div','fieldgap');f2.innerHTML='<label>SKU number <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;f2.appendChild(sI);block.appendChild(f2);
+  const f2=el('div','fieldgap');f2.innerHTML='<label>SKU Code <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>room.sku=sI.value;f2.appendChild(sI);block.appendChild(f2);
 
   const f3=el('div','fieldgap');f3.innerHTML='<label>Photo after installation <span class="reqstar">★</span></label>';
   const file=document.createElement('input');file.type='file';file.accept='image/*';file.capture='environment';file.style.display='none';
@@ -429,7 +429,7 @@ function finishCard(j){
   if(jcRooms.length===0){toast("Add at least one room");return;}
   for(const r of jcRooms){
     if(!r.name.trim()){toast("Enter a room name");return;}
-    if(!r.sku.trim()){toast("Enter the SKU number");return;}
+    if(!r.sku.trim()){toast("Enter the SKU code");return;}
     if(!r.photo){toast("Take a photo for "+(r.name||"each room"));return;}
   }
   // sign screen
