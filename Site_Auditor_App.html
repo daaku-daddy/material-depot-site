@@ -322,12 +322,23 @@ function wireDetail(o){
   if($("#atSite"))$("#atSite").onclick=()=>adv("atsite","At site — open the Job Card");
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(o);
   if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
+    const btn=$("#dlPdf");btn.disabled=true;const oldTxt=btn.textContent;btn.textContent="Building PDF…";
     if(!o.jobcard){
       const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
       if(Array.isArray(rows)&&rows[0]&&rows[0].audit_ticked&&rows[0].audit_ticked.sign)
         o.jobcard={rooms:rows[0].audit_ticked.rooms||[],sign:rows[0].audit_ticked.sign};
     }
-    if(o.jobcard)genPDF(o);else toast("Job card not available");
+    if(!o.jobcard){toast("Job card not available");btn.disabled=false;btn.textContent=oldTxt;return;}
+    let url=null;try{url=await genPDF(o);}catch(e){console.error('PDF:',e);}
+    btn.disabled=false;btn.textContent=oldTxt;
+    if(url){
+      const fn=('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');
+      const old=document.getElementById('_pdfLink');if(old)old.remove();
+      const a=document.createElement('a');a.id='_pdfLink';a.href=url;a.target='_blank';a.download=fn;
+      a.style.cssText='display:block;margin-top:10px;background:var(--green);color:#fff;border-radius:10px;padding:13px;font-weight:800;text-decoration:none;font-size:14px;text-align:center';
+      a.textContent='📥 Tap to open PDF';
+      btn.parentNode.insertBefore(a,btn.nextSibling);
+    }else{toast("PDF generation failed — try again");}
   };
 }
 
@@ -480,6 +491,7 @@ function reviewAndSign(o){
   $("#backToRooms").onclick=()=>{$("#jcFooter").classList.remove("hide");renderJCHeader();const saved=collectRooms();jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
+    const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
     jcSign={img:jcSignPad.export(),name:$("#signName").value};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
@@ -488,19 +500,49 @@ function reviewAndSign(o){
     if(o.id){try{
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photo:r.photo||null,sketchStrokes:r.sketchStrokes||[]}))};
       await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});
-    }catch(e){toast("Saved locally — sync failed, will retry");}}
-    toast("Building PDF…");
-    await genPDF(o);
-    $("#jcScreen").classList.add("hide");
-    $("#detailScreen").classList.add("hide");
-    await loadJobs();
-    renderList();
-    toast("Audit completed · SM notified");
+    }catch(e){toast("Saved locally — sync failed");}}
+    btn.textContent="Building PDF…";
+    let pdfUrl=null;
+    try{pdfUrl=await genPDF(o);}catch(e){console.error('PDF error:',e);}
+    const fn=('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');
+    $("#jcBody").innerHTML=`
+      <div class="card" style="text-align:center;padding:28px 16px">
+        <div style="font-size:52px;margin-bottom:12px">✅</div>
+        <div style="font-size:20px;font-weight:800;color:var(--green);margin-bottom:6px">Audit Complete!</div>
+        <div style="font-size:13.5px;color:var(--muted);margin-bottom:20px">Saved &amp; SM notified.</div>
+        ${pdfUrl
+          ?`<a href="${pdfUrl}" target="_blank" download="${fn}" style="display:block;background:var(--green);color:#fff;border-radius:12px;padding:16px;font-weight:800;font-size:16px;text-align:center;text-decoration:none;margin-bottom:8px">&#128229; Open Job Card PDF</a>
+            <div style="font-size:11.5px;color:var(--muted);margin-bottom:20px">iPhone: tap to view &rarr; use the share icon to save to Files</div>`
+          :`<div class="note" style="margin-bottom:20px;text-align:left">PDF could not be generated on this device. Download it from the order screen later.</div>`}
+        <button class="bigbtn ghost" id="doneAudit">Done &mdash; Back to Orders</button>
+      </div>`;
+    $("#jcFooter").classList.add("hide");
+    document.getElementById("doneAudit").onclick=async()=>{
+      $("#jcScreen").classList.add("hide");
+      $("#detailScreen").classList.add("hide");
+      await loadJobs();
+      renderList();
+    };
   };
 }
 
 /* ============== PDF ============== */
 const LOGO=null;
+async function compressImg(dataUrl){
+  if(!dataUrl)return null;
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const mw=1200,mh=900,scale=Math.min(1,mw/img.width,mh/img.height);
+      const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(cv.toDataURL('image/jpeg',0.65));
+    };
+    img.onerror=()=>resolve(null);
+    img.src=dataUrl;
+  });
+}
 async function genPDF(o){
   const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
@@ -516,7 +558,7 @@ async function genPDF(o){
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
     head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
 
-  rooms.forEach((r,i)=>{
+  for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
     const fields=fieldsFor(r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
@@ -524,13 +566,12 @@ async function genPDF(o){
     doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
       head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc[f.k]||'')])});
     y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
-    // sketch
     const sketchImg=renderSketchData(r);
     if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    if(r.photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(r.photo,imgFmt(r.photo),M+colW+12,y+6,colW,ih);}catch(e){}}
+    if(r.photo){const photo=await compressImg(r.photo);if(photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(photo,'JPEG',M+colW+12,y+6,colW,ih);}catch(e){}}}
     y+=ih+18;
     if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
-  });
+  }
 
   // consent + signature page
   doc.addPage();y=M;header();
@@ -543,12 +584,10 @@ async function genPDF(o){
   doc.text('Date: '+fmtDate(o.date),M,y);
   // signature bottom-right
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(o.jobcard.sign&&o.jobcard.sign.img){try{doc.addImage(o.jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  if(o.jobcard.sign&&o.jobcard.sign.img){const sigImg=await compressImg(o.jobcard.sign.img);if(sigImg){try{doc.addImage(sigImg,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}}
   doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
-
-  const fn=('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');
-  doc.save(fn);
+  return URL.createObjectURL(doc.output('blob'));
 }
 // re-render a saved room's sketch strokes into an image for the PDF
 function renderSketchData(r){
