@@ -1075,11 +1075,11 @@ async function genInstallPDFSM(o,sj,jobcard){
     body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Installer',installerName],['Type',sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(sj.date)]]});
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
-  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-'])});
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU','Qty']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-',r.qty||'-'])});
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;hdr();
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-'),M,y+10);y+=24;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-')+(r.qty?' · Qty: '+r.qty:''),M,y+10);y+=24;
     const photos=r.photos||(r.photo?[r.photo]:[]);
     for(let pi=0;pi<photos.length;pi++){const ph=await _compressInst(photos[pi]);if(ph){const iw=W-2*M,ih=iw*0.6;if(y+ih>H-M){doc.addPage();y=M;hdr();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(pi===0?'Photo after installation':'Photo '+(pi+1),M,y);try{doc.addImage(ph,'JPEG',M,y+6,iw,ih);}catch(e){}y+=ih+18;}}
     if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
