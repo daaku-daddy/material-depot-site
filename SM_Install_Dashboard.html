@@ -631,6 +631,8 @@ function drawerBody(o){
     <div class="k">Phone</div><div class="v">${o.phone}</div>
     <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div></div></div>`;
 
+  if(o.service) html+=editInstallServiceSection(o);
+
   // ---- AUDIT TYPE selector ----
   html+=`<div class="sec"><h3>Site audit type</h3>
     <div class="note">Who completed the site audit? This controls what the installer sees on their app.</div>
@@ -719,6 +721,26 @@ function serviceCreationPanel(o){
   </div>`;
 }
 
+function editInstallServiceSection(o){
+  const fl=(o.service.flooring||[]).length>0;
+  const wp=(o.service.wallpaper||[]).length>0;
+  return `<div class="sec"><h3>Service details <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— edit if needed</span></h3>
+    <div class="note">Update SKU codes, names, links and roll counts. Changes also update the installer's job items.</div>
+    <div class="skugroup" data-grp="flooring">
+      <div class="gh"><span class="gt">Wooden Flooring</span><div class="switch ${fl?'on':''}" data-tog="flooring"></div></div>
+      <div class="skurows ${fl?'':'hide'}" data-rows="flooring"></div>
+      <button class="addsku ${fl?'':'hide'}" data-add="flooring">+ Add flooring SKU</button>
+    </div>
+    <div class="skugroup" data-grp="wallpaper">
+      <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wp?'on':''}" data-tog="wallpaper"></div></div>
+      <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper"></div>
+      <button class="addsku ${wp?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
+      <div class="rollhint">Roll count: ≥5 rolls = full day, &lt;5 rolls = half-day.</div>
+    </div>
+    <button class="btn navy sm" style="margin-top:8px" id="saveService">Save changes</button>
+  </div>`;
+}
+
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">&#128465; Delete</button>`;
   if(o.status==="pending")return del+`<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
@@ -732,7 +754,14 @@ function drawerFoot(o){
 let draft={};
 function wireDrawer(o){
   draft={flooring:[],wallpaper:[]};
-  if(o.service){draft.flooring=(o.service.flooring||[]).map(x=>({...x}));draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));}
+  if(o.service){
+    draft.flooring=(o.service.flooring||[]).map(x=>({...x}));
+    draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));
+  } else {
+    const _sk=o.skus||[];
+    draft.flooring=_sk.filter(s=>s.type==='flooring').map(s=>({sku:s.c,name:'',link:'',rolls:''}));
+    draft.wallpaper=_sk.filter(s=>s.type==='wallpaper').map(s=>({sku:s.c,name:'',link:'',rolls:''}));
+  }
   $("#dwClose").onclick=closeDrawer;
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
 
@@ -790,6 +819,27 @@ function wireDrawer(o){
     o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Service created — "+o.subjobs.length+" sub-job(s)");openOrder(o.pi);
+  };
+
+  if($("#saveService"))$("#saveService").onclick=async()=>{
+    const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name);
+    const flSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_fl');
+    const wpSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_wp');
+    if(!fl.length&&flSj&&flSj.status!=='created'){toast("Flooring sub-job is in progress — cannot remove it");return;}
+    if(!wp.length&&wpSj&&wpSj.status!=='created'){toast("Wallpaper sub-job is in progress — cannot remove it");return;}
+    o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
+    if(o.subjobs){
+      if(fl.length&&flSj)flSj.items=fl;
+      else if(fl.length&&!flSj)o.subjobs.push({id:'sj_fl',type:'flooring',items:fl,date:null,slot:null,installer:null,installer_email:null,status:'created'});
+      else if(!fl.length&&flSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_fl');
+      if(wp.length&&wpSj)wpSj.items=wp;
+      else if(wp.length&&!wpSj)o.subjobs.push({id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,status:'created'});
+      else if(!wp.length&&wpSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_wp');
+    }
+    syncParent(o);
+    o.log.push({t:"Service details updated",d:"Just now",by:"manual"});
+    if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast("Service details saved");openOrder(o.pi);
   };
 
   // ---- per-subjob schedule ----
