@@ -136,6 +136,41 @@
 <div class="toast" id="toast"></div>
 
 <script>
+/* ============== CROP MODAL ============== */
+const cropModal=(function(){
+  let el=null,cv=null,ctx=null,img=null,scale=1,minScale=1,ox=0,oy=0,drag=false,lx=0,ly=0,ld=0,_cb=null;
+  const FW=340,FH=255;
+  function build(){
+    el=document.createElement('div');
+    el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+    el.innerHTML=`<div style="color:#fff;font-size:15px;font-weight:800;padding:0 0 12px">Crop & Resize</div>
+      <div style="border:2px solid rgba(255,255,255,.4);border-radius:6px;overflow:hidden"><canvas id="_cvc" width="${FW}" height="${FH}" style="display:block;touch-action:none"></canvas></div>
+      <div style="padding:12px;width:${FW}px">
+        <div style="color:#aaa;font-size:11px;margin-bottom:5px">Drag to reposition · Pinch or slider to zoom</div>
+        <input id="_cvs" type="range" min="0" max="200" value="0" style="width:100%;accent-color:#2E6CA8">
+      </div>
+      <div style="display:flex;gap:12px">
+        <button id="_cvc2" style="border:2px solid #555;background:transparent;color:#fff;border-radius:12px;padding:12px 26px;font-weight:800;font-size:15px;cursor:pointer">Cancel</button>
+        <button id="_cva" style="border:0;background:#1f7a3f;color:#fff;border-radius:12px;padding:12px 26px;font-weight:800;font-size:15px;cursor:pointer">Use Photo</button>
+      </div>`;
+    document.body.appendChild(el);
+    cv=el.querySelector('#_cvc');ctx=cv.getContext('2d');
+    el.querySelector('#_cvc2').onclick=close;
+    el.querySelector('#_cva').onclick=apply;
+    el.querySelector('#_cvs').oninput=e=>{scale=minScale*(1+parseFloat(e.target.value)/100);clamp();render();};
+    cv.addEventListener('pointerdown',e=>{e.preventDefault();drag=true;lx=e.clientX;ly=e.clientY;});
+    cv.addEventListener('pointermove',e=>{if(!drag)return;e.preventDefault();ox+=e.clientX-lx;oy+=e.clientY-ly;lx=e.clientX;ly=e.clientY;clamp();render();});
+    window.addEventListener('pointerup',()=>{drag=false;},{passive:true});
+    cv.addEventListener('touchstart',e=>{if(e.touches.length===2)ld=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
+    cv.addEventListener('touchmove',e=>{if(e.touches.length!==2)return;e.preventDefault();const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);scale=Math.max(minScale,scale*(d/ld));ld=d;clamp();render();el.querySelector('#_cvs').value=Math.min(200,Math.max(0,(scale/minScale-1)*100));},{passive:false});
+  }
+  function clamp(){const sw=img.width*scale,sh=img.height*scale;ox=sw>=FW?Math.min(0,Math.max(FW-sw,ox)):(FW-sw)/2;oy=sh>=FH?Math.min(0,Math.max(FH-sh,oy)):(FH-sh)/2;}
+  function render(){ctx.clearRect(0,0,FW,FH);ctx.drawImage(img,ox,oy,img.width*scale,img.height*scale);}
+  function close(){if(el&&el.parentNode)el.parentNode.removeChild(el);el=null;}
+  function apply(){const o=document.createElement('canvas');o.width=FW;o.height=FH;o.getContext('2d').drawImage(cv,0,0);const url=o.toDataURL('image/jpeg',0.82);close();if(_cb)_cb(url);}
+  return{open(dataURL,cb){_cb=cb;if(el)close();build();const i=new Image();i.onload=()=>{img=i;scale=minScale=Math.max(FW/i.width,FH/i.height);ox=(FW-i.width*scale)/2;oy=(FH-i.height*scale)/2;clamp();render();};i.src=dataURL;}};
+})();
+
 /* ============== SUPABASE + SESSION ============== */
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
@@ -420,7 +455,7 @@ function openJobCard(j){
 }
 function addRoom(restore){
   const id=++jcSeq;
-  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[], comments:restore?restore.comments:''};
+  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?restore.comments:''};
   const block=el('div','roomblock');block.dataset.id=id;
   const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+(jcRooms.length+1)));
   const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();autosave();};top.appendChild(rm);block.appendChild(top);
@@ -437,14 +472,15 @@ function addRoom(restore){
     photoGrid.innerHTML='';
     (room.photos||[]).forEach((ph,idx)=>{
       const wrap=el('div');wrap.style.cssText='position:relative;width:80px;height:80px;flex:0 0 auto;';
-      const img=el('img');img.src=ph;img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;';
+      const img=el('img');img.src=ph;img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:pointer;';
+      img.onclick=()=>cropModal.open(ph,url=>{room.photos[idx]=url;renderPhotoGrid();autosave();});
       const rmb=el('button');rmb.textContent='×';rmb.style.cssText='position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1;padding:0;';
-      rmb.onclick=()=>{room.photos.splice(idx,1);renderPhotoGrid();autosave();};
+      rmb.onclick=e=>{e.stopPropagation();room.photos.splice(idx,1);renderPhotoGrid();autosave();};
       wrap.appendChild(img);wrap.appendChild(rmb);photoGrid.appendChild(wrap);
     });
   }
   renderPhotoGrid();
-  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=async()=>{const comp=await compress(rd.result,1600,0.85);room.photos.push(comp||rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromFile(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromFile(f);fileGal.value='';};
   const pbtns=el('div','photo-btns');
@@ -456,7 +492,7 @@ function addRoom(restore){
   const f4=el('div','fieldgap');f4.innerHTML='<label>Comments (if any)</label>';const cI=document.createElement('textarea');cI.placeholder='Anything to note...';cI.value=room.comments;cI.oninput=()=>{room.comments=cI.value;autosave();};f4.appendChild(cI);block.appendChild(f4);
 
   $("#roomsWrap").appendChild(block);
-  room._photoEl=pbox;jcRooms.push(room);
+  jcRooms.push(room);
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
 function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,photos:r.photos||[],comments:r.comments}));}
@@ -494,7 +530,7 @@ function finishCard(j){
   for(const r of jcRooms){
     if(!r.name.trim()){toast("Enter a room name");return;}
     if(!r.sku.trim()){toast("Enter the SKU code");return;}
-    if(!r.photos||!r.photos.length){toast("Take a photo for "+(r.name||"each room"));return;}
+    if(!r.photos||!r.photos.length){toast("Add at least one photo for "+(r.name||"each room"));return;}
   }
   document.querySelector(".footer").classList.add("hide");
   const roomCards=jcRooms.map((r,i)=>{

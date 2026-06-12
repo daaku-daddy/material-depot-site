@@ -199,6 +199,8 @@
   .hide{display:none!important;}
   @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <header>
@@ -645,7 +647,7 @@ function drawerBody(o){
       <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
       ${hasRooms?`<div class="k">Rooms</div><div class="v">${ticked.rooms.length}</div>`:''}
       ${hasRooms&&ticked.sign?`<div class="k">Signed by</div><div class="v">${ticked.sign.name||'—'}</div>`:''}</div>
-      ${hasRooms?`<div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">Job Card PDF generated and signed by client.</div>`:`<div class="note" style="border-color:var(--amber);color:var(--amber);background:var(--amberbg)">This audit was completed before detailed room capture was available. No room data on record.</div>`}
+      ${hasRooms?`<div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">Job Card PDF generated and signed by client.</div><button class="btn ghost" id="dlAuditPdfSM" style="margin-top:8px">&#128229; Download Job Card PDF</button>`:`<div class="note" style="border-color:var(--amber);color:var(--amber);background:var(--amberbg)">This audit was completed before detailed room capture was available. No room data on record.</div>`}
       ${roomsHtml?`<div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Rooms audited</div>${roomsHtml}</div>`:''}
     </div>`;
   }
@@ -803,6 +805,17 @@ function wireDrawer(o){
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
     await loadOrders();toast("Assigned "+a.name+" · customer notified");openOrder(o.pi);};
 
+  if($("#dlAuditPdfSM"))$("#dlAuditPdfSM").onclick=async()=>{
+    const btn=$("#dlAuditPdfSM");const orig=btn.innerHTML;btn.disabled=true;btn.textContent="Building PDF…";
+    try{
+      let ticked=o.auditTicked;
+      if(!ticked||!ticked.rooms){const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');if(Array.isArray(rows)&&rows[0])ticked=rows[0].audit_ticked;}
+      if(!ticked||!ticked.rooms){toast("No job card data found");btn.disabled=false;btn.innerHTML=orig;return;}
+      await genAuditPDFSM(o,ticked);
+    }catch(e){toast("PDF failed: "+e.message);}
+    btn.disabled=false;btn.innerHTML=orig;
+  };
+
   if($("#delOrder"))$("#delOrder").onclick=async()=>{
     if(!confirm("Move order "+o.pi+" to Deleted Orders?\nIt will be stored and can be recovered from the Deleted Orders section."))return;
     const btn=$("#delOrder");btn.disabled=true;btn.textContent="Deleting…";
@@ -924,6 +937,62 @@ async function submitAddOrder(){
   document.getElementById("ao-submit").disabled=false;
 }
 document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
+
+/* ============== AUDIT PDF (SM) ============== */
+function _renderSketchSM(r){
+  if(!r.sketchStrokes||!r.sketchStrokes.length)return null;
+  const W=1000,H=500;const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);const s=Math.round(22*(W/360));x.fillStyle='#b2b8c1';
+  for(let yy=s;yy<H;yy+=s)for(let xx=s;xx<W;xx+=s){x.beginPath();x.arc(xx,yy,2,0,7);x.fill();}
+  x.strokeStyle='#1F3A5F';x.lineWidth=3.2;x.lineJoin='round';x.lineCap='round';
+  for(const st of r.sketchStrokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}
+  return c.toDataURL('image/jpeg',0.85);
+}
+async function _compressSM(dataUrl){
+  if(!dataUrl)return null;
+  return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1200/im.width,900/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.65));};im.onerror=()=>res(null);im.src=dataUrl;});
+}
+const _FL_SM=[{k:'area',label:'Area (sq.ft)'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
+const _WP_SM=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type'},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed'}];
+async function genAuditPDFSM(o,ticked){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
+  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const rooms=ticked.rooms||[];
+  function hdr(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Site Audit Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  hdr();
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+    body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Auditor',ticked.auditor||'—'],['Date',fmtDate(o.date)]]});
+  y=doc.lastAutoTable.finalY+10;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','Type','SKU']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+  for(let i=0;i<rooms.length;i++){const r=rooms[i];
+    doc.addPage();y=M;hdr();
+    const flds=r.type==='wallpaper'?_WP_SM:_FL_SM;
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},head:[['Calculation','Value']],body:flds.map(f=>[f.label,(r.calc&&r.calc[f.k])||''])});
+    y=doc.lastAutoTable.finalY+12;
+    const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    const sk=_renderSketchSM(r);
+    if(sk){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sk,'JPEG',M,y+6,colW,ih);}catch(e){}}
+    const photos=r.photos||(r.photo?[r.photo]:[]);
+    if(photos.length){const p0=await _compressSM(photos[0]);if(p0){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+(sk?colW+12:0),y);try{doc.addImage(p0,'JPEG',M+(sk?colW+12:0),y+6,colW,ih);}catch(e){}}}
+    y+=ih+18;
+    for(let pi=1;pi<photos.length;pi++){const ph=await _compressSM(photos[pi]);if(ph){const pw=W-2*M,pih=pw*0.55;if(y+pih>H-M){doc.addPage();y=M;hdr();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Photo '+(pi+1),M,y);try{doc.addImage(ph,'JPEG',M,y+6,pw,pih);}catch(e){}y+=pih+14;}}
+    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.notes,W-2*M),M,y);}
+  }
+  doc.addPage();y=M;hdr();
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+  doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((ticked.sign&&ticked.sign.name)||o.name||''),M,y);y+=18;doc.text('Date: '+fmtDate(o.date),M,y);
+  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
+  if(ticked.sign&&ticked.sign.img){const si=await _compressSM(ticked.sign.img);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+  doc.save(('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
+}
 
 Promise.all([loadAuditors(),loadOrders()]).then(()=>{setInterval(loadOrders,10000);});
 </script>
