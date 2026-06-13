@@ -208,6 +208,9 @@
   .slot-chip.on{border-color:var(--purple);background:var(--purplebg);color:var(--purple);}
   .slot-chip.auto-sel{border-color:var(--purple);background:var(--purplebg);color:var(--purple);pointer-events:none;}
   .add-assign-btn{display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px dashed var(--blue);border-radius:9px;padding:10px;font-size:12.5px;font-weight:700;color:var(--blue);cursor:pointer;background:#f8fbff;margin-top:4px;}
+  .followup-card{border:1.5px solid #f4c20d80;background:#fefce8;border-radius:11px;padding:13px 15px;margin-bottom:12px;}
+  .followup-card .fc-title{font-size:11px;font-weight:800;color:var(--amber);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
+  .followup-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .dr-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .lbl-sm{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;}
   .inp-sm{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;}
@@ -238,6 +241,7 @@
     <a data-view="calls"><span class="ico">&#9742;</span>Call Operations today<span class="ct alert" id="cCalls">0</span></a>
     <a data-view="schedule"><span class="ico">&#9719;</span>Today's installs<span class="ct" id="cToday">0</span></a>
     <a data-view="reschedule"><span class="ico">&#8635;</span>To reschedule<span class="ct" id="cResched">0</span></a>
+    <a data-view="followups"><span class="ico">📅</span>Follow-ups<span class="ct alert" id="cFollowUp"></span></a>
     <a data-view="calendar"><span class="ico">&#9636;</span>Installer calendar</a>
     <div class="grp">SETUP</div>
     <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
@@ -537,6 +541,8 @@ function counts(){
   $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule"||(o.subjobs||[]).some(sj=>sj.status==="reschedule")).length;
   if($("#cDeleted"))$("#cDeleted").textContent=DELETED.length||'';
   if($("#cRect"))$("#cRect").textContent=ORDERS.filter(o=>o.service&&o.service.rectification_of).length||'';
+  const fuToday=ORDERS.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today)).length;
+  if($("#cFollowUp"))$("#cFollowUp").textContent=fuToday||'';
 }
 
 /* ============== RENDER ============== */
@@ -553,6 +559,7 @@ function render(){
   else if(activeView==="installers")m.innerHTML=installersView();
   else if(activeView==="deleted")m.innerHTML=deletedView();
   else if(activeView==="rectifications")m.innerHTML=rectificationsView();
+  else if(activeView==="followups")m.innerHTML=followupsView();
   wire();
 }
 function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
@@ -578,11 +585,12 @@ function ordersView(){
   const banner=opsDue?`<div class="callbanner"><div><div class="ttl">&#9742; ${opsDue} order${opsDue>1?'s':''} need an Operations call today</div>
     <div class="sub">Custom wallpaper: 3 days before delivery · everything else: 1 day before. Confirm delivery before creating the service.</div></div>
     <button class="btn amber" data-goto="calls">Review calls</button></div>`:"";
-  const filters=["all","pending","deliv_delayed","created","scheduled","assigned","partial","completed"];
-  const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":STATUS[f]?STATUS[f].l:f}</button>`).join("");
+  const filters=["all","followup","pending","deliv_delayed","created","scheduled","assigned","partial","completed"];
+  const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
   const rows=ORDERS.filter(o=>{
     if(filterStatus!=="all"){
       if(filterStatus==="opsdue")return opsCallDue(o);
+      if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
       if(filterStatus==="live")return ["scheduled","assigned","partial","onway","atsite"].includes(o.status);
       if(o.status!==filterStatus)return false;
     }
@@ -601,7 +609,7 @@ function ordersView(){
       <td style="max-width:170px">${mapLink(o.addr)}</td>
       <td><span class="deliv ${delivCls}">${fmtDate(o.deliveryDate)}</span>${opsFlag}</td>
       <td>${subjobSummary(o)}</td>
-      <td>${chip(o.status)}${o.service&&o.service.rectification_raised?`<span class="autobadge" style="background:var(--amberbg);color:var(--amber);margin-left:4px">RECT</span>`:''}</td></tr>`;
+      <td>${chip(o.status)}${o.service&&o.service.rectification_raised?`<span class="autobadge" style="background:var(--amberbg);color:var(--amber);margin-left:4px">RECT</span>`:''}${(()=>{const fu=o.service&&o.service.follow_up_date;return fu?`<div style="margin-top:4px"><span class="chip" style="background:${fu<=dstr(today)?'var(--amberbg)':'#fefce8'};color:${fu<=dstr(today)?'var(--amber)':'#7a6200'};font-size:10px">📅 ${fu===dstr(today)?'Follow-up today':fu<dstr(today)?'Follow-up overdue':fmtDate(fu)}</span></div>`:'';})()}</td></tr>`;
   }).join("");
   return `<div class="crumbs">Installations / Orders</div>
   <div class="pagehead"><div><h1>Installation orders</h1><p>Every confirmed order containing the Installation SKU (${INSTALL_SKU}). Delivery is confirmed before service creation.</p></div>
@@ -675,6 +683,24 @@ function reschedView(){
   <div class="tablecard"><table>
    <thead><tr><th>PI</th><th>Type</th><th>Customer</th><th>Was booked</th><th></th></tr></thead>
    <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Nothing to reschedule.</td></tr>`}</tbody></table></div>`;
+}
+
+function followupsView(){
+  const list=ORDERS.filter(o=>o.service&&o.service.follow_up_date).sort((a,b)=>a.service.follow_up_date.localeCompare(b.service.follow_up_date));
+  const rows=list.map(o=>{
+    const fu=o.service.follow_up_date;const over=fu<dstr(today);const isToday=fu===dstr(today);
+    return `<tr data-pi="${o.pi}">
+      <td><div class="pi">${o.pi}</div></td>
+      <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+      <td><span style="font-weight:700;color:${isToday?'var(--amber)':over?'var(--red)':'var(--ink)'}">${fmtDate(fu)}${isToday?' ⏰':over?' (overdue)':''}</span></td>
+      <td>${chip(o.status)}</td>
+      <td><button class="btn navy sm" data-open="${o.pi}">Open &amp; schedule</button></td></tr>`;
+  }).join("");
+  return `<div class="crumbs">Installations / Follow-ups</div>
+  <div class="pagehead"><div><h1>Follow-ups</h1><p>Orders with a follow-up reminder set — open each order to assign a date, slot and installer when the client is ready.</p></div></div>
+  <div class="tablecard"><table>
+   <thead><tr><th>PI</th><th>Customer</th><th>Follow-up date</th><th>Status</th><th></th></tr></thead>
+   <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No follow-ups set.</td></tr>`}</tbody></table></div>`;
 }
 
 function calendarView(){
@@ -791,6 +817,22 @@ function drawerBody(o){
   // ---- SERVICE CREATION (after delivery on time) ----
   if(["deliv_ontime"].includes(o.status)){
     html+=serviceCreationPanel(o);
+  }
+
+  // ---- FOLLOW-UP DATE ----
+  if(o.service){
+    const fu=o.service.follow_up_date||'';
+    const fuOver=fu&&fu<dstr(today);const fuToday=fu===dstr(today);
+    html+=`<div class="sec"><h3>Follow-up date <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— optional</span></h3>
+      <div class="note">Can't schedule yet? Set a follow-up date to remind yourself to come back and assign a slot when the client is ready.</div>
+      ${fu?`<div class="followup-card" style="margin-top:10px"><div class="fc-title">📅 ${fuToday?'Follow-up is today — schedule now!':fuOver?'Follow-up overdue':'Follow-up reminder set'}</div>
+        <div style="font-size:13.5px;font-weight:700;color:var(--ink)">${fmtDate(fu)}</div></div>`:''}
+      <div class="followup-row" style="margin-top:8px">
+        <input type="date" id="fuDate" value="${fu}" min="${dstr(today)}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;flex:1;min-width:160px">
+        <button class="btn amber sm" id="setFollowUp">${fu?'Update':'Set follow-up'}</button>
+        ${fu?`<button class="btn gray sm" id="clearFollowUp">Clear</button>`:''}
+      </div>
+    </div>`;
   }
 
   // ---- SCHEDULE + ASSIGN per sub-job ----
@@ -1073,6 +1115,19 @@ function wireDrawer(o){
     o.log.push({t:"Service details updated",d:"Just now",by:"manual"});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Service details saved");openOrder(o.pi);
+  };
+
+  // ---- follow-up date ----
+  if($("#setFollowUp"))$("#setFollowUp").onclick=async()=>{
+    const d=$("#fuDate").value;if(!d){toast("Pick a date first");return;}
+    o.service={...(o.service||{}),follow_up_date:d};
+    if(o.id)await sbPatch('install_orders',o.id,{service:o.service});
+    await loadOrders();toast("Follow-up set for "+fmtDate(d));openOrder(o.pi);
+  };
+  if($("#clearFollowUp"))$("#clearFollowUp").onclick=async()=>{
+    const svc={...(o.service||{})};delete svc.follow_up_date;o.service=svc;
+    if(o.id)await sbPatch('install_orders',o.id,{service:o.service});
+    await loadOrders();toast("Follow-up cleared");openOrder(o.pi);
   };
 
   // ---- multi-installer assignment sections ----
