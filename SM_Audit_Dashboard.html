@@ -621,7 +621,7 @@ function calendarView(){
   return `<div class="crumbs">Site Audit / Availability calendar</div>
   <div class="pagehead"><div><h1>Availability calendar</h1><p>Per-window capacity = auditors available that day. Edit each auditor's daily cap under Auditors &amp; caps.</p></div></div>
   <div class="calwrap"><div class="calgrid">${dows.map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>
-   <div class="legend"><span>An auditor is “available” on a day when their daily cap is 1 or more. Each available auditor opens <b>one booking in every window</b>.</span></div></div>`;
+   <div class="legend"><span>An auditor is "available" on a day when their daily cap is 1 or more. Each available auditor opens <b>one booking in every window</b>.</span></div></div>`;
 }
 
 function slotsView(){
@@ -696,24 +696,24 @@ function drawerBody(o){
 
   if(o.status==="pending"){
     html+=serviceCreationPanel(o);
-  } else if([“created”,”call_na”].includes(o.status)){
+  } else if(["created","call_na"].includes(o.status)){
     const fu=o.service&&o.service.follow_up_date||'';
     const fuOver=fu&&fu<dstr(today);const fuToday=fu===dstr(today);
-    html+=`<div class=”sec”><h3>Follow-up date <span style=”font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0”>— optional</span></h3>
-      <div class=”note”>Can't get a confirmed date from the client yet? Set a follow-up reminder instead of leaving this blank.</div>
-      ${fu?`<div class=”followup-card” style=”margin-top:8px”><div class=”fc-title”>📅 ${fuToday?'Follow-up is today — book the slot now!':fuOver?'Follow-up overdue':'Follow-up reminder set'}</div>
-        <div style=”font-size:13.5px;font-weight:700;color:var(--ink)”>${fmtDate(fu)}</div></div>`:''}
-      <div class=”followup-row” style=”margin-top:8px”>
-        <input type=”date” id=”fuDate” value=”${fu}” min=”${dstr(today)}” style=”padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;flex:1;min-width:160px”>
-        <button class=”btn amber sm” id=”setFollowUp”>${fu?'Update':'Set follow-up'}</button>
-        ${fu?`<button class=”btn gray sm” id=”clearFollowUp”>Clear</button>`:''}
+    html+=`<div class="sec"><h3>Follow-up date <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— optional</span></h3>
+      <div class="note">Can't get a confirmed date from the client yet? Set a follow-up reminder instead of leaving this blank.</div>
+      ${fu?`<div class="followup-card" style="margin-top:8px"><div class="fc-title">📅 ${fuToday?'Follow-up is today — book the slot now!':fuOver?'Follow-up overdue':'Follow-up reminder set'}</div>
+        <div style="font-size:13.5px;font-weight:700;color:var(--ink)">${fmtDate(fu)}</div></div>`:''}
+      <div class="followup-row" style="margin-top:8px">
+        <input type="date" id="fuDate" value="${fu}" min="${dstr(today)}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;flex:1;min-width:160px">
+        <button class="btn amber sm" id="setFollowUp">${fu?'Update':'Set follow-up'}</button>
+        ${fu?`<button class="btn gray sm" id="clearFollowUp">Clear</button>`:''}
       </div>
     </div>`;
-    html+=`<div class=”sec”><h3>Acknowledgement call &amp; slot</h3>
-      <div class=”note”>Call the customer to confirm a date &amp; slot. Free slots reflect auditor availability per window.</div>
-      ${o.status===”call_na”?`<div class=”note” style=”border-color:var(--red);color:var(--red);background:var(--redbg)”>Marked “Call not picked”. Retry, then book when reached.</div>`:””}
-      <div class=”field”><label>Audit date</label><input type=”date” id=”bookDate” min=”${dstr(today)}” value=”${dstr(addDays(1))}”></div>
-      <div class=”field”><label>Slot</label><div class=”slotgrid” id=”slotGrid”></div></div></div>`;
+    html+=`<div class="sec"><h3>Acknowledgement call &amp; slot</h3>
+      <div class="note">Call the customer to confirm a date &amp; slot. Free slots reflect auditor availability per window.</div>
+      ${o.status==="call_na"?`<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Marked "Call not picked". Retry, then book when reached.</div>`:""}
+      <div class="field"><label>Audit date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div></div>`;
   } else if(o.status==="scheduled"){
     html+=`<div class="sec"><h3>Assign auditor <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— a day before</span></h3>
       <div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
