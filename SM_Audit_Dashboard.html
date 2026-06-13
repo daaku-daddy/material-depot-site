@@ -343,6 +343,29 @@
   </div>
 </div>
 
+<div class="moverlay" id="addStaffOverlay">
+  <div class="mcard">
+    <div class="mhead"><h3>Add Staff Member</h3><button class="mclose" onclick="closeAddStaff()">×</button></div>
+    <div class="mbody">
+      <div class="mfield"><label>Full Name *</label><input id="as-name" placeholder="Full name"></div>
+      <div class="mfield"><label>Email * <span style="font-size:10px;color:var(--muted)">(must end in @materialdepot.com)</span></label><input id="as-email" placeholder="name@materialdepot.com" type="email"></div>
+      <div class="mfield"><label>Role *</label>
+        <select id="as-role" style="width:100%;padding:10px 12px;border:2px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
+          <option value="site_auditor">Site Auditor</option>
+          <option value="installer_flooring">Flooring Installer</option>
+          <option value="installer_wallpaper">Wallpaper Installer</option>
+        </select>
+      </div>
+      <div class="note">Passcode will be set by the staff member on their first login. You will not see their PIN.</div>
+      <div class="merr" id="as-err"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeAddStaff()">Cancel</button>
+      <button class="btn navy" id="as-submit" onclick="submitAddStaff()">Add Staff Member</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============== SUPABASE ============== */
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
@@ -595,7 +618,7 @@ function auditorsView(){
   }).join("");
   return `<div class="crumbs">Setup / Auditors &amp; caps</div>
   <div class="pagehead"><div><h1>Auditors &amp; daily caps</h1><p>Set each auditor's max jobs per day, varied by date. 0 = unavailable that day.</p></div>
-   <div class="actions"><button class="btn navy sm" id="saveCaps">Save caps</button></div></div>
+   <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button><button class="btn navy sm" id="saveCaps">Save caps</button></div></div>
   <div class="note">Default cap when left untouched is ${DEFAULT_CAP}/day. Caps drive both window capacity (availability) and the assignment limit.</div>
   <div class="tablecard capgrid"><table><thead><tr><th class="audname">Auditor</th>${headDays}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -1132,6 +1155,32 @@ async function submitRect(){
   btn.disabled=false;
 }
 document.getElementById('rectOverlay').addEventListener('click',e=>{if(e.target.id==='rectOverlay')closeRect();});
+
+/* ============== ADD STAFF (SM) ============== */
+function openAddStaff(){document.getElementById('addStaffOverlay').classList.add('show');document.getElementById('as-name').focus();}
+function closeAddStaff(){
+  document.getElementById('addStaffOverlay').classList.remove('show');
+  ['as-name','as-email'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('as-role').value='site_auditor';
+  document.getElementById('as-err').classList.remove('show');
+}
+async function submitAddStaff(){
+  const name=document.getElementById('as-name').value.trim();
+  const email=document.getElementById('as-email').value.trim().toLowerCase();
+  const roleVal=document.getElementById('as-role').value;
+  const err=document.getElementById('as-err');err.classList.remove('show');
+  if(!name){err.textContent='Name is required.';err.classList.add('show');return;}
+  if(!email||!email.endsWith('@materialdepot.com')){err.textContent='Email must end in @materialdepot.com';err.classList.add('show');return;}
+  const role=roleVal==='site_auditor'?'site_auditor':'installer';
+  const installer_type=roleVal==='installer_flooring'?'flooring':roleVal==='installer_wallpaper'?'wallpaper':null;
+  document.getElementById('as-submit').disabled=true;
+  try{
+    await sbPost('profiles',{name,email,role,installer_type,passcode:null});
+    await loadAuditors();closeAddStaff();render();toast('Staff member added — they will set their PIN on first login');
+  }catch(e){err.textContent='Failed: '+e.message;err.classList.add('show');}
+  document.getElementById('as-submit').disabled=false;
+}
+document.getElementById('addStaffOverlay').addEventListener('click',e=>{if(e.target.id==='addStaffOverlay')closeAddStaff();});
 
 Promise.all([loadAuditors(),loadOrders()]).then(()=>{setInterval(loadOrders,10000);});
 </script>
