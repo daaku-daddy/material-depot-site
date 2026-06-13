@@ -194,6 +194,23 @@
   .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted);}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:12px 20px;border-radius:30px;font-size:13.5px;opacity:0;transition:.25s;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.3);font-weight:600;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .wp-dur-badge{background:var(--purplebg);color:var(--purple);border-radius:8px;padding:9px 13px;font-size:12.5px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+  .fl-fullday-note{background:var(--greenbg);color:var(--green);border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:10px;}
+  .assign-mode-toggle{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px;}
+  .assign-mode-btn{flex:1;padding:7px 10px;font-size:12px;font-weight:700;text-align:center;cursor:pointer;background:#fff;color:var(--muted);border:0;}
+  .assign-mode-btn.on{background:var(--navy);color:#fff;}
+  .acard{border:1.5px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:10px;}
+  .acard-head{display:flex;align-items:center;gap:9px;padding:10px 13px;background:#f9fafc;border-bottom:1px solid var(--line);}
+  .acard-num{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0;}
+  .acard-body{padding:11px 13px;display:flex;flex-direction:column;gap:10px;}
+  .slot-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+  .slot-chip{font-size:11px;font-weight:600;padding:5px 10px;border-radius:7px;border:1.5px solid var(--line);cursor:pointer;background:#fff;color:var(--ink);}
+  .slot-chip.on{border-color:var(--purple);background:var(--purplebg);color:var(--purple);}
+  .slot-chip.auto-sel{border-color:var(--purple);background:var(--purplebg);color:var(--purple);pointer-events:none;}
+  .add-assign-btn{display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px dashed var(--blue);border-radius:9px;padding:10px;font-size:12.5px;font-weight:700;color:var(--blue);cursor:pointer;background:#f8fbff;margin-top:4px;}
+  .dr-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .lbl-sm{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;}
+  .inp-sm{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;}
   .hide{display:none!important;}
   @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
 </style>
@@ -346,6 +363,29 @@
   </div>
 </div>
 
+<div class="moverlay" id="addStaffOverlay">
+  <div class="mcard">
+    <div class="mhead"><h3>Add Staff Member</h3><button class="mclose" onclick="closeAddStaff()">×</button></div>
+    <div class="mbody">
+      <div class="mfield"><label>Full Name *</label><input id="as-name" placeholder="Full name"></div>
+      <div class="mfield"><label>Email * <span style="font-size:10px;color:var(--muted)">(must end in @materialdepot.com)</span></label><input id="as-email" placeholder="name@materialdepot.com" type="email"></div>
+      <div class="mfield"><label>Role *</label>
+        <select id="as-role" style="width:100%;padding:10px 12px;border:2px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
+          <option value="installer_flooring">Flooring Installer</option>
+          <option value="installer_wallpaper">Wallpaper Installer</option>
+          <option value="site_auditor">Site Auditor</option>
+        </select>
+      </div>
+      <div class="note">Passcode will be set by the staff member on their first login. You will not see their PIN.</div>
+      <div class="merr" id="as-err"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeAddStaff()">Cancel</button>
+      <button class="btn navy" id="as-submit" onclick="submitAddStaff()">Add Staff Member</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============== SUPABASE ============== */
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
@@ -372,9 +412,17 @@ function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 
 let INSTALLERS=[];
-const FLOOR_DAY_CAP=1;       // jobs/installer/day
-const WP_DAY_SLOTS=2;        // slots/installer/day
-const slotsForWp=rolls=>(Number(rolls)>=5?2:1);
+const FLOOR_DAY_CAP=1;        // flooring jobs/installer/day
+const WP_DAY_SLOTS=3;         // max wallpaper slots/installer/day (3 × 3h windows)
+const WP_TIME_SLOTS=[
+  {id:'s1',label:'8:00 AM – 11:00 AM'},
+  {id:'s2',label:'11:00 AM – 2:00 PM'},
+  {id:'s3',label:'2:00 PM – 5:00 PM'}
+];
+function slotsForWp(rolls){const r=Number(rolls)||0;return r<=3?1:r<=6?2:3;}
+function totalRolls(sj){return(sj.items||[]).reduce((s,it)=>s+Number(it.rolls||0),0);}
+function dateRange(from,to){if(!from||!to||from>to)return from?[from]:[];const out=[];let d=new Date(from+'T00:00');const end=new Date(to+'T00:00');while(d<=end){out.push(dstr(d));d.setDate(d.getDate()+1);}return out;}
+function autoWpSlots(n){return WP_TIME_SLOTS.slice(0,n).map(s=>s.id);}
 
 const STATUS={
   pending:{l:"Pending",c:"c-pending"},
@@ -451,9 +499,33 @@ function opsCallDue(o){
   const daysToDelivery=Math.round((dd-today)/(86400000));
   return o.customWp? daysToDelivery<=3 : daysToDelivery<=1;
 }
-// installer load on a date
-function flLoad(id,date){let n=0;ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.installer===id&&sj.date===date&&["assigned","onway","atsite","completed"].includes(sj.status))n++;}));return n;}
-function wpSlotLoad(id,date){let n=0;ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.installer===id&&sj.date===date&&["assigned","onway","atsite","completed"].includes(sj.status))n+=slotsForWp(sj.items[0]&&sj.items[0].rolls);}));return n;}
+// installer load on a date (assignment-aware, falls back to legacy fields)
+function flLoad(id,date){
+  let n=0;
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
+    if(sj.type!=='flooring')return;
+    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_id:sj.installer,date:sj.date,dates:[],mode:'standard'}]:[]);
+    asgns.forEach(a=>{
+      if(a.installer_id!==id)return;
+      const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
+      if(dates.includes(date))n++;
+    });
+  }));
+  return n;
+}
+function wpSlotLoad(id,date){
+  let n=0;
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
+    if(sj.type!=='wallpaper')return;
+    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_id:sj.installer,date:sj.date,dates:[],mode:'standard'}]:[]);
+    asgns.forEach(a=>{
+      if(a.installer_id!==id)return;
+      const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
+      if(dates.includes(date))n+=slotsForWp(totalRolls(sj));
+    });
+  }));
+  return n;
+}
 
 let activeView="orders",filterStatus="all",searchQ="",currentPI=null;
 
@@ -488,8 +560,9 @@ function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div
 function subjobSummary(o){
   if(!o.subjobs)return '<span style="color:var(--muted)">—</span>';
   return `<div class="subjobs">`+o.subjobs.map(sj=>{
-    const inst=sj.installer?(installerById(sj.installer)||{name:'Unknown'}).name:"Unassigned";
-    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span>${fmtDate(sj.date)} · ${inst} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
+    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_name:(installerById(sj.installer)||{name:'Unknown'}).name}]:[]);
+    const names=asgns.map(a=>a.installer_name||'Unassigned').join(', ')||'Unassigned';
+    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span>${fmtDate(sj.date)} · ${names} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
   }).join("")+`</div>`;
 }
 
@@ -564,15 +637,22 @@ function callsView(){
 
 function scheduleView(){
   const items=[];
-  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.date===dstr(today))items.push({o,sj});}));
-  items.sort((a,b)=>(a.sj.slot||"").localeCompare(b.sj.slot||""));
-  const rows=items.map(({o,sj})=>`<tr data-pi="${o.pi}">
-    <td><b>${slotLabel(sj.slot)}</b></td>
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
+    const asgns=sj.assignments&&sj.assignments.length
+      ?sj.assignments
+      :(sj.installer?[{installer_id:sj.installer,installer_name:(installerById(sj.installer)||{name:'?'}).name,date:sj.date,dates:[],mode:'standard',slots:sj.slot?[sj.slot]:[]}]:[]);
+    asgns.forEach(a=>{
+      const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
+      if(dates.includes(dstr(today)))items.push({o,sj,a});
+    });
+  }));
+  const rows=items.map(({o,sj,a})=>`<tr data-pi="${o.pi}">
+    <td><b>${sj.type==='wallpaper'?(a.slots||[]).map(sid=>(WP_TIME_SLOTS.find(s=>s.id===sid)||{label:sid}).label).join(', ')||'—':'Full day'}</b></td>
     <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
     <td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
     <td style="max-width:160px">${mapLink(o.addr)}</td>
-    <td>${sj.installer?installerById(sj.installer).name:'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
+    <td>${a.installer_name||'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
     <td>${chip(sj.status)}</td></tr>`).join("");
   return `<div class="crumbs">Installations / Today's installs</div>
   <div class="pagehead"><div><h1>Today — ${fmtDate(dstr(today))}</h1><p>Live view of today's install sub-jobs and installer progress.</p></div></div>
@@ -606,14 +686,21 @@ function calendarView(){
   for(let i=0;i<28;i++){
     const d=addDays(i);const ds=dstr(d);const past=d<today;
     let flUsed=0,wpUsed=0;
-    ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.date===ds&&["assigned","onway","atsite","completed"].includes(sj.status)){if(sj.type==="flooring")flUsed++;else wpUsed+=slotsForWp(sj.items[0]&&sj.items[0].rolls);}}));
+    ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
+      const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_id:sj.installer,date:sj.date,dates:[],mode:'standard'}]:[]);
+      asgns.forEach(a=>{
+        const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
+        if(!dates.includes(ds))return;
+        if(sj.type==='flooring')flUsed++;else wpUsed+=slotsForWp(totalRolls(sj));
+      });
+    }));
     cells+=`<div class="daycell ${past?'past':''}">
       <div class="dn">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
       <div class="row fl">FL ${flUsed}/${flInst*FLOOR_DAY_CAP}</div>
       <div class="row wp">WP ${wpUsed}/${wpInst*WP_DAY_SLOTS} slots</div></div>`;
   }
   return `<div class="crumbs">Installations / Installer calendar</div>
-  <div class="pagehead"><div><h1>Installer calendar</h1><p>Daily capacity by type. Flooring: 1 job per installer. Wallpaper: 2 slots per installer (≥5 rolls = 2 slots, &lt;5 rolls = 1 slot).</p></div></div>
+  <div class="pagehead"><div><h1>Installer calendar</h1><p>Daily capacity by type. Flooring: 1 job/installer/day. Wallpaper: 3 slots/day — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h).</p></div></div>
   <div class="calwrap"><div class="calgrid">${dows.map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>
    <div class="legend"><span>FL = flooring jobs booked / capacity · WP = wallpaper slots used / capacity.</span></div></div>`;
 }
@@ -630,16 +717,17 @@ function slotsView(){
 
 function installersView(){
   const rows=INSTALLERS.map(a=>{
-    const load=a.type==="flooring"?flLoad(a.id,dstr(today))+"/"+FLOOR_DAY_CAP+" job":wpSlotLoad(a.id,dstr(today))+"/"+WP_DAY_SLOTS+" slots";
+    const load=a.type==="flooring"?flLoad(a.id,dstr(today))+"/"+FLOOR_DAY_CAP+" job":wpSlotLoad(a.id,dstr(today))+"/"+WP_DAY_SLOTS+" slots (3h each)";
     return `<tr><td><div class="cust"><b>${a.name}</b><div>${a.phone}</div></div></td>
       <td><span class="skupill ${a.type==='wallpaper'?'cust':''}">${a.type==='wallpaper'?'Wallpaper':'Flooring'}</span></td>
       <td>${a.zone}</td>
-      <td>${a.type==="flooring"?"1 job/day":"2 slots/day"}</td>
+      <td>${a.type==="flooring"?"1 job/day":"3 slots/day (3h each)"}</td>
       <td>${load} today</td></tr>`;
   }).join("");
   return `<div class="crumbs">Setup / Installers</div>
-  <div class="pagehead"><div><h1>Installers</h1><p>Typed installers. Flooring jobs go only to flooring installers; wallpaper only to wallpaper installers.</p></div></div>
-  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>2 slots per installer per day</b>, where an order with <b>≥5 rolls uses 2 slots</b> and <b>&lt;5 rolls uses 1 slot</b>.</div>
+  <div class="pagehead"><div><h1>Installers</h1><p>Typed installers. Flooring jobs go only to flooring installers; wallpaper only to wallpaper installers.</p></div>
+  <div class="actions"><button class="btn navy sm" onclick="openAddStaff()">+ Add Staff</button></div></div>
+  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>3 slots per installer per day</b> — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h). Custom multi-day mode bypasses these limits.</div>
   <div class="tablecard"><table><thead><tr><th>Installer</th><th>Type</th><th>Zone</th><th>Capacity</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -708,25 +796,18 @@ function drawerBody(o){
   // ---- SCHEDULE + ASSIGN per sub-job ----
   if(o.subjobs){
     html+=`<div class="sec"><h3>Installation sub-jobs</h3>
-      <div class="note">Flooring and wallpaper are scheduled &amp; tracked separately, each with its own date, installer and status. Order completes only when all sub-jobs are done.</div>`;
+      <div class="note">Flooring and wallpaper are scheduled &amp; tracked separately. Each can have multiple installers. Order completes only when all sub-jobs are done.</div>`;
     o.subjobs.forEach(sj=>{
-      const inst=sj.installer?installerById(sj.installer):null;
+      const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
       html+=`<div class="sjcard" data-sj="${sj.id}">
         <div class="sjh"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WALLPAPER':'FLOORING'}</span>
           <span class="sk">${sj.items.map(it=>it.sku+(it.name?(' · '+it.name):'')+(sj.type==='wallpaper'?(' · '+(it.rolls||'?')+' rolls'):'')).join(', ')}</span>
           <span class="st">${chip(sj.status)}</span></div>
-        <div class="kv">
-          <div class="k">Date / slot</div><div class="v">${sj.date?fmtDate(sj.date)+' · '+slotLabel(sj.slot):'<span style="color:var(--red)">Not scheduled</span>'}</div>
-          <div class="k">Installer</div><div class="v">${inst?inst.name+' ('+inst.phone+')':'<span style="color:var(--red)">Unassigned</span>'}</div>
-          ${sj.type==='wallpaper'?`<div class="k">Slots used</div><div class="v">${slotsForWp(sj.items[0]&&sj.items[0].rolls)} of 2 (${Number(sj.items[0]&&sj.items[0].rolls)>=5?'≥5 rolls':'<5 rolls'})</div>`:''}
-        </div>
-        <div class="actions" style="margin-top:10px">
-          ${sj.status==='created'||!sj.date?`<button class="btn navy sm" data-sched="${sj.id}">Schedule install</button>`:''}
-          ${sj.date&&!sj.installer?`<button class="btn primary sm" data-assign="${sj.id}">Assign installer</button>`:''}
-          ${sj.status==='completed'&&sj.jobcard?`<button class="btn ghost sm" data-dljc="${sj.id}">&#128229; Download PDF</button>`:''}
-        </div>
-        <div data-schedbox="${sj.id}"></div>
-        <div data-assignbox="${sj.id}"></div>
+        ${sj.type==='wallpaper'
+          ?`<div class="wp-dur-badge"><span>${rolls} rolls → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
+          :`<div class="fl-fullday-note">Flooring — 1 full day per installer visit</div>`}
+        ${sj.status==='completed'&&sj.jobcard?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download PDF</button>`:''}
+        <div data-assignsection="${sj.id}"></div>
       </div>`;
     });
     html+=`</div>`;
@@ -736,6 +817,106 @@ function drawerBody(o){
   // timeline
   html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${l.t}</div><div class="td">${l.d}${l.by==='auto'?' · auto from installer':l.by==='manual'?' · manual':''}</div></div>`).join("")}</div></div>`;
   return html;
+}
+
+function renderAssignSection(o,sj,container){
+  const minDate=(o.deliveryDate&&o.deliveryDate>=dstr(today))?o.deliveryDate:dstr(today);
+  const pool=INSTALLERS.filter(i=>i.type===sj.type);
+  let assigns=(sj.assignments&&sj.assignments.length)
+    ?sj.assignments.map(a=>({...a}))
+    :sj.installer_email
+      ?[{installer_id:sj.installer||'',installer_email:sj.installer_email,installer_name:(installerById(sj.installer)||{name:'?'}).name,mode:'standard',date:sj.date||'',slots:sj.slot?[sj.slot]:autoWpSlots(slotsForWp(totalRolls(sj))),dates:[]}]
+      :[];
+  let customMode=assigns.length>0&&assigns[0].mode==='custom';
+
+  function draw(){
+    const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
+    let html=`<div class="assign-mode-toggle">
+      <div class="assign-mode-btn ${!customMode?'on':''}" data-mode="standard">Standard</div>
+      <div class="assign-mode-btn ${customMode?'on':''}" data-mode="custom">Custom / Multi-day</div>
+    </div>`;
+    if(customMode)html+=`<div class="note amber" style="margin-bottom:10px">Custom mode: no capacity limits enforced. You control all dates and slots.</div>`;
+    if(sj.type==='wallpaper'&&!customMode)html+=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">${rolls} rolls → ${slotsN} slot${slotsN>1?'s':''} (${slotsN*3}h) auto-selected per installer.</div>`;
+
+    assigns.forEach((a,idx)=>{
+      const inst=a.installer_id?installerById(a.installer_id):null;
+      html+=`<div class="acard">
+        <div class="acard-head">
+          <div class="acard-num">${idx+1}</div>
+          <div style="flex:1"><div style="font-weight:700;font-size:13px">${inst?inst.name:'Select installer'}</div><div style="font-size:11px;color:var(--muted)">${sj.type} installer</div></div>
+          ${assigns.length>1?`<button class="btn danger sm" data-remove="${idx}">Remove</button>`:''}
+        </div>
+        <div class="acard-body">
+          <div><label class="lbl-sm">Installer</label>
+            <select data-instpick="${idx}" class="inp-sm">
+              <option value="">— pick installer —</option>
+              ${pool.map(p=>`<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}</option>`).join('')}
+            </select>
+          </div>
+          ${customMode?`
+            <div class="dr-row">
+              <div><label class="lbl-sm">From</label><input type="date" data-from="${idx}" class="inp-sm" min="${minDate}" value="${(a.dates&&a.dates[0])||a.date||''}"></div>
+              <div><label class="lbl-sm">To</label><input type="date" data-to="${idx}" class="inp-sm" min="${minDate}" value="${(a.dates&&a.dates[a.dates.length-1])||a.date||''}"></div>
+            </div>
+            ${sj.type==='wallpaper'
+              ?`<div><label class="lbl-sm">Slot windows per day</label><div class="slot-chip-row">${WP_TIME_SLOTS.map(s=>`<div class="slot-chip ${(a.slots||[]).includes(s.id)?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
+              :`<div style="font-size:11.5px;color:var(--green)">Full day (8 AM – 5 PM) per selected date</div>`}
+          `:`
+            <div><label class="lbl-sm">Date</label><input type="date" data-date="${idx}" class="inp-sm" min="${minDate}" value="${a.date||''}"></div>
+            ${sj.type==='wallpaper'
+              ?`<div><label class="lbl-sm">Time slots (auto from rolls)</label><div class="slot-chip-row">${WP_TIME_SLOTS.map((s,si)=>`<div class="slot-chip auto-sel" style="${si>=slotsN?'opacity:.35;pointer-events:none':''}">${s.label}</div>`).join('')}</div></div>`
+              :`<div style="font-size:11.5px;color:var(--green)">Full day · 8 AM – 5 PM</div>`}
+          `}
+        </div>
+      </div>`;
+    });
+
+    html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">＋ Add another installer</div>`;
+    html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">Save assignments</button>`;
+    container.innerHTML=html;
+
+    container.querySelectorAll('.assign-mode-btn').forEach(btn=>btn.onclick=()=>{
+      customMode=btn.dataset.mode==='custom';
+      assigns.forEach(a=>{a.mode=customMode?'custom':'standard';});draw();
+    });
+    container.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{assigns.splice(Number(btn.dataset.remove),1);draw();});
+    container.querySelectorAll('[data-instpick]').forEach(sel=>sel.onchange=()=>{
+      const idx=Number(sel.dataset.instpick);const inst=installerById(sel.value);
+      assigns[idx].installer_id=sel.value;assigns[idx].installer_email=inst?inst.email:'';assigns[idx].installer_name=inst?inst.name:'';draw();
+    });
+    container.querySelectorAll('[data-date]').forEach(inp=>inp.onchange=()=>{assigns[Number(inp.dataset.date)].date=inp.value;});
+    container.querySelectorAll('[data-from]').forEach(inp=>inp.onchange=()=>{
+      const idx=Number(inp.dataset.from);const to=(assigns[idx].dates&&assigns[idx].dates[assigns[idx].dates.length-1])||inp.value;
+      assigns[idx].dates=dateRange(inp.value,to);assigns[idx].date=inp.value;
+    });
+    container.querySelectorAll('[data-to]').forEach(inp=>inp.onchange=()=>{
+      const idx=Number(inp.dataset.to);const from=(assigns[idx].dates&&assigns[idx].dates[0])||inp.value;
+      assigns[idx].dates=dateRange(from,inp.value);
+    });
+    container.querySelectorAll('[data-slot]').forEach(chip=>chip.onclick=()=>{
+      const idx=Number(chip.dataset.idx);const sid=chip.dataset.slot;
+      const slots=assigns[idx].slots||[];const pos=slots.indexOf(sid);
+      if(pos>=0)slots.splice(pos,1);else slots.push(sid);
+      assigns[idx].slots=slots;draw();
+    });
+    container.querySelector('#addAssign_'+sj.id).onclick=()=>{
+      assigns.push({installer_id:'',installer_email:'',installer_name:'',mode:customMode?'custom':'standard',date:'',slots:sj.type==='wallpaper'?autoWpSlots(slotsForWp(totalRolls(sj))):[],dates:[]});draw();
+    };
+    container.querySelector('#saveAssign_'+sj.id).onclick=async()=>{
+      const valid=assigns.filter(a=>a.installer_id);
+      if(!valid.length){toast("Select at least one installer");return;}
+      sj.assignments=valid;
+      sj.installer=valid[0].installer_id;sj.installer_email=valid[0].installer_email;
+      sj.date=valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null;
+      sj.slot=valid[0].slots&&valid[0].slots[0]||null;
+      sj.status='assigned';
+      syncParent(o);
+      o.log.push({t:sj.type+' assigned: '+valid.map(a=>a.installer_name).join(', '),d:'Just now',by:'manual'});
+      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
+      await loadOrders();toast('Assignments saved');openOrder(o.pi);
+    };
+  }
+  draw();
 }
 
 function serviceCreationPanel(o){
@@ -756,7 +937,7 @@ function serviceCreationPanel(o){
       <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wpHas?'on':''}" data-tog="wallpaper"></div></div>
       <div class="skurows ${wpHas?'':'hide'}" data-rows="wallpaper"></div>
       <button class="addsku ${wpHas?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
-      <div class="rollhint">Roll count decides installer load: ≥5 rolls blocks a full day, &lt;5 rolls is a half-day.</div>
+      <div class="rollhint">Roll count sets duration: 1–3 rolls = 3h (1 slot), 4–6 rolls = 6h (2 slots), 7+ rolls = 9h (3 slots).</div>
     </div>
   </div>`;
 }
@@ -775,7 +956,7 @@ function editInstallServiceSection(o){
       <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wp?'on':''}" data-tog="wallpaper"></div></div>
       <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper"></div>
       <button class="addsku ${wp?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
-      <div class="rollhint">Roll count: ≥5 rolls = full day, &lt;5 rolls = half-day.</div>
+      <div class="rollhint">Roll count sets duration: 1–3 rolls = 3h (1 slot), 4–6 rolls = 6h (2 slots), 7+ rolls = 9h (3 slots).</div>
     </div>
     <button class="btn navy sm" style="margin-top:8px" id="saveService">Save changes</button>
   </div>`;
@@ -854,8 +1035,8 @@ function wireDrawer(o){
     if(!fl.length&&!wp.length){toast("Add at least one SKU");return;}
     o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
     o.subjobs=[];
-    if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,installer_email:null,status:"created"});
-    if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,installer_email:null,status:"created"});
+    if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
+    if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
     o.status="created";
     o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
@@ -871,10 +1052,10 @@ function wireDrawer(o){
     o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
     if(o.subjobs){
       if(fl.length&&flSj)flSj.items=fl;
-      else if(fl.length&&!flSj)o.subjobs.push({id:'sj_fl',type:'flooring',items:fl,date:null,slot:null,installer:null,installer_email:null,status:'created'});
+      else if(fl.length&&!flSj)o.subjobs.push({id:'sj_fl',type:'flooring',items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
       else if(!fl.length&&flSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_fl');
       if(wp.length&&wpSj)wpSj.items=wp;
-      else if(wp.length&&!wpSj)o.subjobs.push({id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,status:'created'});
+      else if(wp.length&&!wpSj)o.subjobs.push({id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
       else if(!wp.length&&wpSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_wp');
     }
     syncParent(o);
@@ -883,64 +1064,13 @@ function wireDrawer(o){
     await loadOrders();toast("Service details saved");openOrder(o.pi);
   };
 
-  // ---- per-subjob schedule ----
-  document.querySelectorAll("[data-sched]").forEach(btn=>btn.onclick=()=>{
-    const sj=o.subjobs.find(s=>s.id===btn.dataset.sched);
-    const box=document.querySelector(`[data-schedbox="${sj.id}"]`);
-    const minInstDate=(o.deliveryDate&&o.deliveryDate>=dstr(today))?o.deliveryDate:dstr(today);
-    const defInstDate=minInstDate>dstr(addDays(1))?minInstDate:dstr(addDays(1));
-    box.innerHTML=`<div class="field" style="margin-top:10px"><label>Install date — must be on or after delivery (${fmtDate(o.deliveryDate)})</label><input type="date" id="sd_${sj.id}" min="${minInstDate}" value="${defInstDate}"></div>
-      <div class="field"><label>Slot</label><div class="slotgrid" id="sg_${sj.id}"></div></div>
-      <button class="btn navy sm" id="confirmSched_${sj.id}" disabled>Confirm slot</button>`;
-    let pickedSlot=null;
-    function renderSlots(){
-      const date=document.getElementById("sd_"+sj.id).value;
-      const grid=document.getElementById("sg_"+sj.id);
-      const pool=INSTALLERS.filter(i=>i.type===sj.type);
-      grid.innerHTML=SLOTS.map(s=>{
-        // count installers who individually have capacity for this specific order
-        let free;
-        if(sj.type==="flooring"){free=pool.filter(i=>flLoad(i.id,date)<FLOOR_DAY_CAP).length;}
-        else{const need=slotsForWp(sj.items[0]&&sj.items[0].rolls);free=pool.filter(i=>(wpSlotLoad(i.id,date)+need)<=WP_DAY_SLOTS).length;}
-        const full=free<=0;
-        return `<div class="slot ${pickedSlot===s.id?'on':''} ${full?'full':''}" data-s="${s.id}"><div class="w">${s.label}</div><div class="cap">${full?'Full':free+' free'}</div></div>`;
-      }).join("");
-      grid.querySelectorAll(".slot:not(.full)").forEach(el=>el.onclick=()=>{pickedSlot=el.dataset.s;renderSlots();document.getElementById("confirmSched_"+sj.id).disabled=false;});
-    }
-    document.getElementById("sd_"+sj.id).onchange=()=>{pickedSlot=null;renderSlots();document.getElementById("confirmSched_"+sj.id).disabled=true;};
-    renderSlots();
-    document.getElementById("confirmSched_"+sj.id).onclick=async()=>{
-      sj.date=document.getElementById("sd_"+sj.id).value;sj.slot=pickedSlot;sj.status="scheduled";
-      syncParent(o);o.log.push({t:sj.type+" install scheduled: "+fmtDate(sj.date)+" · "+slotLabel(sj.slot),d:"Just now",by:"manual"});
-      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
-      await loadOrders();toast("Sub-job scheduled");openOrder(o.pi);
-    };
-  });
-
-  // ---- per-subjob assign installer ----
-  document.querySelectorAll("[data-assign]").forEach(btn=>btn.onclick=()=>{
-    const sj=o.subjobs.find(s=>s.id===btn.dataset.assign);
-    const box=document.querySelector(`[data-assignbox="${sj.id}"]`);
-    const pool=INSTALLERS.filter(i=>i.type===sj.type);
-    let picked=null;
-    box.innerHTML=`<div class="note" style="margin-top:10px">Only ${sj.type} installers under capacity on ${fmtDate(sj.date)} are selectable. Assigning SMSes the installer's details to the customer.</div>
-      <div class="installerlist">`+pool.map(a=>{
-        let full,loadtxt;
-        if(sj.type==="flooring"){const l=flLoad(a.id,sj.date);full=l>=FLOOR_DAY_CAP;loadtxt=l+"/"+FLOOR_DAY_CAP+" job";}
-        else{const l=wpSlotLoad(a.id,sj.date);const need=slotsForWp(sj.items[0]&&sj.items[0].rolls);full=(l+need)>WP_DAY_SLOTS;loadtxt=l+"/"+WP_DAY_SLOTS+" slots (needs "+need+")";}
-        return `<div class="installerrow ${full?'full':''}" data-i="${a.id}"><div class="av">${initials(a.name)}</div>
-          <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}</div></div>
-          <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${loadtxt}${full?' · full':''}</div></div>`;
-      }).join("")+`</div><button class="btn primary sm" id="confirmAssign_${sj.id}" style="margin-top:10px" disabled>Assign installer</button>`;
-    box.querySelectorAll(".installerrow:not(.full)").forEach(el=>el.onclick=()=>{picked=el.dataset.i;box.querySelectorAll(".installerrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");document.getElementById("confirmAssign_"+sj.id).disabled=false;});
-    document.getElementById("confirmAssign_"+sj.id).onclick=async()=>{
-      sj.installer=picked;sj.status="assigned";const a=installerById(picked);
-      sj.installer_email=a.email||null;
-      syncParent(o);o.log.push({t:sj.type+" installer assigned: "+a.name+" · SMS sent to customer",d:"Just now",by:"manual"});
-      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
-      await loadOrders();toast("Assigned "+a.name);openOrder(o.pi);
-    };
-  });
+  // ---- multi-installer assignment sections ----
+  if(o.subjobs){
+    o.subjobs.forEach(sj=>{
+      const container=document.querySelector(`[data-assignsection="${sj.id}"]`);
+      if(container)renderAssignSection(o,sj,container);
+    });
+  }
 
   // ---- download completed subjob PDFs ----
   document.querySelectorAll("[data-dljc]").forEach(btn=>btn.onclick=async()=>{
@@ -1191,6 +1321,32 @@ async function submitRect(){
   btn.disabled=false;
 }
 document.getElementById('rectOverlay').addEventListener('click',e=>{if(e.target.id==='rectOverlay')closeRect();});
+
+/* ============== ADD STAFF (SM) ============== */
+function openAddStaff(){document.getElementById('addStaffOverlay').classList.add('show');document.getElementById('as-name').focus();}
+function closeAddStaff(){
+  document.getElementById('addStaffOverlay').classList.remove('show');
+  ['as-name','as-email'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('as-role').value='installer_flooring';
+  document.getElementById('as-err').classList.remove('show');
+}
+async function submitAddStaff(){
+  const name=document.getElementById('as-name').value.trim();
+  const email=document.getElementById('as-email').value.trim().toLowerCase();
+  const roleVal=document.getElementById('as-role').value;
+  const err=document.getElementById('as-err');err.classList.remove('show');
+  if(!name){err.textContent='Name is required.';err.classList.add('show');return;}
+  if(!email||!email.endsWith('@materialdepot.com')){err.textContent='Email must end in @materialdepot.com';err.classList.add('show');return;}
+  const role=roleVal==='site_auditor'?'site_auditor':'installer';
+  const installer_type=roleVal==='installer_flooring'?'flooring':roleVal==='installer_wallpaper'?'wallpaper':null;
+  document.getElementById('as-submit').disabled=true;
+  try{
+    await sbPost('profiles',{name,email,role,installer_type,passcode:null});
+    await loadInstallers();closeAddStaff();render();toast('Staff member added — they will set their PIN on first login');
+  }catch(e){err.textContent='Failed: '+e.message;err.classList.add('show');}
+  document.getElementById('as-submit').disabled=false;
+}
+document.getElementById('addStaffOverlay').addEventListener('click',e=>{if(e.target.id==='addStaffOverlay')closeAddStaff();});
 
 Promise.all([loadInstallers(),loadOrders()]).then(()=>{setInterval(loadOrders,30000);});
 </script>
