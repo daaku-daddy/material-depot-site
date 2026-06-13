@@ -712,7 +712,10 @@ function drawerBody(o){
       <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
       ${hasRooms?`<div class="k">Rooms</div><div class="v">${ticked.rooms.length}</div>`:''}
       ${hasRooms&&ticked.sign?`<div class="k">Signed by</div><div class="v">${ticked.sign.name||'—'}</div>`:''}</div>
-      ${hasRooms?`<div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">Job Card PDF generated and signed by client.</div><button class="btn ghost" id="dlAuditPdfSM" style="margin-top:8px">&#128229; Download Job Card PDF</button>`:`<div class="note" style="border-color:var(--amber);color:var(--amber);background:var(--amberbg)">This audit was completed before detailed room capture was available. No room data on record.</div>`}
+      ${hasRooms
+        ?`<div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">Signed job card on record.</div>`
+        :`<div class="note amber">Job card data loading from server on download.</div>`}
+      <button class="btn ghost" id="dlAuditPdfSM" style="margin-top:8px">&#128229; Download Job Card PDF</button>
       ${roomsHtml?`<div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Rooms audited</div>${roomsHtml}</div>`:''}
     </div>`;
   }
@@ -915,9 +918,10 @@ function wireDrawer(o){
   if($("#dlAuditPdfSM"))$("#dlAuditPdfSM").onclick=async()=>{
     const btn=$("#dlAuditPdfSM");const orig=btn.innerHTML;btn.disabled=true;btn.textContent="Building PDF…";
     try{
-      let ticked=o.auditTicked;
-      if(!ticked||!ticked.rooms){const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');if(Array.isArray(rows)&&rows[0])ticked=rows[0].audit_ticked;}
-      if(!ticked||!ticked.rooms){toast("No job card data found");btn.disabled=false;btn.innerHTML=orig;return;}
+      // Always fetch fresh from DB — audit_ticked can be large (photos) and may not be fully in memory
+      const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
+      const ticked=(Array.isArray(rows)&&rows[0])?rows[0].audit_ticked:o.auditTicked;
+      if(!ticked){toast("No job card data found for this order");btn.disabled=false;btn.innerHTML=orig;return;}
       await genAuditPDFSM(o,ticked);
     }catch(e){toast("PDF failed: "+e.message);}
     btn.disabled=false;btn.innerHTML=orig;

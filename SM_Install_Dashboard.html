@@ -806,7 +806,7 @@ function drawerBody(o){
         ${sj.type==='wallpaper'
           ?`<div class="wp-dur-badge"><span>${rolls} rolls → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
           :`<div class="fl-fullday-note">Flooring — 1 full day per installer visit</div>`}
-        ${sj.status==='completed'&&sj.jobcard?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download PDF</button>`:''}
+        ${sj.status==='completed'?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download Job Card PDF</button>`:''}
         <div data-assignsection="${sj.id}"></div>
       </div>`;
     });
@@ -1074,10 +1074,17 @@ function wireDrawer(o){
 
   // ---- download completed subjob PDFs ----
   document.querySelectorAll("[data-dljc]").forEach(btn=>btn.onclick=async()=>{
-    const sj=o.subjobs.find(s=>s.id===btn.dataset.dljc);
-    if(!sj||!sj.jobcard){toast("Job card not available");return;}
+    const sjId=btn.dataset.dljc;
     const orig=btn.innerHTML;btn.disabled=true;btn.textContent="Building…";
-    try{await genInstallPDFSM(o,sj,sj.jobcard);}catch(e){toast("PDF failed: "+e.message);}
+    try{
+      // Always fetch fresh from DB — jobcard can be large (photos) and may not be fully in memory
+      const rows=await sbGet('install_orders?id=eq.'+o.id+'&select=subjobs');
+      const freshSj=(Array.isArray(rows)&&rows[0]&&rows[0].subjobs||[]).find(s=>s.id===sjId);
+      const sj=o.subjobs.find(s=>s.id===sjId);
+      const jobcard=(freshSj&&freshSj.jobcard)||(sj&&sj.jobcard)||null;
+      if(!jobcard){toast("Job card not submitted yet — installer must complete and sign it first");btn.disabled=false;btn.innerHTML=orig;return;}
+      await genInstallPDFSM(o,freshSj||sj,jobcard);
+    }catch(e){toast("PDF failed: "+e.message);}
     btn.disabled=false;btn.innerHTML=orig;
   });
 
