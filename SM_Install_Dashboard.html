@@ -1306,7 +1306,7 @@ document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.tar
 /* ============== INSTALL PDF (SM) ============== */
 async function _compressInst(dataUrl){
   if(!dataUrl)return null;
-  return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1200/im.width,900/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.65));};im.onerror=()=>res(null);im.src=dataUrl;});
+  return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1200/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.88));};im.onerror=()=>res(null);im.src=dataUrl;});
 }
 async function genInstallPDFSM(o,sj,jobcard){
   const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');

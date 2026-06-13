@@ -167,7 +167,7 @@ const cropModal=(function(){
   function clamp(){const sw=img.width*scale,sh=img.height*scale;ox=sw>=FW?Math.min(0,Math.max(FW-sw,ox)):(FW-sw)/2;oy=sh>=FH?Math.min(0,Math.max(FH-sh,oy)):(FH-sh)/2;}
   function render(){ctx.clearRect(0,0,FW,FH);ctx.drawImage(img,ox,oy,img.width*scale,img.height*scale);}
   function close(){if(el&&el.parentNode)el.parentNode.removeChild(el);el=null;}
-  function apply(){const o=document.createElement('canvas');o.width=FW;o.height=FH;o.getContext('2d').drawImage(cv,0,0);const url=o.toDataURL('image/jpeg',0.82);close();if(_cb)_cb(url);}
+  function apply(){const SCALE=3;const o=document.createElement('canvas');o.width=FW*SCALE;o.height=FH*SCALE;o.getContext('2d').drawImage(img,ox*SCALE,oy*SCALE,img.width*scale*SCALE,img.height*scale*SCALE);const url=o.toDataURL('image/jpeg',0.92);close();if(_cb)_cb(url);}
   return{open(dataURL,cb){_cb=cb;if(el)close();build();const i=new Image();i.onload=()=>{img=i;scale=minScale=Math.max(FW/i.width,FH/i.height);ox=(FW-i.width*scale)/2;oy=(FH-i.height*scale)/2;clamp();render();};i.src=dataURL;}};
 })();
 
@@ -265,7 +265,7 @@ function badge(st){const s=STATUS[st]||{l:st,c:"b-scheduled"};return `<span clas
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function imgFmt(d){if(/webp/i.test(d.slice(0,20)))return 'WEBP';return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
-function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));const cw=Math.round(w*s),ch=Math.round(h*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);const webp=o.toDataURL('image/webp',q);if(webp.startsWith('data:image/webp')){res(webp);return;}res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
+function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,maxDim/Math.max(im.width,im.height));const cw=Math.round(im.width*s),ch=Math.round(im.height*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
 function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)&&SLOTS[o.slot]){const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
 
 /* ============== LIST ============== */
@@ -500,7 +500,7 @@ function addRoom(restore){
   }
   renderPhotoGrid();
   const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
-  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photos.push(rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1500/im.width,1500/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);room.photos.push(cv2.toDataURL('image/jpeg',0.88));renderPhotoGrid();autosave();};im.onerror=()=>{room.photos.push(rd.result);renderPhotoGrid();autosave();};im.src=rd.result;};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const pbtns=el('div','photo-btns');
@@ -656,15 +656,22 @@ async function genPDF(j){
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.','Qty']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-',r.qty||'-'])});
 
-  rooms.forEach((r,i)=>{
+  for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-')+(r.qty?' · Qty: '+r.qty:''),M,y+10);y+=24;
     const rPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
     const piw=W-2*M,pih=piw*0.6;
-    for(let pi=0;pi<rPhotos.length;pi++){if(y+pih+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(pi===0?'Photo after installation':'Additional photo '+(pi+1),M,y);try{doc.addImage(rPhotos[pi],imgFmt(rPhotos[pi]),M,y+6,piw,pih);}catch(e){}y+=pih+18;}
+    for(let pi=0;pi<rPhotos.length;pi++){
+      const ph=await compress(rPhotos[pi],1600,0.88);
+      if(!ph)continue;
+      if(y+pih+20>H-M){doc.addPage();y=M;header();}
+      doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(pi===0?'Photo after installation':'Additional photo '+(pi+1),M,y);
+      try{doc.addImage(ph,'JPEG',M,y+6,piw,pih);}catch(e){}
+      y+=pih+18;
+    }
     if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
-  });
+  }
 
   // consent + signature
   doc.addPage();y=M;header();
@@ -674,7 +681,7 @@ async function genPDF(j){
   doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=70;
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((j.jobcard.sign&&j.jobcard.sign.name)||j.name),M,y);y+=18;doc.text('Date: '+fmtDate(j.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(j.jobcard.sign&&j.jobcard.sign.img){try{doc.addImage(j.jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  if(j.jobcard.sign&&j.jobcard.sign.img){const si=await compress(j.jobcard.sign.img,800,0.88);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
   doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
 
@@ -710,7 +717,7 @@ function genAuditPDF(){
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
     head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
-  rooms.forEach((r,i)=>{
+  for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
     const fields=auFieldsFor(r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
@@ -721,11 +728,11 @@ function genAuditPDF(){
     const sketchImg=auRenderSketch(r);
     if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
     const auPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
-    if(auPhotos.length){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(auPhotos[0],imgFmt(auPhotos[0]),M+colW+12,y+6,colW,ih);}catch(e){}}
+    if(auPhotos.length){const p0=await compress(auPhotos[0],1600,0.88);if(p0){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(p0,'JPEG',M+colW+12,y+6,colW,ih);}catch(e){}}}
     y+=ih+18;
-    for(let ap=1;ap<auPhotos.length;ap++){if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(auPhotos[ap],imgFmt(auPhotos[ap]),M,y+6,aw,ah);}catch(e){}y+=ah+18;}
+    for(let ap=1;ap<auPhotos.length;ap++){const ph=await compress(auPhotos[ap],1600,0.88);if(!ph)continue;if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(ph,'JPEG',M,y+6,aw,ah);}catch(e){}y+=ah+18;}
     if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.notes,W-2*M),M,y);}
-  });
+  }
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
@@ -733,7 +740,7 @@ function genAuditPDF(){
   doc.setFontSize(10);doc.setTextColor(...muted);
   doc.text('Client name: '+((a.sign&&a.sign.name)||o.name),M,y);y+=18;doc.text('Date: '+fmtDate(o.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(a.sign&&a.sign.img){try{doc.addImage(a.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  if(a.sign&&a.sign.img){const si=await compress(a.sign.img,800,0.88);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
   doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
   doc.save(('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));

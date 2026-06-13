@@ -1124,7 +1124,7 @@ function _renderSketchSM(r){
 }
 async function _compressSM(dataUrl){
   if(!dataUrl)return null;
-  return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1200/im.width,900/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.65));};im.onerror=()=>res(null);im.src=dataUrl;});
+  return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1200/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.88));};im.onerror=()=>res(null);im.src=dataUrl;});
 }
 const _FL_SM=[{k:'area',label:'Area (sq.ft)'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
 const _WP_SM=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type'},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed'}];
