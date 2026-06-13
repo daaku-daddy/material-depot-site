@@ -355,7 +355,7 @@ async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});re
 async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}
 async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
 async function sbDel(t,id){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
-function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
+function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
 if(!SESSION||SESSION.role!=='service_mgr'){window.location.href='Login.html';}
@@ -1020,7 +1020,7 @@ document.querySelectorAll("#rail a").forEach(a=>a.onclick=()=>{activeView=a.data
 $("#scrim").onclick=closeDrawer;
 $("#vSiteAudit").onclick=()=>{window.location.href="SM_Audit_Dashboard.html";};
 
-if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?"))window.location.href="Login.html";};
+if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?")){localStorage.removeItem('md_user');window.location.href="Login.html";}};
 
 /* ---- Add New Order modal ---- */
 function openAddOrder(){

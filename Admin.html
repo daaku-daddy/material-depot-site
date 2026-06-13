@@ -194,8 +194,8 @@ async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.
 async function sbDel(t,id){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H});}
 
 let SESSION = null;
-function getSession(){try{return JSON.parse(sessionStorage.getItem('md_user')||'null');}catch{return null;}}
-function signOut(){sessionStorage.removeItem('md_user');window.location.href='Login.html';}
+function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+function signOut(){localStorage.removeItem('md_user');window.location.href='Login.html';}
 
 const ROLES = {
   admin:       {label:'Admin',           color:'#5b3aa6'},
@@ -533,11 +533,11 @@ function loadRvIframe(){
   const file=rvRole==='service_mgr'
     ?(rvSmTab==='audit'?'SM_Audit_Dashboard.html':'SM_Install_Dashboard.html')
     :ROLES[rvRole].file;
-  const adminSession=sessionStorage.getItem('md_user');
-  sessionStorage.setItem('md_user',JSON.stringify({name:person.name,email:person.email,role:rvRole}));
+  const adminSession=localStorage.getItem('md_user');
+  localStorage.setItem('md_user',JSON.stringify({name:person.name,email:person.email,role:rvRole}));
   const iframe=document.createElement('iframe');
   iframe.style.cssText='width:100%;height:100%;border:0';
-  iframe.onload=()=>{ sessionStorage.setItem('md_user',adminSession); };
+  iframe.onload=()=>{ localStorage.setItem('md_user',adminSession); };
   iframe.src=file;
   wrap.innerHTML='';
   wrap.appendChild(iframe);

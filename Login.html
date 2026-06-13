@@ -254,7 +254,7 @@ async function tryChangePasscode(){
 /* ---- Screen 3: success ---- */
 function successScreen(){
   const r=ROLE_FILES[state.user.role];
-  sessionStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role}));
+  localStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role}));
   $("#card").innerHTML=`
     <h1>Welcome, ${state.user.name.split(' ')[0]}</h1>
     <p class="sub">You're signed in. Taking you to your dashboard…</p>
