@@ -12,12 +12,13 @@ Role-based web app for Material Depot's field operations. Plain HTML/CSS/JS, no 
 | File | Role |
 |---|---|
 | `index.html` | Meta-refresh redirect to `Login.html` |
-| `Login.html` | Passcode login, writes `md_user` to sessionStorage |
+| `Login.html` | Passcode login, writes `md_user` to **localStorage** |
 | `Admin.html` | Admin console — user management, role viewer, jobs overview, performance, job cards |
 | `SM_Audit_Dashboard.html` | Service Manager — site audit order lifecycle |
 | `SM_Install_Dashboard.html` | Service Manager — installation order lifecycle |
 | `Site_Auditor_App.html` | Field auditor mobile app (max-width 520px) |
 | `Site_Installer_App.html` | Field installer mobile app (max-width 480px) |
+| `vercel.json` | Cache-Control: no-cache for all HTML files |
 
 ## Stack
 - Plain HTML/CSS/JS — no framework, no build step
@@ -46,7 +47,7 @@ Created by Service Manager, worked by site auditors.
 - Special statuses: `deleted` (soft delete), `call_na`
 - `audit_ticked` shape (new format): `{auditor, date, sign: {img, name}, rooms: [{name, type, sku, calc, notes, photos: [], sketchStrokes: []}]}`
 - `audit_ticked` old format (legacy): array of strings like `["Wooden Flooring"]`
-- `service` shape: `{flooring: [{sku, name, link}], wallpaper: [{sku, name, link}]}`
+- `service` shape: `{flooring: [{sku, name, link}], wallpaper: [{sku, name, link}], follow_up_date?: "YYYY-MM-DD"}`
 - `service` extended for rectification: adds `rectification_raised: true`, `rectification_pi: "PI-...-R"`, `rectification_type: "audit"|"install"`
 - `service` for rectification orders: `{rectification_of: "original_pi", issue: "complaint text"}`
 - **SM displays `assigned` as "Site Auditor Assigned"; auditor app maps DB `assigned` → local `scheduled`**
@@ -56,19 +57,45 @@ Created by Service Manager, worked by installers.
 - Columns: `id`, `created_at`, `pi`, `po`, `skus` (jsonb), `bm`, `customer_name`, `phone`, `addr`, `matched_audit` (bool), `delivery_date`, `custom_wp` (bool), `status`, `subjobs` (jsonb array), `service` (jsonb), `log` (jsonb), `created_by_email`
 - Status flow: `pending → deliv_ontime / deliv_delayed → created → scheduled → assigned → onway → atsite → completed / partial / reschedule`
 - Special status: `deleted` (soft delete)
-- `subjobs` shape: `[{id, type, installer, installer_email, date, slot, status, items: [{sku, name, link, rolls}], jobcard}]`
-  - `type`: `'flooring'` or `'wallpaper'`
-  - `jobcard` shape: `{rooms: [{name, sku, qty, photos: [], comments}], sign: {img, name}}`
-  - Sub-job IDs: `'sj_fl'` and `'sj_wp'` (created during service creation)
-- `service` shape: `{flooring: [...], wallpaper: [...], audit_by: 'material_depot' | 'customer'}`
+- `subjobs` shape (new multi-installer format):
+  ```json
+  [{
+    "id": "sj_fl",
+    "type": "flooring",
+    "installer": "uuid",
+    "installer_email": "email",
+    "date": "YYYY-MM-DD",
+    "slot": "s1",
+    "assignments": [
+      {
+        "installer_id": "uuid",
+        "installer_email": "email",
+        "installer_name": "Name",
+        "mode": "standard|custom",
+        "date": "YYYY-MM-DD",
+        "slots": ["s1","s2"],
+        "dates": ["YYYY-MM-DD", ...],
+        "status": "assigned|onway|atsite|completed|reschedule"
+      }
+    ],
+    "status": "created|assigned|onway|atsite|completed|reschedule|partial",
+    "items": [{sku, name, link, rolls}],
+    "jobcard": {rooms: [...], sign: {img, name}}
+  }]
+  ```
+- Legacy subjobs (pre-multi-installer): use `sj.installer`, `sj.installer_email`, `sj.date`, `sj.slot` directly
+- Backward compat: if `sj.assignments` exists use it; else fall back to old fields
+- `service` shape: `{flooring: [...], wallpaper: [...], audit_by: 'material_depot' | 'customer', follow_up_date?: "YYYY-MM-DD"}`
 - `service` extended for rectification: same flags as audit_orders
-- Parent status is rolled up from sub-job statuses via `syncParent()` / `rollupStatus()`
+- Parent status is rolled up from sub-job statuses via `syncParent()`
 
 ## Auth / Session
-- `sessionStorage` key: `md_user` → `{name, email, role}`
+- `localStorage` key: `md_user` → `{name, email, role}` — **persistent across browser sessions**
 - Every page reads session on load via `getSession()` and role-guards; redirects to `Login.html` on failure
 - Login flow: email → check profiles → if no passcode: create passcode screen; else: enter passcode screen
 - Role → file routing: `admin→Admin.html`, `service_mgr→SM_Audit_Dashboard.html`, `site_auditor→Site_Auditor_App.html`, `installer→Site_Installer_App.html`
+- Logout: clears `localStorage.removeItem('md_user')` then redirects to Login.html
+- Admin.html role viewer iframe trick also uses localStorage (not sessionStorage)
 
 ## Polling Intervals
 - `SM_Audit_Dashboard.html`: `setInterval(loadOrders, 10000)` — every 10 seconds
@@ -79,70 +106,92 @@ Created by Service Manager, worked by installers.
 ## Architecture Patterns
 
 ### SM Audit Dashboard (`SM_Audit_Dashboard.html`)
-- Nav views: Orders, Today's schedule, To reschedule, Availability calendar, Slots & timings, Auditors & caps, Deleted Orders, **Rectifications**
-- Order detail opens in a right-side drawer (`#drawer`) with scrim overlay
-- Drawer contains: stepper (backward navigation allowed via `FLOW` array), **editable "Service details" section** (shown whenever `o.service` exists), service creation panel (toggle switches per SKU group), slot booking (capacity-aware), auditor assignment (load-aware), manual status override menu, activity timeline
-- `SLOTS` (array of `{id, label}`) and `CAPS` (per-auditor per-date object) are **in-memory only** — not persisted to DB
-- Auditor daily cap default: `DEFAULT_CAP = 3`; `capFor(auditorId, dateStr)` reads from `CAPS` or returns default
-- Slot capacity = number of auditors with cap ≥ 1 on that date
-- `AUTO_STATUSES = ["onway", "atsite", "completed"]` — shown with AUTO badge, set by auditor app
-- Delete = sets `status='deleted'`, not a hard delete; restored from Deleted Orders view
-- PDF download on completed orders: `genAuditPDFSM(o, ticked)` — generates full job card PDF
-- **Rectification**: "↩ Raise Rectification" button on completed order footer; creates new pending order in `audit_orders` or `install_orders`; RECT badge on original orders in table; amber note in original order's drawer
+- Nav views: Orders, Today's schedule, To reschedule, **Follow-ups**, Availability calendar, Slots & timings, Auditors & caps, Deleted Orders, Rectifications
+- **Follow-up date**: SM can set `service.follow_up_date` (YYYY-MM-DD) on any created/call_na order to defer slot booking. Shown as badge in orders table and dedicated Follow-ups view.
+- **Add Staff**: SM can add site auditors and installers (name, email, role) from the Auditors & caps view. Passcode not set by SM — user creates it on first login.
+- Order detail opens in right-side drawer
+- Slot system: in-memory `SLOTS` array with labels; `CAPS[auditorId][date]` per-auditor daily caps
+- `AUTO_STATUSES = ["onway", "atsite", "completed"]` — set by auditor app
+- PDF download on completed orders: always fetches fresh `audit_ticked` from DB (photos may not be in memory)
 
 ### SM Install Dashboard (`SM_Install_Dashboard.html`)
-- Nav views: Orders, Call Operations today, Today's installs, To reschedule, Installer calendar, Slots & timings, Installers, Deleted Orders, **Rectifications**
+- Nav views: Orders, Call Operations today, Today's installs, To reschedule, **Follow-ups**, Installer calendar, Slots & timings, Installers, Deleted Orders, Rectifications
+- **Follow-up date**: SM can set `service.follow_up_date` on any order to defer installer scheduling. Shown as badge in orders table and dedicated Follow-ups view. Count badge in rail nav when follow-ups are due.
+- **Add Staff**: SM can add installers/auditors from the Installers view. Passcode not set by SM.
+- **Multi-installer assignment UI**: Each sub-job (sj_fl, sj_wp) shows Standard/Custom toggle + installer cards. SM adds installers one by one with date/slots. Saved to `sj.assignments` array. No capacity limits enforced in Custom mode.
+- **Wallpaper slot logic (new)**:
+  - Fixed 3-hour windows: `WP_TIME_SLOTS = [{id:'s1',label:'8:00 AM – 11:00 AM'}, {id:'s2',label:'11:00 AM – 2:00 PM'}, {id:'s3',label:'2:00 PM – 5:00 PM'}]`
+  - `slotsForWp(rolls)`: 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h)
+  - `WP_DAY_SLOTS = 3` (max slots/installer/day)
+  - Duration auto-shown as badge in sub-job card
+- **Flooring slot logic**: Full day (8 AM – 5 PM), `FLOOR_DAY_CAP = 1` job/installer/day
+- **Custom/Multi-day mode**: SM picks date range per installer; no capacity enforcement
+- `syncParent(o)` rolls up parent order status from sub-job statuses
+- PDF download on completed sub-jobs: always fetches fresh `subjobs` from DB
 - Ops call due logic: custom WP → 3 days before delivery; standard → 1 day before delivery
-- Installer capacity rules (in-memory):
-  - Flooring: `FLOOR_DAY_CAP = 1` job per installer per day
-  - Wallpaper: `WP_DAY_SLOTS = 2` slots per installer per day; ≥5 rolls = 2 slots, <5 rolls = 1 slot (`slotsForWp(rolls)`)
-- Service creation spawns sub-jobs `sj_fl` and/or `sj_wp` based on SKU toggles
-- **Editable "Service details" section** in drawer (shown whenever `o.service` exists); `saveService` handler updates `o.service` + `o.subjobs[i].items`; guards removal of in-progress sub-jobs
-- `syncParent(o)` rolls up parent order status from sub-job statuses (same logic as `rollupStatus()` in installer app)
-- PDF download on completed sub-jobs: `genInstallPDFSM(o, sj, jobcard)` — generates installation job card PDF; includes `qty` column
-- **Rectification**: same pattern as audit dashboard; `submitRect` patches `install_orders` for the original order
 
 ### Service Creation — SKU Auto-fill
-Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.service` is null:
-- **Install**: `draft.flooring` ← `o.skus.filter(s=>s.type==='flooring')`, `draft.wallpaper` ← `o.skus.filter(s=>s.type==='wallpaper')`
-- **Audit**: prefix heuristic — `WP-*` → wallpaper draft, everything else → flooring draft (based on `auditTicked`)
-- SKU code is pre-filled; name and link remain blank for SM to complete
-- This also fixes the toggle double-click bug (rows now render immediately since `draft[grp].length > 0`)
+Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.service` is null.
+- Edit sections (`editInstallServiceSection`, `editAuditServiceSection`) **pre-render input values** in HTML at render time — inputs are populated immediately without waiting for `wireDrawer` to call `renderSkuRows`.
 
 ### Site Auditor App (`Site_Auditor_App.html`)
-- 3 screens: list view, detail screen, job card screen (all `position:fixed`, toggled via `.hide` class)
+- 3 screens: list view, detail screen, job card screen
 - `ME = {name, email, zone}` — fetches only orders where `auditor_email = ME.email`
-- Status mapping: DB `assigned` ↔ local `scheduled` (mapped on read in `loadJobs`, mapped back on write in `adv()`)
-- Auto-flip: `scheduled → callpending` happens 3 hours before slot start time (client-side, in `autoFlip()`)
-- **Job Card**: multi-room form with type toggle (flooring/wallpaper), calculation fields (type-adaptive), 2D sketch canvas (`Sketch` class), multi-photo grid with crop modal, notes
-- **Crop modal** (`cropModal` IIFE): 340×255 frame, drag to pan, pinch or slider to zoom, "Use Photo" crops; tap thumbnail to re-crop
-- **Autosave**: saves to `localStorage` immediately + debounced `sbPatch` to DB after 3s (saves draft rooms without photos to avoid JSONB size issues)
-- On completion: saves full `audit_ticked` with photos array to DB, generates PDF via `genPDF(o)`
-- PDF download available on completed orders from detail screen
+- Status mapping: DB `assigned` ↔ local `scheduled`
+- Auto-flip: `scheduled → callpending` 3 hours before slot start time (client-side, in `autoFlip()`)
+- **Job Card**: multi-room form with type toggle, calculation fields, 2D sketch canvas, multi-photo grid with crop modal, notes
+- **Photo capture**:
+  - `📷 Camera` button → `capture="environment"` input → crop modal → stored at **1020×765 JPEG @ 0.92** (3× canvas output)
+  - `🖼 Gallery` button → file input (no crop) → immediately compressed to **1500px max JPEG @ 0.88** before storage
+- **Crop modal**: 340×255 display canvas; outputs at 1020×765 (3× scale from original image), JPEG 0.92 quality
+- **Autosave**: saves to `localStorage` immediately + debounced `sbPatch` after 3s (draft strips photos to save size)
+- On completion: saves full `audit_ticked` with photos to DB, generates PDF via `genPDF(o)`
+- `compressImg(dataUrl)`: resizes to max 1600×1200 at JPEG 0.88 before `addImage` in PDF
+- `compress(dataUrl, maxDim, q)`: always outputs JPEG (no WebP fallback — jsPDF compatibility)
 
 ### Site Installer App (`Site_Installer_App.html`)
-- 4 screens: list view, detail screen, audit report screen (read-only), installation card screen
-- Fetches ALL `install_orders`, filters client-side: `sj.installer_email === ME.email`
-- On init: fetches own `installer_type` from `profiles` to show "Flooring Installer" / "Wallpaper Installer"
-- Job composite key: `pi + '|' + sjId` — used in `data-key` and parsed with `key.indexOf('|')` (NOT split on `_`)
+- 4 screens: list view, detail screen, audit report screen, installation card screen
+- Fetches ALL `install_orders`, filters client-side: `sj.assignments.some(a => a.installer_email === ME.email)` with fallback to `sj.installer_email === ME.email` (legacy)
+- On init: fetches own `installer_type` from `profiles`
+- Job composite key: `pi + '|' + sjId` — parsed with `key.indexOf('|')` (NOT split on `_`)
 - Status mapping: DB `assigned` ↔ local `scheduled`
-- Auto-flip: same `callpending` logic as auditor app
-- Status update pattern: fetch parent order → find subjob in array → update subjob status → `rollupStatus()` for parent → `sbPatch` entire order
-- Audit report screen: fetches by matching `phone` number against `audit_orders?status=eq.completed` (most recent)
-- **Installation Card**: per-room form with room name★, SKU★, **Quantity★** (free text, e.g. "12 boxes / 20 sq.ft"), multi-photo grid with crop modal★, comments; requires at least 1 photo per room
-- **Crop modal**: same implementation as auditor app
-- **Autosave**: localStorage + debounced draft save to `sj.jobcard` in subjobs array
-- On completion: saves `sj.jobcard` with photos to subjobs, computes `rollupStatus`, patches parent order
+- Status update pattern (multi-installer aware): fetch parent order → find subjob → update the specific `sj.assignments[i].status` for this installer → recompute `sj.status` from all assignment statuses → `rollupStatus()` for parent → `sbPatch`
+- Date/slot from own assignment: `myAssign.date` and `myAssign.slots` (not top-level `sj.date`)
+- Audit report screen: fetches by matching `phone` against completed audit orders
+- **Installation Card**: per-room form with room name★, SKU★, Quantity★, multi-photo grid with crop modal★, comments
+- **Photo capture**: same as auditor app — camera with crop, gallery compressed at capture
+- **PDF generation** (`genPDF`): uses `for...of` loop with `await compress(photo, 1600, 0.88)` before every `doc.addImage` call (prevents silent failures from large images)
+- `compress(dataURL, maxDim, q)`: always JPEG (no WebP fallback)
 
 ### Admin Console (`Admin.html`)
-- Desktop layout with sidebar nav (`#rail`)
+- Desktop layout with sidebar nav
 - Nav views: Overview, Users, Role Viewer, Jobs Overview, Performance, Job Cards
-- **Users**: full CRUD — add user, edit role (with installer domain toggle), reset passcode (sets to null), delete
-- **Role Viewer**: iframe injection trick — writes selected person's `md_user` to sessionStorage, loads their page in iframe, restores admin session in `iframe.onload`. SM role has Audit/Install tab toggle
-- **Jobs Overview**: merges `audit_orders` + `install_orders` into unified jobs list with type/status filters
-- **Performance**: per-user stats computed from live DB — auditors by `auditor_email`, installers by `sj.installer_email`, SMs by `created_by_email`
-- **Job Cards**: table of all signed+completed job cards (audit: `audit_ticked.sign` exists; install: `sj.jobcard.sign` exists). "Download PDF" regenerates via `genAuditPDF` or `genInstallPDF`
-- Both PDF generators handle both old single `photo` field and new `photos[]` array (backward compatible)
+- **Users**: full CRUD — add user, edit role, reset passcode (sets to null), delete
+- **Role Viewer**: iframe injection trick — uses localStorage (not sessionStorage) to set impersonated user session
+- **Job Cards**: all signed+completed job cards with PDF download
+- Both PDF generators handle both old `photo` field and new `photos[]` array
+
+## Wallpaper Installer Slot System (new)
+| Rolls | Slots needed | Duration |
+|---|---|---|
+| 1-3 | 1 slot | 3 hours |
+| 4-6 | 2 slots | 6 hours |
+| 7+ | 3 slots | 9 hours (full day) |
+
+Fixed time windows (WP_TIME_SLOTS):
+- s1: 8:00 AM – 11:00 AM
+- s2: 11:00 AM – 2:00 PM
+- s3: 2:00 PM – 5:00 PM
+
+`slotsForWp(rolls)` in SM_Install_Dashboard: `const r=Number(rolls)||0; return r<=3?1:r<=6?2:3;`
+
+## Follow-up Date Feature
+- Stored in `service.follow_up_date` (string, YYYY-MM-DD) in both `audit_orders` and `install_orders`
+- No DB schema change — stored in existing `service` JSONB column
+- SM sets/clears from the order drawer (available when `o.service` exists)
+- Shown as amber badge in orders table when due today or overdue
+- Dedicated "Follow-ups" nav view in both SM dashboards sorted by date
+- Count badge in rail nav turns red when any follow-ups are due/overdue today
 
 ## Job Card Data Shapes
 
@@ -206,8 +255,9 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 
 | JS (subjob) | field in `subjobs[]` |
 |---|---|
-| `sj.installer` | `installer` (profile uuid) |
-| `sj.installer_email` | `installer_email` |
+| `sj.installer` | `installer` (profile uuid, legacy primary) |
+| `sj.installer_email` | `installer_email` (legacy primary) |
+| `sj.assignments` | `assignments` (new multi-installer array) |
 | `sj.jobcard` | `jobcard` (full object) |
 
 ## CSS Design System
@@ -239,31 +289,43 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 
 1. **Job key format in installer app**: composite key is `pi + '|' + sjId` — parsed with `key.indexOf('|')`, NOT `split('_')` (underscore is used inside PI numbers)
 
-2. **Autosave draft excludes photos**: `collectRooms().map(({photos, ...rest}) => rest)` — photos are stripped from draft saves to keep JSONB size manageable; full photos only saved on final submission
+2. **Autosave draft excludes photos**: `collectRooms().map(({photos, ...rest}) => rest)` — photos stripped from draft saves; full photos only saved on final submission
 
-3. **Crop modal output size**: fixed 340×255px JPEG at 0.82 quality — consistent size regardless of input
+3. **Crop modal output size**: 340×255 display canvas but outputs at **1020×765 JPEG @ 0.92** by re-drawing the original image at 3× scale. Consistent crop position is preserved.
 
-4. **Backward compat for photos**: all PDF generators use `r.photos || (r.photo ? [r.photo] : [])` to handle both old single-photo and new photos-array formats
+4. **Gallery photo storage**: Immediately compressed at capture to max 1500×1500 JPEG @ 0.88 (no raw storage). Ensures manageable DB size and consistent JPEG format for PDF generation.
 
-5. **Slot/caps config is in-memory**: `SLOTS` and `CAPS` objects in SM Audit Dashboard are not persisted to DB — they reset on page reload. This is intentional (current design).
+5. **PDF image pipeline**: All photos go through `compress(photo, 1600, 0.88)` or equivalent before `doc.addImage`. Always outputs JPEG (no WebP fallback). Max 1600×1200, quality 0.88. Previously used 1200×900 @ 0.65 which caused visible blur.
 
-6. **Installer audit report lookup**: finds audit by matching `phone` number (not PI), fetches most recent completed audit order for that phone
+6. **PDF addImage format**: All `doc.addImage` calls use `'JPEG'` format string since compress always outputs JPEG. Errors are caught silently with `try{}catch(e){}`.
 
-7. **Admin role viewer iframe**: session injection happens synchronously before `iframe.src` is set; admin session is restored in `iframe.onload` callback
+7. **PDF fresh fetch**: SM dashboards always fetch `audit_ticked` / `subjobs` fresh from DB before generating PDFs (large photo payloads may not be in memory from initial load).
 
-8. **PDF generation is fully client-side**: uses jsPDF from CDN, generates blob URLs, triggers browser download. No server involvement.
+8. **Smart quotes in JS**: Never use typographic/curly quotes (`"`, `"`, `'`, `'`) in JavaScript code blocks — only ASCII `"` and `'`. The Edit tool can introduce smart quotes from markdown, breaking JS parsing.
 
-9. **Audit ticked backward compat**: old completed orders have `audit_ticked` as an array (e.g. `["Wooden Flooring"]`). Check `!Array.isArray(ticked)` before accessing `ticked.rooms`.
+9. **Backward compat for photos**: all PDF generators use `r.photos || (r.photo ? [r.photo] : [])` to handle both old single-photo and new photos-array formats
 
-10. **SM install polling is 30s, audit is 10s**: do not change these without understanding the load implications.
+10. **Slot/caps config is in-memory**: `SLOTS`, `CAPS`, `WP_TIME_SLOTS` in SM dashboards are not persisted to DB — reset on page reload.
 
-11. **Service creation SKU auto-fill**: `draft` is populated from `o.skus` when `o.service` is null (new order not yet created). This ensures SKU code is pre-filled and the toggle shows rows immediately. If `o.service` exists (service already created), `draft` populates from `o.service` for editing.
+11. **Installer audit report lookup**: finds audit by matching `phone` number (not PI), fetches most recent completed audit order for that phone
 
-12. **Service edit section**: shown in the drawer whenever `o.service !== null`. Uses the same `draft` object and `renderSkuRows` logic as service creation. The `#saveService` button: audit patches `audit_orders.service`; install patches both `install_orders.service` and updates `subjobs[i].items`. Cannot remove a subjob that has status beyond `created`.
+12. **Admin role viewer iframe**: session injection uses localStorage for both admin and impersonated sessions; admin session is restored in `iframe.onload`
 
-13. **Rectification flow**: "↩ Raise Rectification" appears on completed order footers. Creates a new pending order (audit or install) with `service.rectification_of = original_pi`. Patches original order's `service` with `rectification_raised: true`, `rectification_pi`, `rectification_type`. Rectification orders appear in the "Rectifications" rail view, filtered from ORDERS by `o.service.rectification_of`. RECT badge shown on original orders in the orders table. Once raised, the button becomes a "↩ Rectified" chip to prevent duplicates.
+13. **SM install polling is 30s, audit is 10s**: do not change these without understanding load implications.
 
-14. **Installer job card quantity field**: `qty` (free text, e.g. "12 boxes / 20 sq.ft") is required (★) per room. Stored in `jobcard.rooms[i].qty`. Shown in preview step, PDF rooms summary table (Qty column), and per-room PDF subheading. Both installer-side and SM-side PDFs include it.
+14. **Service creation SKU auto-fill**: `draft` is populated from `o.skus` when `o.service` is null. If `o.service` exists, `draft` populates from `o.service` for editing.
+
+15. **Service edit section**: shown whenever `o.service !== null`. SKU rows pre-rendered in HTML at render time (not only via `renderSkuRows` in wireDrawer) to ensure values show on all screen sizes.
+
+16. **Rectification flow**: "↩ Raise Rectification" on completed orders. Creates new pending order with `service.rectification_of = original_pi`. RECT badge on original orders. Once raised, shows "↩ Rectified" chip.
+
+17. **Multi-installer status rollup**: when an installer updates their status, only their assignment's `status` field is updated. `sj.status` is recomputed from all `sj.assignments[i].status` values (completed only when ALL are completed).
+
+18. **SM Add Staff**: both SM dashboards can create `site_auditor` and `installer` profiles via `sbPost('profiles', {name, email, role, installer_type, passcode: null})`. Passcode is always null on creation.
+
+19. **vercel.json**: sets `Cache-Control: no-cache` for all `*.html` files to prevent mobile browsers serving stale JS.
+
+20. **localStorage persistence**: All pages use `localStorage` (not `sessionStorage`) for `md_user`. Login writes to localStorage; logout clears it. No auto-expiry — each user has their own device.
 
 ## Deployment Workflow
 ```bash
