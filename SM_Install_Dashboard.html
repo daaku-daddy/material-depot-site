@@ -227,6 +227,7 @@
     <a data-view="installers"><span class="ico">&#9673;</span>Installers</a>
     <div class="grp">DATA</div>
     <a data-view="deleted"><span class="ico">🗑</span>Deleted Orders<span class="ct" id="cDeleted"></span></a>
+    <a data-view="rectifications"><span class="ico">↩</span>Rectifications<span class="ct" id="cRect"></span></a>
   </nav>
   <main id="main"></main>
 </div>
@@ -305,6 +306,42 @@
     <div class="mfoot">
       <button class="btn gray" onclick="closeAddOrder()">Cancel</button>
       <button class="btn navy" id="ao-submit" onclick="submitAddOrder()">Add Order</button>
+    </div>
+  </div>
+</div>
+
+<div class="moverlay" id="rectOverlay">
+  <div class="mcard">
+    <div class="mhead"><h3>↩ Raise Rectification</h3><button class="mclose" onclick="closeRect()">×</button></div>
+    <div class="mbody">
+      <div class="mrow">
+        <div class="mfield"><label>Original PI No.</label><input id="rect-pi" disabled></div>
+        <div class="mfield"><label>Customer Name</label><input id="rect-name" disabled></div>
+      </div>
+      <div class="mrow">
+        <div class="mfield"><label>Phone</label><input id="rect-phone" disabled></div>
+        <div class="mfield"><label>BM</label><input id="rect-bm" disabled></div>
+      </div>
+      <div class="mfield"><label>Address</label><input id="rect-addr" disabled></div>
+      <div class="mfield"><label>Issue / Complaint <span style="color:var(--red)">*</span></label>
+        <textarea id="rect-issue" placeholder="Describe the issue the client is facing…" style="resize:vertical;min-height:80px"></textarea>
+      </div>
+      <div class="mrow">
+        <div class="mfield"><label>New service type <span style="color:var(--red)">*</span></label>
+          <select id="rect-svctype" style="padding:10px 12px;border:2px solid var(--line);border-radius:9px;font-size:14px;width:100%;background:#fff">
+            <option value="install">Site Installation (re-installation)</option>
+            <option value="audit">Site Audit (re-audit)</option>
+          </select>
+        </div>
+        <div class="mfield"><label>New PI No. <span style="color:var(--red)">*</span></label>
+          <input id="rect-newpi" placeholder="e.g. PI-2026-00123-R">
+        </div>
+      </div>
+      <div class="merr" id="rect-err"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeRect()">Cancel</button>
+      <button class="btn amber" id="rect-submit" onclick="submitRect()">↩ Raise Rectification</button>
     </div>
   </div>
 </div>
@@ -427,6 +464,7 @@ function counts(){
   $("#cToday").textContent=ORDERS.filter(o=>(o.subjobs||[]).some(sj=>sj.date===dstr(today))).length;
   $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule"||(o.subjobs||[]).some(sj=>sj.status==="reschedule")).length;
   if($("#cDeleted"))$("#cDeleted").textContent=DELETED.length||'';
+  if($("#cRect"))$("#cRect").textContent=ORDERS.filter(o=>o.service&&o.service.rectification_of).length||'';
 }
 
 /* ============== RENDER ============== */
@@ -442,6 +480,7 @@ function render(){
   else if(activeView==="slots")m.innerHTML=slotsView();
   else if(activeView==="installers")m.innerHTML=installersView();
   else if(activeView==="deleted")m.innerHTML=deletedView();
+  else if(activeView==="rectifications")m.innerHTML=rectificationsView();
   wire();
 }
 function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
@@ -489,7 +528,7 @@ function ordersView(){
       <td style="max-width:170px">${mapLink(o.addr)}</td>
       <td><span class="deliv ${delivCls}">${fmtDate(o.deliveryDate)}</span>${opsFlag}</td>
       <td>${subjobSummary(o)}</td>
-      <td>${chip(o.status)}</td></tr>`;
+      <td>${chip(o.status)}${o.service&&o.service.rectification_raised?`<span class="autobadge" style="background:var(--amberbg);color:var(--amber);margin-left:4px">RECT</span>`:''}</td></tr>`;
   }).join("");
   return `<div class="crumbs">Installations / Orders</div>
   <div class="pagehead"><div><h1>Installation orders</h1><p>Every confirmed order containing the Installation SKU (${INSTALL_SKU}). Delivery is confirmed before service creation.</p></div>
@@ -693,6 +732,7 @@ function drawerBody(o){
     html+=`</div>`;
   }
 
+  if(o.service&&o.service.rectification_raised)html+=`<div class="note amber">↩ Rectification raised — new order <b>${o.service.rectification_pi||''}</b> (${o.service.rectification_type==='audit'?'Re-audit':'Re-installation'}). See the Rectifications tab.</div>`;
   // timeline
   html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${l.t}</div><div class="td">${l.d}${l.by==='auto'?' · auto from installer':l.by==='manual'?' · manual':''}</div></div>`).join("")}</div></div>`;
   return html;
@@ -747,6 +787,7 @@ function drawerFoot(o){
   if(o.status==="deliv_delayed")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markOnTime">Now on time</button>`;
   if(o.status==="deliv_ontime")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
   if(o.status==="created")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="callCustomer" disabled>Schedule from sub-jobs above</button>`;
+  if(o.status==="completed")return del+`<button class="btn gray" id="dClose">Close</button>${o.service&&o.service.rectification_raised?`<span class="chip c-assigned" style="flex:1;justify-content:center;cursor:default">↩ Rectified</span>`:`<button class="btn amber" id="raiseRect">↩ Raise Rectification</button>`}`;
   return del+`<button class="btn gray" id="dClose">Close</button>`;
 }
 
@@ -909,6 +950,8 @@ function wireDrawer(o){
     try{await genInstallPDFSM(o,sj,sj.jobcard);}catch(e){toast("PDF failed: "+e.message);}
     btn.disabled=false;btn.innerHTML=orig;
   });
+
+  if($("#raiseRect"))$("#raiseRect").onclick=()=>openRect(o);
 
   // ---- delete order ----
   if($("#delOrder"))$("#delOrder").onclick=async()=>{
@@ -1095,6 +1138,59 @@ async function genInstallPDFSM(o,sj,jobcard){
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
   doc.save(('Installation_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
 }
+
+/* ============== RECTIFICATION ============== */
+let _rectOrder=null;
+function rectificationsView(){
+  const rects=ORDERS.filter(o=>o.service&&o.service.rectification_of);
+  const rows=rects.map(o=>`<tr data-pi="${o.pi}">
+    <td><div class="pi">${o.pi}</div></td>
+    <td><div class="pi">${o.service.rectification_of}</div></td>
+    <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+    <td style="max-width:220px;font-size:12px;color:var(--muted)">${o.service.issue||'—'}</td>
+    <td>${chip(o.status)}</td></tr>`).join("");
+  return `<div class="crumbs">Data / Rectifications</div>
+    <div class="pagehead"><div><h1>Rectifications</h1><p>New service orders raised to address post-completion issues. Click a row to manage.</p></div></div>
+    <div class="tablecard"><table>
+      <thead><tr><th>Rectification PI</th><th>Original PI</th><th>Customer</th><th>Issue</th><th>Status</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No rectifications raised yet.</td></tr>`}</tbody>
+    </table></div>`;
+}
+function openRect(o){
+  _rectOrder=o;
+  document.getElementById('rect-pi').value=o.pi;
+  document.getElementById('rect-name').value=o.name;
+  document.getElementById('rect-phone').value=o.phone;
+  document.getElementById('rect-bm').value=o.bm;
+  document.getElementById('rect-addr').value=o.addr;
+  document.getElementById('rect-newpi').value=o.pi+'-R';
+  document.getElementById('rect-issue').value='';
+  document.getElementById('rect-svctype').value='install';
+  document.getElementById('rect-err').classList.remove('show');
+  document.getElementById('rectOverlay').classList.add('show');
+}
+function closeRect(){document.getElementById('rectOverlay').classList.remove('show');_rectOrder=null;}
+async function submitRect(){
+  const issue=document.getElementById('rect-issue').value.trim();
+  const svcType=document.getElementById('rect-svctype').value;
+  const newPi=document.getElementById('rect-newpi').value.trim();
+  const err=document.getElementById('rect-err');err.classList.remove('show');
+  if(!issue){err.textContent='Please describe the issue.';err.classList.add('show');return;}
+  if(!newPi){err.textContent='Enter a PI number for the new order.';err.classList.add('show');return;}
+  const o=_rectOrder;const btn=document.getElementById('rect-submit');btn.disabled=true;
+  const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  try{
+    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:{rectification_of:o.pi,issue},log:[{t:'Rectification order for '+o.pi,d:'Today '+now,by:'manual'}],created_by_email:SESSION.email};
+    if(svcType==='install')await sbPost('install_orders',{...base,matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
+    else await sbPost('audit_orders',{...base,audit_ticked:[]});
+    const updSvc={...(o.service||{}),rectification_raised:true,rectification_pi:newPi,rectification_type:svcType};
+    const updLog=[...o.log,{t:'Rectification raised — '+(svcType==='install'?'re-installation':'re-audit')+' · new order '+newPi,d:'Today '+now,by:'manual'}];
+    await sbPatch('install_orders',o.id,{service:updSvc,log:updLog});
+    closeRect();await loadOrders();toast('Rectification raised — '+newPi);
+  }catch(e){err.textContent='Failed: '+e.message;err.classList.add('show');}
+  btn.disabled=false;
+}
+document.getElementById('rectOverlay').addEventListener('click',e=>{if(e.target.id==='rectOverlay')closeRect();});
 
 Promise.all([loadInstallers(),loadOrders()]).then(()=>{setInterval(loadOrders,30000);});
 </script>
