@@ -499,9 +499,10 @@ function addRoom(restore){
     });
   }
   renderPhotoGrid();
-  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
-  fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromFile(f);fileCam.value='';};
-  fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromFile(f);fileGal.value='';};
+  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
+  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photos.push(rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
+  fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const pbtns=el('div','photo-btns');
   const btnCam=el('button','btn ghost','📷 Camera');const btnGal=el('button','btn ghost','🖼 Gallery');
   btnCam.onclick=()=>fileCam.click();btnGal.onclick=()=>fileGal.click();

@@ -473,9 +473,10 @@ function addRoom(restore){
   renderPhotoGrid();
   const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
   const fileGal=document.createElement('input');fileGal.type='file';fileGal.accept='image/*';fileGal.multiple=true;fileGal.style.display='none';
-  const addPhFromFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
-  fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromFile(f);fileCam.value='';};
-  fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromFile(f);fileGal.value='';};
+  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
+  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{room.photos.push(rd.result);renderPhotoGrid();autosave();};rd.readAsDataURL(f);};
+  fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
+  fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const prow=el('div','photo-row');prow.style.marginTop='8px';
   const btnCam=el('button','btn ghost sm','📷 Camera');btnCam.style.flex='1';btnCam.onclick=()=>fileCam.click();
   const btnGal=el('button','btn ghost sm','🖼 Gallery');btnGal.style.flex='1';btnGal.onclick=()=>fileGal.click();

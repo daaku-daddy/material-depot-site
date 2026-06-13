@@ -750,19 +750,29 @@ function serviceCreationPanel(o){
   </div>`;
 }
 
+function _preSkuRowsAudit(items,grp){
+  return items.map((r,i)=>`<div class="skurow">
+    <div class="sr-top">
+      <input placeholder="SKU Code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
+      <input placeholder="SKU Name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name">
+      <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button>
+    </div>
+    <input class="link" placeholder="SKU Link (optional)" value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link">
+  </div>`).join('');
+}
 function editAuditServiceSection(o){
-  const fl=(o.service.flooring||[]).length>0;
-  const wp=(o.service.wallpaper||[]).length>0;
+  const flItems=o.service.flooring||[];const wpItems=o.service.wallpaper||[];
+  const fl=flItems.length>0;const wp=wpItems.length>0;
   return `<div class="sec"><h3>Service details <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— edit if needed</span></h3>
     <div class="note">Update SKU codes, names or links. Click Save to commit.</div>
     <div class="skugroup" data-grp="flooring">
       <div class="gh"><span class="gt">Wooden Flooring</span><div class="switch ${fl?'on':''} tog" data-tog="flooring"></div></div>
-      <div class="skurows ${fl?'':'hide'}" data-rows="flooring"></div>
+      <div class="skurows ${fl?'':'hide'}" data-rows="flooring">${_preSkuRowsAudit(flItems,'flooring')}</div>
       <button class="addsku ${fl?'':'hide'}" data-add="flooring">+ Add flooring SKU</button>
     </div>
     <div class="skugroup" data-grp="wallpaper">
       <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wp?'on':''} tog" data-tog="wallpaper"></div></div>
-      <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper"></div>
+      <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper">${_preSkuRowsAudit(wpItems,'wallpaper')}</div>
       <button class="addsku ${wp?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
     </div>
     <button class="btn navy sm" style="margin-top:8px" id="saveService">Save changes</button>
