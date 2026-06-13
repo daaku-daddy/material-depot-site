@@ -224,7 +224,11 @@ async function loadJobs(){
     const newJobs=[];
     rows.forEach(r=>{
       (r.subjobs||[]).forEach(sj=>{
-        if(sj.installer_email===ME.email){
+        const myAssign=(sj.assignments||[]).find(a=>a.installer_email===ME.email);
+        const legacyMatch=!(sj.assignments&&sj.assignments.length)&&sj.installer_email===ME.email;
+        if(myAssign||legacyMatch){
+          const aDate=myAssign?(myAssign.mode==='custom'?(myAssign.dates&&myAssign.dates[0])||null:myAssign.date||null):sj.date||null;
+          const aSlots=myAssign?(myAssign.slots||[]):(sj.slot?[sj.slot]:[]);
           newJobs.push({
             id:r.id,
             sjId:sj.id,
@@ -234,8 +238,9 @@ async function loadJobs(){
             addr:r.addr||'',
             bm:r.bm||'',
             type:sj.type||'flooring',
-            date:sj.date||null,
-            slot:sj.slot||null,
+            date:aDate,
+            slot:aSlots[0]||null,
+            slots:aSlots,
             status:sj.status==='assigned'?'scheduled':sj.status,
             sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||''})),
             auditBy:(r.service&&r.service.audit_by)||null,
@@ -363,7 +368,19 @@ function wireDetail(j){
         if(Array.isArray(parentRows)&&parentRows[0]){
           const subjobs=parentRows[0].subjobs||[];
           const sj=subjobs.find(s=>s.id===j.sjId);
-          if(sj){sj.status=st==='scheduled'?'assigned':st;}
+          if(sj){
+            const dbSt=st==='scheduled'?'assigned':st;
+            if(sj.assignments&&sj.assignments.length){
+              const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+              if(myA)myA.status=dbSt;
+              const sts=sj.assignments.map(a=>a.status||'assigned');
+              if(sts.every(s=>s==='completed'))sj.status='completed';
+              else if(sts.some(s=>s==='completed')&&sts.some(s=>s!=='completed'))sj.status='partial';
+              else if(sts.some(s=>['onway','atsite'].includes(s)))sj.status=sts.find(s=>['onway','atsite'].includes(s));
+              else if(sts.some(s=>s==='reschedule'))sj.status='reschedule';
+              else sj.status='assigned';
+            }else{sj.status=dbSt;}
+          }
           const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
           await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
         }
@@ -602,7 +619,14 @@ function signAndFinish(j){
       if(Array.isArray(parentRows)&&parentRows[0]){
         const subjobs=parentRows[0].subjobs||[];
         const sj=subjobs.find(s=>s.id===j.sjId);
-        if(sj){sj.status="completed";sj.jobcard=j.jobcard;}
+        if(sj){
+          if(sj.assignments&&sj.assignments.length){
+            const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+            if(myA)myA.status='completed';
+            sj.status=sj.assignments.every(a=>a.status==='completed')?'completed':'partial';
+          }else{sj.status='completed';}
+          sj.jobcard=j.jobcard;
+        }
         const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
         await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
