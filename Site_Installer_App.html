@@ -702,7 +702,7 @@ function auRenderSketch(r){
   return c.toDataURL('image/jpeg',0.85);
 }
 let _auTicked=null,_auOrder=null;
-function genAuditPDF(){
+async function genAuditPDF(){
   const a=_auTicked,o=_auOrder;if(!a||!o)return;
   const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
