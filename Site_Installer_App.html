@@ -208,6 +208,7 @@ function rollupStatus(subjobs,fallback){
   if(sts.some(s=>s==="completed")&&sts.some(s=>s!=="completed"))return "partial";
   if(sts.some(s=>["onway","atsite"].includes(s)))return sts.find(s=>["onway","atsite"].includes(s));
   if(sts.some(s=>s==="reschedule"))return "reschedule";
+  if(sts.some(s=>s==="callpending"))return "callpending";
   if(sts.some(s=>s==="assigned"))return "assigned";
   if(sts.some(s=>s==="scheduled"))return "scheduled";
   return fallback;
@@ -360,35 +361,39 @@ function detailBody(j){
 }
 function wireDetail(j){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
+  let _advBusy=false;
   const adv=async(st,msg)=>{
+    if(_advBusy)return;_advBusy=true;
+    document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=true);
     const prev=j.status;j.status=st;
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     const logMsg={callpending:"Pre-install call started",onway:"Installer on the way · customer confirmed",reschedule:"Customer declined → sent to office to reschedule",atsite:"Installer arrived at site",completed:"Installation completed"}[st]||st;
-    j.parentLog=j.parentLog||[];j.parentLog.push({t:logMsg,d:"Today "+now,by:"auto"});
     if(j.id&&j.sjId){
       try{
-        // Need to update this specific subjob's status in the parent order's subjobs array
         const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
         if(Array.isArray(parentRows)&&parentRows[0]){
           const subjobs=parentRows[0].subjobs||[];
           const sj=subjobs.find(s=>s.id===j.sjId);
-          if(sj){
-            const dbSt=st==='scheduled'?'assigned':st;
-            if(sj.assignments&&sj.assignments.length){
-              const myA=sj.assignments.find(a=>a.installer_email===ME.email);
-              if(myA)myA.status=dbSt;
-              const sts=sj.assignments.map(a=>a.status||'assigned');
-              if(sts.every(s=>s==='completed'))sj.status='completed';
-              else if(sts.some(s=>s==='completed')&&sts.some(s=>s!=='completed'))sj.status='partial';
-              else if(sts.some(s=>['onway','atsite'].includes(s)))sj.status=sts.find(s=>['onway','atsite'].includes(s));
-              else if(sts.some(s=>s==='reschedule'))sj.status='reschedule';
-              else sj.status='assigned';
-            }else{sj.status=dbSt;}
-          }
+          if(!sj){toast("Job not found — please refresh");j.status=prev;_advBusy=false;document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=false);return;}
+          const dbSt=st==='scheduled'?'assigned':st;
+          if(sj.assignments&&sj.assignments.length){
+            const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+            if(myA)myA.status=dbSt;
+            else sj.status=dbSt;
+            const sts=sj.assignments.map(a=>a.status||'assigned');
+            if(sts.every(s=>s==='completed'))sj.status='completed';
+            else if(sts.some(s=>s==='completed')&&sts.some(s=>s!=='completed'))sj.status='partial';
+            else if(sts.some(s=>['onway','atsite'].includes(s)))sj.status=sts.find(s=>['onway','atsite'].includes(s));
+            else if(sts.some(s=>s==='reschedule'))sj.status='reschedule';
+            else if(sts.some(s=>s==='callpending'))sj.status='callpending';
+            else sj.status=dbSt;
+          }else{sj.status=dbSt;}
+          const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
+          freshLog.push({t:logMsg,d:"Today "+now,by:"auto"});
           const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
-          await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
+          await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
         }
-      }catch(e){j.status=prev;toast("Network error — try again");return;}
+      }catch(e){j.status=prev;_advBusy=false;document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=false);toast("Network error — try again");return;}
     }
     await loadJobs();toast(msg);openDetail(j.pi+'|'+j.sjId);
   };
