@@ -915,7 +915,8 @@ function renderAssignSection(o,sj,container){
     });
 
     html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">＋ Add another installer</div>`;
-    html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">Save assignments</button>`;
+    if(sj.status==='reschedule')html+=`<div style="margin-top:10px"><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:64px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:4px"></textarea></div>`;
+    html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">${sj.status==='reschedule'?'Save reschedule':'Save assignments'}</button>`;
     container.innerHTML=html;
 
     container.querySelectorAll('.assign-mode-btn').forEach(btn=>btn.onclick=()=>{
@@ -948,15 +949,19 @@ function renderAssignSection(o,sj,container){
     container.querySelector('#saveAssign_'+sj.id).onclick=async()=>{
       const valid=assigns.filter(a=>a.installer_id);
       if(!valid.length){toast("Select at least one installer");return;}
+      const wasResched=sj.status==='reschedule';
+      const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
+      const remark=remarkEl?(remarkEl.value||'').trim():'';
       sj.assignments=valid;
       sj.installer=valid[0].installer_id;sj.installer_email=valid[0].installer_email;
       sj.date=valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null;
       sj.slot=valid[0].slots&&valid[0].slots[0]||null;
       sj.status='assigned';
       syncParent(o);
-      o.log.push({t:sj.type+' assigned: '+valid.map(a=>a.installer_name).join(', '),d:'Just now',by:'manual'});
+      const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';
+      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', '),d:'Just now',by:'manual'});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
-      await loadOrders();toast('Assignments saved');openOrder(o.pi);
+      await loadOrders();toast(wasResched?'Rescheduled':'Assignments saved');openOrder(o.pi);
     };
   }
   draw();

@@ -730,7 +730,8 @@ function drawerBody(o){
     html+=`<div class="sec"><h3>Reschedule</h3>
       <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Customer declined the auditor's pre-visit call. Call to rebook.</div>
       <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
-      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div></div>`;
+      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div>
+      <div class="field"><label>Remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:72px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div></div>`;
   } else if(o.status==="completed"){
     const ticked=o.auditTicked;
     const hasRooms=ticked&&!Array.isArray(ticked)&&Array.isArray(ticked.rooms)&&ticked.rooms.length;
@@ -940,10 +941,14 @@ function wireDrawer(o){
     grid.querySelectorAll(".slot:not(.full)").forEach(el=>el.onclick=()=>{draft.slot=el.dataset.slot;renderSlots();const b=$("#bookSlot");if(b)b.disabled=!draft.slot;});
   }
   if($("#bookDate")){$("#bookDate").onchange=()=>{draft.slot=null;renderSlots();const b=$("#bookSlot");if(b)b.disabled=true;};renderSlots();}
-  if($("#bookSlot"))$("#bookSlot").onclick=async()=>{o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
-    o.log.push({t:"Slot booked: "+fmtDate(o.date)+" · "+slotLabel(o.slot),d:"Just now",by:"manual"});
+  if($("#bookSlot"))$("#bookSlot").onclick=async()=>{
+    const wasResched=o.status==="reschedule";
+    o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
+    const remark=wasResched?($("#reschedRemark")||{}).value||'':'';
+    const logLabel=wasResched?"Slot rebooked":"Slot booked";
+    o.log.push({t:logLabel+": "+fmtDate(o.date)+" · "+slotLabel(o.slot)+(remark.trim()?" — "+remark.trim():""),d:"Just now",by:"manual"});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,slot:o.slot,date:o.date,log:o.log});
-    await loadOrders();toast("Slot booked — "+fmtDate(o.date));openOrder(o.pi);};
+    await loadOrders();toast((wasResched?"Slot rebooked":"Slot booked")+" — "+fmtDate(o.date));openOrder(o.pi);};
 
   // ---- auditor assignment ----
   if($("#auditorList")){
