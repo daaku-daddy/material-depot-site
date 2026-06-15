@@ -873,12 +873,13 @@ function renderAssignSection(o,sj,container){
 
   function draw(){
     const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
+    if(sj.type==='wallpaper'&&!customMode){assigns.forEach(a=>{if(!a.slots||!a.slots.length)a.slots=autoWpSlots(slotsN);});}
     let html=`<div class="assign-mode-toggle">
       <div class="assign-mode-btn ${!customMode?'on':''}" data-mode="standard">Standard</div>
       <div class="assign-mode-btn ${customMode?'on':''}" data-mode="custom">Custom / Multi-day</div>
     </div>`;
     if(customMode)html+=`<div class="note amber" style="margin-bottom:10px">Custom mode: no capacity limits enforced. You control all dates and slots.</div>`;
-    if(sj.type==='wallpaper'&&!customMode)html+=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">${rolls} rolls → ${slotsN} slot${slotsN>1?'s':''} (${slotsN*3}h) auto-selected per installer.</div>`;
+    if(sj.type==='wallpaper'&&!customMode)html+=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">${rolls} rolls → ${slotsN} slot${slotsN>1?'s':''} (${slotsN*3}h). Select which time windows apply.</div>`;
 
     assigns.forEach((a,idx)=>{
       const inst=a.installer_id?installerById(a.installer_id):null;
@@ -906,7 +907,7 @@ function renderAssignSection(o,sj,container){
           `:`
             <div><label class="lbl-sm">Date</label><input type="date" data-date="${idx}" class="inp-sm" min="${minDate}" value="${a.date||''}"></div>
             ${sj.type==='wallpaper'
-              ?`<div><label class="lbl-sm">Time slots (auto from rolls)</label><div class="slot-chip-row">${WP_TIME_SLOTS.map((s,si)=>`<div class="slot-chip auto-sel" style="${si>=slotsN?'opacity:.35;pointer-events:none':''}">${s.label}</div>`).join('')}</div></div>`
+              ?`<div><label class="lbl-sm">Time slots (${slotsN} needed for ${rolls} rolls)</label><div class="slot-chip-row">${WP_TIME_SLOTS.map(s=>`<div class="slot-chip ${((a.slots&&a.slots.length?a.slots:autoWpSlots(slotsN)).includes(s.id))?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
               :`<div style="font-size:11.5px;color:var(--green)">Full day · 8 AM – 5 PM</div>`}
           `}
         </div>

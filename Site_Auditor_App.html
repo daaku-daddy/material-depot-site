@@ -257,11 +257,13 @@ function autoFlip(){
 let selDay=dstr(today);
 function listView(){
   autoFlip();
-  const days=Array.from({length:7},(_,i)=>addDays(i));
+  const todayStr=dstr(today);
+  const days=Array.from({length:37},(_,i)=>addDays(i-30));
   const strip=days.map(d=>{const ds=dstr(d);const n=ORDERS.filter(o=>o.date===ds).length;
+    const isToday=ds===todayStr;
     return `<div class="daychip ${selDay===ds?'on':''}" data-day="${ds}">
-      <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
-      <div class="dd">${d.getDate()}</div><div class="ct">${n} audit${n!==1?'s':''}</div></div>`;}).join("");
+      <div class="dn">${isToday?'Today':d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+      <div class="dd">${d.getDate()}</div><div class="ct">${n>0?n+(n!==1?' audits':' audit'):''}</div></div>`;}).join("");
   const list=ORDERS.filter(o=>o.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(o=>o.status!=="completed");
   const done=list.filter(o=>o.status==="completed");
@@ -277,7 +279,7 @@ function listView(){
       </div></div>`;
   };
   return `<div class="daystrip">${strip}</div>
-    <div class="sechead">To do — ${fmtDate(selDay)}</div>
+    <div class="sechead">${selDay===todayStr?'Today':'Jobs'} — ${fmtDate(selDay)}</div>
     ${todo.map(card).join("")||`<div class="empty">No pending audits for this day.</div>`}
     ${done.length?`<div class="sechead">Completed</div>${done.map(card).join("")}`:""}`;
 }
@@ -285,6 +287,8 @@ function renderList(){$("#listView").innerHTML=listView();wireList();}
 function wireList(){
   document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
   document.querySelectorAll(".ocard[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openDetail(c.dataset.pi);});
+  const strip=document.querySelector('.daystrip');const sel=strip&&strip.querySelector('.daychip.on');
+  if(strip&&sel)strip.scrollLeft=Math.max(0,sel.offsetLeft-(strip.clientWidth/2)+(sel.offsetWidth/2));
 }
 
 /* ============== DETAIL VIEW ============== */

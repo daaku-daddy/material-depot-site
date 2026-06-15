@@ -274,11 +274,13 @@ function listView(){
   autoFlip();
   if($("#meName"))$("#meName").textContent=ME.name;
   if($("#meType"))$("#meType").textContent=(ME.type==="wallpaper"?"Wallpaper":"Flooring")+" Installer";
-  const days=Array.from({length:7},(_,i)=>addDays(i));
+  const todayStr=dstr(today);
+  const days=Array.from({length:37},(_,i)=>addDays(i-30));
   const tabs=days.map(d=>{const ds=dstr(d);const n=JOBS.filter(j=>j.date===ds).length;
+    const isToday=ds===todayStr;
     return `<div class="day ${selDay===ds?'on':''}" data-day="${ds}">
-      <div class="dn">${d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
-      <div class="dd">${d.getDate()}</div><div class="ct">${n} job${n!==1?'s':''}</div></div>`;}).join("");
+      <div class="dn">${isToday?'Today':d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+      <div class="dd">${d.getDate()}</div><div class="ct">${n>0?n+(n!==1?' jobs':' job'):''}</div></div>`;}).join("");
   const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(j=>j.status!=="completed"),done=list.filter(j=>j.status==="completed");
   const card=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}">
@@ -288,13 +290,15 @@ function listView(){
     <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
     <div class="statusrow">${badge(j.status)}</div></div>`;
   return `<div class="days">${tabs}</div>
-    <div class="sechead">Jobs — ${fmtDate(selDay)}</div>
+    <div class="sechead">${selDay===todayStr?'Today':'Jobs'} — ${fmtDate(selDay)}</div>
     ${todo.map(card).join("")||`<div class="empty">No jobs for this day.</div>`}
     ${done.length?`<div class="sechead">Finished</div>${done.map(card).join("")}`:""}`;
 }
 function renderList(){$("#listView").innerHTML=listView();
   document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
   document.querySelectorAll(".jobcard[data-key]").forEach(c=>c.onclick=()=>openDetail(c.dataset.key));
+  const strip=document.querySelector('.days');const sel=strip&&strip.querySelector('.day.on');
+  if(strip&&sel)strip.scrollLeft=Math.max(0,sel.offsetLeft-(strip.clientWidth/2)+(sel.offsetWidth/2));
 }
 
 /* ============== DETAIL (one clear action) ============== */
