@@ -93,7 +93,8 @@ Created by Service Manager, worked by installers.
 - `localStorage` key: `md_user` → `{name, email, role}` — **persistent across browser sessions**
 - Every page reads session on load via `getSession()` and role-guards; redirects to `Login.html` on failure
 - Login flow: email → check profiles → if no passcode: create passcode screen; else: enter passcode screen
-- Role → file routing: `admin→Admin.html`, `service_mgr→SM_Audit_Dashboard.html`, `site_auditor→Site_Auditor_App.html`, `installer→Site_Installer_App.html`
+- Role → file routing on login: `admin→Admin.html`, `service_mgr→SM_Audit_Dashboard.html`, `site_auditor→Site_Auditor_App.html`, `installer→Site_Installer_App.html`
+- **SM dashboards accept both `service_mgr` and `admin` roles** — guard is `!['service_mgr','admin'].includes(SESSION.role)`. Admins can navigate directly to SM dashboards even though login routes them to Admin.html first.
 - Logout: clears `localStorage.removeItem('md_user')` then redirects to Login.html
 - Admin.html role viewer iframe trick also uses localStorage (not sessionStorage)
 
@@ -106,8 +107,9 @@ Created by Service Manager, worked by installers.
 ## Architecture Patterns
 
 ### SM Audit Dashboard (`SM_Audit_Dashboard.html`)
-- Nav views: Orders, Today's schedule, To reschedule, **Follow-ups**, Availability calendar, Slots & timings, Auditors & caps, Deleted Orders, Rectifications
-- **Follow-up date**: SM can set `service.follow_up_date` (YYYY-MM-DD) on any created/call_na order to defer slot booking. Shown as badge in orders table and dedicated Follow-ups view.
+- Nav views: Orders, Today's schedule, To reschedule, Follow-ups, Availability calendar, Slots & timings, Auditors & caps, Deleted Orders, Rectifications
+- **Follow-up date**: SM can set `service.follow_up_date` (YYYY-MM-DD) on any created/call_na order to defer slot booking. Shown as amber badge in orders table and dedicated Follow-ups view.
+- **Reschedule remarks**: when an order is in `reschedule` status, the drawer shows an optional Remarks textarea above the "Rebook slot" button. The remark is appended to the log entry as `"Slot rebooked: <date> · <slot> — <remark>"`. Toast also says "Slot rebooked" instead of "Slot booked".
 - **Add Staff**: SM can add site auditors and installers (name, email, role) from the Auditors & caps view. Passcode not set by SM — user creates it on first login.
 - Order detail opens in right-side drawer
 - Slot system: in-memory `SLOTS` array with labels; `CAPS[auditorId][date]` per-auditor daily caps
@@ -115,15 +117,17 @@ Created by Service Manager, worked by installers.
 - PDF download on completed orders: always fetches fresh `audit_ticked` from DB (photos may not be in memory)
 
 ### SM Install Dashboard (`SM_Install_Dashboard.html`)
-- Nav views: Orders, Call Operations today, Today's installs, To reschedule, **Follow-ups**, Installer calendar, Slots & timings, Installers, Deleted Orders, Rectifications
+- Nav views: Orders, Call Operations today, Today's installs, To reschedule, Follow-ups, Installer calendar, Slots & timings, Installers, Deleted Orders, Rectifications
 - **Follow-up date**: SM can set `service.follow_up_date` on any order to defer installer scheduling. Shown as badge in orders table and dedicated Follow-ups view. Count badge in rail nav when follow-ups are due.
+- **Reschedule remarks**: when a sub-job is in `reschedule` status, `renderAssignSection` shows an optional Remarks textarea and relabels the save button to "Save reschedule". Remark is written to the log as `"<type> rescheduled — <remark>: <installer names>"`.
 - **Add Staff**: SM can add installers/auditors from the Installers view. Passcode not set by SM.
 - **Multi-installer assignment UI**: Each sub-job (sj_fl, sj_wp) shows Standard/Custom toggle + installer cards. SM adds installers one by one with date/slots. Saved to `sj.assignments` array. No capacity limits enforced in Custom mode.
-- **Wallpaper slot logic (new)**:
+- **Wallpaper slot logic**:
   - Fixed 3-hour windows: `WP_TIME_SLOTS = [{id:'s1',label:'8:00 AM – 11:00 AM'}, {id:'s2',label:'11:00 AM – 2:00 PM'}, {id:'s3',label:'2:00 PM – 5:00 PM'}]`
   - `slotsForWp(rolls)`: 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h)
   - `WP_DAY_SLOTS = 3` (max slots/installer/day)
   - Duration auto-shown as badge in sub-job card
+  - **Standard mode slot chips are interactive** (have `data-slot`/`data-idx`). Pre-selected from `autoWpSlots(slotsN)` but SM can change. `draw()` initialises `a.slots` from `autoWpSlots` if empty before rendering so model and UI stay in sync.
 - **Flooring slot logic**: Full day (8 AM – 5 PM), `FLOOR_DAY_CAP = 1` job/installer/day
 - **Custom/Multi-day mode**: SM picks date range per installer; no capacity enforcement
 - `syncParent(o)` rolls up parent order status from sub-job statuses
@@ -139,6 +143,7 @@ Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.
 - `ME = {name, email, zone}` — fetches only orders where `auditor_email = ME.email`
 - Status mapping: DB `assigned` ↔ local `scheduled`
 - Auto-flip: `scheduled → callpending` 3 hours before slot start time (client-side, in `autoFlip()`)
+- **Day strip**: spans **30 days back → today → 6 days ahead** (37 chips total). Generated with `Array.from({length:37},(_,i)=>addDays(i-30))`. After each render, `wireList()` auto-scrolls the strip so the selected day is centred. Today's chip shows "Today" label instead of weekday name. Empty days show no count badge.
 - **Job Card**: multi-room form with type toggle, calculation fields, 2D sketch canvas, multi-photo grid with crop modal, notes
 - **Photo capture**:
   - `📷 Camera` button → `capture="environment"` input → crop modal → stored at **1020×765 JPEG @ 0.92** (3× canvas output)
@@ -158,6 +163,7 @@ Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.
 - Status update pattern (multi-installer aware): fetch parent order → find subjob → update the specific `sj.assignments[i].status` for this installer → recompute `sj.status` from all assignment statuses → `rollupStatus()` for parent → `sbPatch`
 - Date/slot from own assignment: `myAssign.date` and `myAssign.slots` (not top-level `sj.date`)
 - Audit report screen: fetches by matching `phone` against completed audit orders
+- **Day strip**: spans **30 days back → today → 6 days ahead** (37 chips total). Generated with `Array.from({length:37},(_,i)=>addDays(i-30))`. `renderList()` auto-scrolls the `.days` strip so the selected day is centred. Today chip shows "Today" label. Empty days show no count badge.
 - **Installation Card**: per-room form with room name★, SKU★, Quantity★, multi-photo grid with crop modal★, comments
 - **Photo capture**: same as auditor app — camera with crop, gallery compressed at capture
 - **PDF generation** (`genPDF`): uses `for...of` loop with `await compress(photo, 1600, 0.88)` before every `doc.addImage` call (prevents silent failures from large images)
@@ -171,7 +177,7 @@ Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.
 - **Job Cards**: all signed+completed job cards with PDF download
 - Both PDF generators handle both old `photo` field and new `photos[]` array
 
-## Wallpaper Installer Slot System (new)
+## Wallpaper Installer Slot System
 | Rolls | Slots needed | Duration |
 |---|---|---|
 | 1-3 | 1 slot | 3 hours |
@@ -192,6 +198,14 @@ Fixed time windows (WP_TIME_SLOTS):
 - Shown as amber badge in orders table when due today or overdue
 - Dedicated "Follow-ups" nav view in both SM dashboards sorted by date
 - Count badge in rail nav turns red when any follow-ups are due/overdue today
+
+## Reschedule Remarks Feature
+- When `o.status === 'reschedule'` (audit) or `sj.status === 'reschedule'` (install sub-job), an optional **Remarks** textarea appears in the SM drawer
+- Remark is optional — if blank, log entry is identical to non-reschedule saves
+- Audit log format: `"Slot rebooked: Mon 16 Jun · 9 AM–12 PM — <remark>"`
+- Install log format: `"flooring rescheduled — <remark>: Installer Name"`
+- Install save button also relabels to "Save reschedule" when sub-job is in reschedule status
+- No DB schema change — remark lives only in the `log` jsonb array entry
 
 ## Job Card Data Shapes
 
@@ -326,6 +340,14 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 19. **vercel.json**: sets `Cache-Control: no-cache` for all `*.html` files to prevent mobile browsers serving stale JS.
 
 20. **localStorage persistence**: All pages use `localStorage` (not `sessionStorage`) for `md_user`. Login writes to localStorage; logout clears it. No auto-expiry — each user has their own device.
+
+21. **Admin role in SM dashboards**: role guard is `!['service_mgr','admin'].includes(SESSION.role)` — both roles are allowed. Login routes admins to Admin.html but they can navigate directly to SM dashboards. Do NOT tighten the guard back to `service_mgr` only.
+
+22. **Day strip in field apps**: both `Site_Auditor_App.html` and `Site_Installer_App.html` generate 37-chip strips via `Array.from({length:37},(_,i)=>addDays(i-30))`. After `innerHTML` is set, `wireList()` scrolls the container so the active chip is centred (`strip.scrollLeft = offsetLeft - clientWidth/2 + chipWidth/2`). Today's chip always renders "Today" as its weekday label.
+
+23. **Wallpaper slot chips in standard mode**: in `SM_Install_Dashboard.html`, standard-mode wallpaper chips have `data-slot` and `data-idx` attributes (same as custom mode) so the `[data-slot]` click handler wires them. At the start of each `draw()` call, if `a.slots` is empty and mode is standard, it is initialised with `autoWpSlots(slotsN)` to keep model and UI in sync.
+
+24. **Reschedule remarks — implementation detail**: audit uses `id="reschedRemark"` (singleton per drawer open); install uses `id="reschedRemark_${sj.id}"` (one per sub-job). The `bookSlot` handler checks `if($("#reschedRemark"))` to distinguish reschedule from initial booking — the element only exists in the DOM when `o.status === 'reschedule'`.
 
 ## Deployment Workflow
 ```bash
