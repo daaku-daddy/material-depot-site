@@ -481,7 +481,7 @@ function openJobCard(j){
 }
 function addRoom(restore){
   const id=++jcSeq;
-  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),qty:restore?restore.qty||'':'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?restore.comments:''};
+  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),qty:restore?restore.qty||'':'',height:restore?restore.height||'':'',width:restore?restore.width||'':'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?restore.comments:''};
   const block=el('div','roomblock');block.dataset.id=id;
   const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+(jcRooms.length+1)));
   const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();autosave();};top.appendChild(rm);block.appendChild(top);
@@ -491,6 +491,11 @@ function addRoom(restore){
   const f2=el('div','fieldgap');f2.innerHTML='<label>SKU Code <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>{room.sku=sI.value;autosave();};f2.appendChild(sI);block.appendChild(f2);
 
   const f2b=el('div','fieldgap');f2b.innerHTML='<label>Quantity <span class="reqstar">★</span></label>';const qI=el('input');qI.placeholder='e.g. 12 boxes / 20 sq.ft / 5 rolls';qI.value=room.qty;qI.oninput=()=>{room.qty=qI.value;autosave();};f2b.appendChild(qI);block.appendChild(f2b);
+
+  const f2c=el('div','twocol');
+  const f2ch=el('div','fieldgap');f2ch.style.flex='1';f2ch.innerHTML='<label>Height</label>';const hI=el('input');hI.placeholder='e.g. 10 ft';hI.value=room.height;hI.oninput=()=>{room.height=hI.value;autosave();};f2ch.appendChild(hI);
+  const f2cw=el('div','fieldgap');f2cw.style.flex='1';f2cw.innerHTML='<label>Width</label>';const wI=el('input');wI.placeholder='e.g. 12 ft';wI.value=room.width;wI.oninput=()=>{room.width=wI.value;autosave();};f2cw.appendChild(wI);
+  f2c.appendChild(f2ch);f2c.appendChild(f2cw);block.appendChild(f2c);
 
   const f3=el('div','fieldgap');f3.innerHTML='<label>Photos after installation <span class="reqstar">★</span></label>';
   const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
@@ -524,7 +529,7 @@ function addRoom(restore){
   jcRooms.push(room);
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
-function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,qty:r.qty||'',photos:r.photos||[],comments:r.comments}));}
+function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,qty:r.qty||'',height:r.height||'',width:r.width||'',photos:r.photos||[],comments:r.comments}));}
 let _autosaveTimer=null;
 function autosave(){
   if(!jcJob)return;
@@ -571,6 +576,7 @@ function finishCard(j){
         <b style="font-size:17px">${r.name}</b>
         ${r.sku?`<span style="font-size:13px;color:var(--muted)">SKU: ${r.sku}</span>`:''}
         ${r.qty?`<span style="font-size:13px;color:var(--muted)">Qty: ${r.qty}</span>`:''}
+        ${(r.height||r.width)?`<span style="font-size:13px;color:var(--muted)">${[r.height&&'H: '+r.height,r.width&&'W: '+r.width].filter(Boolean).join(' · ')}</span>`:''}
       </div>
       ${photos?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">${photos}</div>`:''}
       ${r.comments?`<div style="font-size:14px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px">${r.comments}</div>`:''}
@@ -663,12 +669,13 @@ async function genPDF(j){
     body:[['Proforma Invoice No.',j.pi],['Client Name',j.name],['Client Mobile',j.phone],['Site Address',j.addr],['BM',j.bm],['Installer',ME.name],['Type',j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(j.date)]]});
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
-  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.','Qty']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-',r.qty||'-'])});
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.','Qty','H × W']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-',r.qty||'-',[r.height,r.width].filter(Boolean).join(' × ')||'-'])});
 
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-')+(r.qty?' · Qty: '+r.qty:''),M,y+10);y+=24;
+    const hwStr=(r.height||r.width)?(' · H×W: '+[r.height,r.width].filter(Boolean).join(' × ')):'';
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-')+(r.qty?' · Qty: '+r.qty:'')+hwStr,M,y+10);y+=24;
     const rPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
     const piw=W-2*M,pih=piw*0.6;
     for(let pi=0;pi<rPhotos.length;pi++){
