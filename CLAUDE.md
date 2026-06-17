@@ -122,6 +122,7 @@ Created by Service Manager, worked by installers.
 - **Reschedule remarks**: when a sub-job is in `reschedule` status, `renderAssignSection` shows an optional Remarks textarea and relabels the save button to "Save reschedule". Remark is written to the log as `"<type> rescheduled — <remark>: <installer names>"`.
 - **Add Staff**: SM can add installers/auditors from the Installers view. Passcode not set by SM.
 - **Multi-installer assignment UI**: Each sub-job (sj_fl, sj_wp) shows Standard/Custom toggle + installer cards. SM adds installers one by one with date/slots. Saved to `sj.assignments` array. No capacity limits enforced in Custom mode.
+- **Assignment validation**: Save button requires date for each installer (standard: `a.date`, custom: `a.dates.length > 0`). Wallpaper also requires `a.slots.length > 0`. Missing date/slots shows toast error and blocks save.
 - **Wallpaper slot logic**:
   - Fixed 3-hour windows: `WP_TIME_SLOTS = [{id:'s1',label:'8:00 AM – 11:00 AM'}, {id:'s2',label:'11:00 AM – 2:00 PM'}, {id:'s3',label:'2:00 PM – 5:00 PM'}]`
   - `slotsForWp(rolls)`: 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h)
@@ -160,11 +161,16 @@ Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.
 - On init: fetches own `installer_type` from `profiles`
 - Job composite key: `pi + '|' + sjId` — parsed with `key.indexOf('|')` (NOT split on `_`)
 - Status mapping: DB `assigned` ↔ local `scheduled`
-- Status update pattern (multi-installer aware): fetch parent order → find subjob → update the specific `sj.assignments[i].status` for this installer → recompute `sj.status` from all assignment statuses → `rollupStatus()` for parent → `sbPatch`
+- Status update pattern (multi-installer aware): fetch parent order → find subjob → update the specific `sj.assignments[i].status` for this installer → recompute `sj.status` from all assignment statuses → `rollupStatus()` for parent → `sbPatch`. Uses **fresh log from DB** (not local `parentLog`) to avoid log corruption.
+- Anti-double-submit: `_advBusy` flag + disable all `#detBody .bigbtn` at start of `adv()`; re-enabled on error or on next `wireDetail()` call after success.
 - Date/slot from own assignment: `myAssign.date` and `myAssign.slots` (not top-level `sj.date`)
 - Audit report screen: fetches by matching `phone` against completed audit orders
 - **Day strip**: spans **30 days back → today → 6 days ahead** (37 chips total). Generated with `Array.from({length:37},(_,i)=>addDays(i-30))`. `renderList()` auto-scrolls the `.days` strip so the selected day is centred. Today chip shows "Today" label. Empty days show no count badge.
-- **Installation Card**: per-room form with room name★, SKU★, Quantity★, multi-photo grid with crop modal★, comments
+- **Unscheduled / Overdue alert sections**: `listView()` prepends an alert section above the day strip:
+  - **Amber "Unscheduled"** — jobs where `!j.date`, status not `completed`/`reschedule`. Always visible on all days. Shows "No date set — tap to open" with amber border.
+  - **Red "Overdue"** — jobs where `j.date < todayStr`, status not `completed`/`reschedule`. Only shown on today's view (not on past-day views to avoid duplication). Shows "Overdue — {date}" with red border.
+  - Clicking these cards calls `openDetail()` exactly like normal day-view cards.
+- **Installation Card**: per-room form with room name★, SKU★, Quantity★, Height, Width, multi-photo grid with crop modal★, comments
 - **Photo capture**: same as auditor app — camera with crop, gallery compressed at capture
 - **PDF generation** (`genPDF`): uses `for...of` loop with `await compress(photo, 1600, 0.88)` before every `doc.addImage` call (prevents silent failures from large images)
 - `compress(dataURL, maxDim, q)`: always JPEG (no WebP fallback)
@@ -240,6 +246,8 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
       "name": "Living Room",
       "sku": "WF-OAK-12MM",
       "qty": "12 boxes",
+      "height": "10 ft",
+      "width": "12 ft",
       "photos": ["<base64>", "<base64>"],
       "comments": "Minor scratch on skirting noted"
     }
@@ -333,7 +341,7 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 
 16. **Rectification flow**: "↩ Raise Rectification" on completed orders. Creates new pending order with `service.rectification_of = original_pi`. RECT badge on original orders. Once raised, shows "↩ Rectified" chip.
 
-17. **Multi-installer status rollup**: when an installer updates their status, only their assignment's `status` field is updated. `sj.status` is recomputed from all `sj.assignments[i].status` values (completed only when ALL are completed).
+17. **Multi-installer status rollup**: when an installer updates their status, only their assignment's `status` field is updated. `sj.status` is recomputed from all `sj.assignments[i].status` values (completed only when ALL are completed). `rollupStatus()` includes `callpending` in the chain.
 
 18. **SM Add Staff**: both SM dashboards can create `site_auditor` and `installer` profiles via `sbPost('profiles', {name, email, role, installer_type, passcode: null})`. Passcode is always null on creation.
 
@@ -348,6 +356,14 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 23. **Wallpaper slot chips in standard mode**: in `SM_Install_Dashboard.html`, standard-mode wallpaper chips have `data-slot` and `data-idx` attributes (same as custom mode) so the `[data-slot]` click handler wires them. At the start of each `draw()` call, if `a.slots` is empty and mode is standard, it is initialised with `autoWpSlots(slotsN)` to keep model and UI in sync.
 
 24. **Reschedule remarks — implementation detail**: audit uses `id="reschedRemark"` (singleton per drawer open); install uses `id="reschedRemark_${sj.id}"` (one per sub-job). The `bookSlot` handler checks `if($("#reschedRemark"))` to distinguish reschedule from initial booking — the element only exists in the DOM when `o.status === 'reschedule'`.
+
+25. **Unscheduled jobs in installer app**: jobs with `date: null` or `date: ""` (SM saved assignment without setting a date) are completely invisible in the day-strip view. `listView()` compensates with an amber "Unscheduled — awaiting date from office" section above the day strip. Overdue jobs (past date, not completed) appear as a red "Overdue" section on today's view only. Both sections use `.jobcard[data-key]` and wire the same click handler as normal cards.
+
+26. **SM assignment date validation**: `renderAssignSection` save handler validates `a.date` (standard mode) or `a.dates.length` (custom mode) before saving. Wallpaper also validates `a.slots.length`. Blocks save and shows toast if missing — prevents invisible unscheduled jobs.
+
+27. **Install job card room fields**: rooms include `name`, `sku`, `qty`, `height`, `width` (optional), `photos[]`, `comments`. Height/Width displayed in PDF table as "H × W" column and in room subtitle line. `collectRooms()` includes both fields; autosave draft strips photos but keeps all other fields.
+
+28. **Installer status update — fresh log pattern**: `adv()` fetches the parent order fresh from DB and uses `parentRows[0].log` (not local `j.parentLog`) to build the updated log. This prevents log corruption when multiple installers work the same order concurrently.
 
 ## Deployment Workflow
 ```bash
