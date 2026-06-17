@@ -949,6 +949,11 @@ function renderAssignSection(o,sj,container){
     container.querySelector('#saveAssign_'+sj.id).onclick=async()=>{
       const valid=assigns.filter(a=>a.installer_id);
       if(!valid.length){toast("Select at least one installer");return;}
+      // Validate that dates are set
+      const missingDate=valid.find(a=>a.mode==='standard'&&!a.date);
+      const missingCustomDate=valid.find(a=>a.mode==='custom'&&(!a.dates||!a.dates.length));
+      if(missingDate||missingCustomDate){toast("Please set a date for each installer before saving");return;}
+      if(sj.type==='wallpaper'){const missingSlots=valid.find(a=>!a.slots||!a.slots.length);if(missingSlots){toast("Please select time slots for each wallpaper installer");return;}}
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';

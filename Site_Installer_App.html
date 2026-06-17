@@ -284,13 +284,33 @@ function listView(){
       <div class="dd">${d.getDate()}</div><div class="ct">${n>0?n+(n!==1?' jobs':' job'):''}</div></div>`;}).join("");
   const list=JOBS.filter(j=>j.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(j=>j.status!=="completed"),done=list.filter(j=>j.status==="completed");
+  // Jobs with no date — completely invisible without this section
+  const unscheduled=JOBS.filter(j=>!j.date&&!['completed','reschedule'].includes(j.status));
+  // Past-date jobs that are still active — only shown as alert on today's view to avoid duplication
+  const overdue=selDay===todayStr?JOBS.filter(j=>j.date&&j.date<todayStr&&!['completed','reschedule'].includes(j.status)):[];
   const card=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}">
     <div class="time">${slotLabel(j.slot)}</div>
     <div class="nm">${j.name}</div>
     <div class="ad">${j.addr}</div>
     <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
     <div class="statusrow">${badge(j.status)}</div></div>`;
-  return `<div class="days">${tabs}</div>
+  const unschCard=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}" style="border-color:var(--amber);">
+    <div class="time" style="color:var(--amber)">No date set — tap to open</div>
+    <div class="nm">${j.name}</div>
+    <div class="ad">${j.addr}</div>
+    <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
+    <div class="statusrow">${badge(j.status)}</div></div>`;
+  const overdueCard=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}" style="border-color:var(--red);">
+    <div class="time" style="color:var(--red)">Overdue — ${fmtDate(j.date)}</div>
+    <div class="nm">${j.name}</div>
+    <div class="ad">${j.addr}</div>
+    <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
+    <div class="statusrow">${badge(j.status)}</div></div>`;
+  const alertSection=(unscheduled.length||overdue.length)?`
+    ${overdue.length?`<div class="sechead" style="color:var(--red)">Overdue — action needed</div>${overdue.map(overdueCard).join("")}`:''}
+    ${unscheduled.length?`<div class="sechead" style="color:var(--amber)">Unscheduled — awaiting date from office</div>${unscheduled.map(unschCard).join("")}`:''}
+  `:'';
+  return `${alertSection}<div class="days">${tabs}</div>
     <div class="sechead">${selDay===todayStr?'Today':'Jobs'} — ${fmtDate(selDay)}</div>
     ${todo.map(card).join("")||`<div class="empty">No jobs for this day.</div>`}
     ${done.length?`<div class="sechead">Finished</div>${done.map(card).join("")}`:""}`;
