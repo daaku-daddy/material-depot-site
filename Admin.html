@@ -73,6 +73,7 @@
   .rb-service_mgr{background:#e3edf7;color:var(--navy);}
   .rb-site_auditor{background:#e4f0fb;color:var(--blue);}
   .rb-installer{background:var(--greenbg);color:var(--green);}
+  .rb-auditor_installer{background:#e0f4f4;color:#0f6e74;}
 
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
   .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;}
@@ -198,16 +199,18 @@ function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'nu
 function signOut(){localStorage.removeItem('md_user');window.location.href='Login.html';}
 
 const ROLES = {
-  admin:       {label:'Admin',           color:'#5b3aa6'},
-  service_mgr: {label:'Service Manager', color:'#1F3A5F', file:'SM_Audit_Dashboard.html'},
-  site_auditor:{label:'Site Auditor',    color:'#2E6CA8', file:'Site_Auditor_App.html'},
-  installer:   {label:'Site Installer',  color:'#1f7a3f', file:'Site_Installer_App.html'},
+  admin:              {label:'Admin',                    color:'#5b3aa6'},
+  service_mgr:        {label:'Service Manager',          color:'#1F3A5F', file:'SM_Audit_Dashboard.html'},
+  site_auditor:       {label:'Site Auditor',             color:'#2E6CA8', file:'Site_Auditor_App.html'},
+  installer:          {label:'Site Installer',           color:'#1f7a3f', file:'Site_Installer_App.html'},
+  auditor_installer:  {label:'Auditor + Installer',      color:'#0f6e74', file:'Site_Auditor_App.html'},
 };
-const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧'};
+const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧'};
 const ROLE_DESCS = {
   service_mgr:'Audit scheduling & installation tracking dashboard',
   site_auditor:'Field audit mobile app — site visits & reports',
   installer:'Field installation app — job checklist & progress',
+  auditor_installer:'Both audit and installer apps — can switch between them',
 };
 
 function roleBadge(r){const c=ROLES[r]||{label:r,color:'#999'};return `<span class="role-badge rb-${r}">${c.label}</span>`;}
@@ -260,7 +263,7 @@ async function renderOverview(m){
     sbGet('install_orders?status=in.(scheduled,onway,atsite)&select=id'),
   ]);
   const list=Array.isArray(users)?users:[];
-  const c={admin:0,service_mgr:0,site_auditor:0,installer:0};
+  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0};
   list.forEach(u=>{if(c[u.role]!==undefined)c[u.role]++;});
   const total=list.length;
   const active=(Array.isArray(auditActive)?auditActive.length:0)+(Array.isArray(installActive)?installActive.length:0);
@@ -357,11 +360,12 @@ function openAddUser(){
       <div class="form-group"><label>Full Name</label><input id="f-name" placeholder="e.g. Priya Sharma"></div>
       <div class="form-group"><label>Work Email</label><input id="f-email" type="email" placeholder="name@materialdepot.com"></div>
       <div class="form-group"><label>Role</label>
-        <select id="f-role" onchange="document.getElementById('f-itype-row').style.display=this.value==='installer'?'block':'none'">
+        <select id="f-role" onchange="document.getElementById('f-itype-row').style.display=(this.value==='installer'||this.value==='auditor_installer')?'block':'none'">
           <option value="">— Select a role —</option>
           <option value="service_mgr">Service Manager</option>
           <option value="site_auditor">Site Auditor</option>
           <option value="installer">Site Installer</option>
+          <option value="auditor_installer">Site Auditor + Installer</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -392,7 +396,7 @@ async function submitAddUser(){
   if(!email||!email.endsWith('@materialdepot.com')){err.textContent='Email must end in @materialdepot.com';err.classList.add('show');return;}
   if(!role){err.textContent='Please select a role.';err.classList.add('show');return;}
   const itypeEl=document.getElementById('f-itype');
-  const installer_type=role==='installer'&&itypeEl?itypeEl.value:'flooring';
+  const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
   btn.disabled=true;btn.textContent='Adding…';
   const res=await sbPost('profiles',{name,email,role,installer_type});
   btn.disabled=false;btn.innerHTML='Add User';
@@ -417,14 +421,15 @@ function openEditRole(u){
         <div style="margin-left:auto">${roleBadge(u.role)}</div>
       </div>
       <div class="form-group"><label>New Role</label>
-        <select id="e-role" onchange="document.getElementById('e-itype-row').style.display=this.value==='installer'?'block':'none'">
+        <select id="e-role" onchange="document.getElementById('e-itype-row').style.display=(this.value==='installer'||this.value==='auditor_installer')?'block':'none'">
           <option value="service_mgr" ${u.role==='service_mgr'?'selected':''}>Service Manager</option>
           <option value="site_auditor" ${u.role==='site_auditor'?'selected':''}>Site Auditor</option>
           <option value="installer" ${u.role==='installer'?'selected':''}>Site Installer</option>
+          <option value="auditor_installer" ${u.role==='auditor_installer'?'selected':''}>Site Auditor + Installer</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         </select>
       </div>
-      <div class="form-group" id="e-itype-row" style="display:${u.role==='installer'?'block':'none'}">
+      <div class="form-group" id="e-itype-row" style="display:${(u.role==='installer'||u.role==='auditor_installer')?'block':'none'}">
         <label>Installer Domain</label>
         <select id="e-itype">
           <option value="flooring" ${curType==='flooring'?'selected':''}>Wooden Flooring</option>
@@ -449,7 +454,7 @@ async function resetPasscode(id,name){
 async function submitEditRole(id,name){
   const role=document.getElementById('e-role').value;
   const itypeEl=document.getElementById('e-itype');
-  const installer_type=role==='installer'&&itypeEl?itypeEl.value:'flooring';
+  const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
   await sbPatch('profiles',id,{role,installer_type});
   closeModal();
   toast(`✓ ${name}'s role updated to ${ROLES[role].label}`);
@@ -476,7 +481,7 @@ async function deleteUser(id,name){
 }
 
 /* ---- ROLE VIEWER ---- */
-let rvRole=null, rvPersonEmail=null, rvPersons={}, rvSmTab='audit';
+let rvRole=null, rvPersonEmail=null, rvPersons={}, rvSmTab='audit', rvAiTab='auditor';
 
 async function renderRoleViewer(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
@@ -494,6 +499,9 @@ function drawRoleViewer(m){
     const smTabs=rvRole==='service_mgr'?`<div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="filt-btn${rvSmTab==='audit'?' active':''}" onclick="setSmTab('audit')">Audit Dashboard</button>
       <button class="filt-btn${rvSmTab==='install'?' active':''}" onclick="setSmTab('install')">Install Dashboard</button>
+    </div>`:rvRole==='auditor_installer'?`<div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="filt-btn${rvAiTab==='auditor'?' active':''}" onclick="setAiTab('auditor')">Site Auditor App</button>
+      <button class="filt-btn${rvAiTab==='installer'?' active':''}" onclick="setAiTab('installer')">Installer App</button>
     </div>`:'';
     frameHtml=smTabs+`<div class="iframe-wrap" id="rv-iframe-wrap">
       <div class="loading-row"><span class="spinner"></span> Loading ${p?p.name+"'s":'their'} view…</div>
@@ -507,7 +515,7 @@ function drawRoleViewer(m){
   m.innerHTML=`
     <div class="page-head"><h1>Role Viewer</h1><p>Preview exactly what each role sees when they log in.</p></div>
     <div class="role-cards">
-      ${['service_mgr','site_auditor','installer'].map(k=>{
+      ${['service_mgr','site_auditor','installer','auditor_installer'].map(k=>{
         const cnt=(rvPersons[k]||[]).length;
         return `<div class="role-card${rvRole===k?' active':''}" onclick="setRoleView('${k}')">
           <div class="rc-ico">${ROLE_ICONS[k]}</div>
@@ -532,6 +540,8 @@ function loadRvIframe(){
   if(!wrap) return;
   const file=rvRole==='service_mgr'
     ?(rvSmTab==='audit'?'SM_Audit_Dashboard.html':'SM_Install_Dashboard.html')
+    :rvRole==='auditor_installer'
+    ?(rvAiTab==='auditor'?'Site_Auditor_App.html':'Site_Installer_App.html')
     :ROLES[rvRole].file;
   const adminSession=localStorage.getItem('md_user');
   localStorage.setItem('md_user',JSON.stringify({name:person.name,email:person.email,role:rvRole}));
@@ -546,6 +556,7 @@ function loadRvIframe(){
 function setRoleView(k){rvRole=k;rvPersonEmail=null;drawRoleViewer(document.getElementById('main'));}
 function setRvPerson(email){rvPersonEmail=email;drawRoleViewer(document.getElementById('main'));}
 function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'));}
+function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'));}
 
 /* ---- JOBS OVERVIEW ---- */
 let jobsFilter='all';
@@ -653,10 +664,21 @@ async function renderPerf(m){
   const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
   const statsFor=u=>{
-    if(u.role==='site_auditor'){
+    if(u.role==='site_auditor'||u.role==='auditor_installer'){
       const mine=auditOrders.filter(o=>o.auditor_email===u.email);
-      const total=mine.length, done=mine.filter(o=>o.status==='completed').length;
-      const monthly=mine.filter(o=>(o.created_at||'').startsWith(ym)).length;
+      const atotal=mine.length, adone=mine.filter(o=>o.status==='completed').length;
+      const amonthly=mine.filter(o=>(o.created_at||'').startsWith(ym)).length;
+      if(u.role==='site_auditor') return {total:atotal,done:adone,pending:atotal-adone,monthly:amonthly,pct:atotal?Math.round(adone/atotal*100):0};
+      // auditor_installer: combine audit + install stats
+      let itotal=0,idone=0,imonthly=0;
+      installOrders.forEach(o=>{
+        (o.subjobs||[]).forEach(sj=>{
+          const asgn=sj.assignments||[];
+          const inAsgn=asgn.length?asgn.some(a=>a.installer_email===u.email):sj.installer_email===u.email;
+          if(inAsgn){itotal++;if(sj.status==='completed')idone++;if((o.created_at||'').startsWith(ym))imonthly++;}
+        });
+      });
+      const total=atotal+itotal,done=adone+idone,monthly=amonthly+imonthly;
       return {total,done,pending:total-done,monthly,pct:total?Math.round(done/total*100):0};
     }
     if(u.role==='installer'){

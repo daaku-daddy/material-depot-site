@@ -378,6 +378,8 @@
           <option value="installer_flooring">Flooring Installer</option>
           <option value="installer_wallpaper">Wallpaper Installer</option>
           <option value="site_auditor">Site Auditor</option>
+          <option value="auditor_installer_flooring">Auditor + Flooring Installer</option>
+          <option value="auditor_installer_wallpaper">Auditor + Wallpaper Installer</option>
         </select>
       </div>
       <div class="note">Passcode will be set by the staff member on their first login. You will not see their PIN.</div>
@@ -451,7 +453,7 @@ let ORDERS=[],DELETED=[];
 /* ============== SUPABASE LOAD ============== */
 async function loadInstallers(){
   try{
-    const rows=await sbGet('profiles?role=eq.installer&select=id,name,email,installer_type');
+    const rows=await sbGet('profiles?role=in.(installer,auditor_installer)&select=id,name,email,installer_type');
     INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:''}));
   }catch(e){console.error('loadInstallers',e);}
 }
@@ -1421,8 +1423,8 @@ async function submitAddStaff(){
   const err=document.getElementById('as-err');err.classList.remove('show');
   if(!name){err.textContent='Name is required.';err.classList.add('show');return;}
   if(!email||!email.endsWith('@materialdepot.com')){err.textContent='Email must end in @materialdepot.com';err.classList.add('show');return;}
-  const role=roleVal==='site_auditor'?'site_auditor':'installer';
-  const installer_type=roleVal==='installer_flooring'?'flooring':roleVal==='installer_wallpaper'?'wallpaper':null;
+  const role=roleVal==='site_auditor'?'site_auditor':roleVal.startsWith('auditor_installer')?'auditor_installer':'installer';
+  const installer_type=roleVal==='installer_flooring'||roleVal==='auditor_installer_flooring'?'flooring':roleVal==='installer_wallpaper'||roleVal==='auditor_installer_wallpaper'?'wallpaper':null;
   document.getElementById('as-submit').disabled=true;
   try{
     await sbPost('profiles',{name,email,role,installer_type,passcode:null});

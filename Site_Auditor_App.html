@@ -15,8 +15,10 @@
   header .logo{width:36px;height:36px;border-radius:9px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:16px;}
   header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
   header .h{font-size:16px;font-weight:700;line-height:1.1;}
-  header .me{margin-left:auto;text-align:right;font-size:11px;color:#cdd8e8;line-height:1.25;}
+  header .hright{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  header .me{text-align:right;font-size:11px;color:#cdd8e8;line-height:1.25;}
   header .me b{color:#fff;font-size:13px;}
+  header .rolesw{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.3);color:#fff;font-weight:700;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;}
   .wrap{padding:14px 14px 90px;}
   .daystrip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px;}
   .daychip{flex:0 0 88px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;cursor:pointer;}
@@ -104,7 +106,10 @@
   <header>
     <div class="logo">MD</div>
     <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Auditor</div></div>
-    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Auditor</div>
+    <div class="hright">
+      <button class="rolesw" id="switchRole" style="display:none">&#8644; Installer</button>
+      <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Auditor</div>
+    </div>
   </header>
   <div class="wrap" id="listView"></div>
 </div>
@@ -179,7 +184,7 @@ async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
-if(!SESSION||SESSION.role!=='site_auditor'){window.location.href='Login.html';}
+if(!SESSION||!['site_auditor','auditor_installer'].includes(SESSION.role)){window.location.href='Login.html';}
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',zone:''};
 document.getElementById('meName').textContent=ME.name;
 
@@ -719,6 +724,7 @@ function renderSketchData(r){
 
 $("#jcBack").onclick=()=>{$("#jcScreen").classList.add("hide");};
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?")){localStorage.removeItem('md_user');window.location.href="Login.html";}};
+if(SESSION.role==='auditor_installer'){const sw=document.getElementById('switchRole');if(sw){sw.style.display='';sw.onclick=()=>{window.location.href='Site_Installer_App.html';};}}
 renderList();
 loadJobs();
 </script>

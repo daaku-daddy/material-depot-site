@@ -14,8 +14,10 @@
   header{background:var(--navy);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;}
   header .logo{width:38px;height:38px;border-radius:9px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:17px;}
   header .h{font-size:18px;font-weight:800;line-height:1.1;}
-  header .me{margin-left:auto;text-align:right;font-size:12px;color:#cdd8e8;line-height:1.25;}
+  header .hright{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  header .me{text-align:right;font-size:12px;color:#cdd8e8;line-height:1.25;}
   header .me b{color:#fff;font-size:14px;}
+  header .rolesw{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.3);color:#fff;font-weight:700;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;}
   .wrap{padding:16px 16px 40px;}
   /* big day tabs */
   .days{display:flex;gap:10px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
@@ -105,7 +107,10 @@
   <header>
     <div class="logo">MD</div>
     <div><div class="h">My Installations</div></div>
-    <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br><span id="meType">Installer</span></div>
+    <div class="hright">
+      <button class="rolesw" id="switchRole" style="display:none">&#8644; Auditor</button>
+      <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br><span id="meType">Installer</span></div>
+    </div>
   </header>
   <div class="wrap" id="listView"></div>
 </div>
@@ -180,7 +185,7 @@ async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
-if(!SESSION||SESSION.role!=='installer'){window.location.href='Login.html';}
+if(!SESSION||!['installer','auditor_installer'].includes(SESSION.role)){window.location.href='Login.html';}
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'flooring',zone:''};
 // fetch own profile to get installer_type
 (async()=>{try{const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(ME.email)+'&select=installer_type&limit=1');if(Array.isArray(rows)&&rows[0]&&rows[0].installer_type)ME.type=rows[0].installer_type;}catch(e){}})();
@@ -783,6 +788,7 @@ async function genAuditPDF(){
 }
 
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?")){localStorage.removeItem('md_user');window.location.href="Login.html";}};
+if(SESSION.role==='auditor_installer'){const sw=document.getElementById('switchRole');if(sw){sw.style.display='';sw.onclick=()=>{window.location.href='Site_Auditor_App.html';};}}
 renderList();loadJobs();
 </script>
 </body>
