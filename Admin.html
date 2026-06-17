@@ -455,10 +455,15 @@ async function submitEditRole(id,name){
   const role=document.getElementById('e-role').value;
   const itypeEl=document.getElementById('e-itype');
   const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
-  await sbPatch('profiles',id,{role,installer_type});
-  closeModal();
-  toast(`✓ ${name}'s role updated to ${ROLES[role].label}`);
-  await renderUsers(document.getElementById('main'));
+  const res=await sbPatch('profiles',id,{role,installer_type});
+  if(Array.isArray(res)&&res.length>0){
+    closeModal();
+    toast(`✓ ${name}'s role updated to ${ROLES[role].label}`);
+    await renderUsers(document.getElementById('main'));
+  } else {
+    const msg=(res&&res.message)||'Unknown error';
+    toast(`Error: ${msg}`);
+  }
 }
 
 function confirmDelete(id,name){
