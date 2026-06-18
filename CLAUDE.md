@@ -35,10 +35,11 @@ Role-based web app for Material Depot's field operations. Plain HTML/CSS/JS, no 
 ### Table: `profiles`
 All users.
 - Columns: `id` (uuid), `name`, `email`, `role`, `passcode`, `installer_type`, `created_at`
-- Roles: `admin`, `service_mgr`, `site_auditor`, `installer`
+- Roles: `admin`, `service_mgr`, `site_auditor`, `installer`, `auditor_installer`
 - All emails end in `@materialdepot.com`
-- `installer_type`: `'flooring'` or `'wallpaper'` (only relevant for installer role)
+- `installer_type`: `'flooring'` or `'wallpaper'` (required for both `installer` and `auditor_installer` roles)
 - `passcode`: 4-digit string, null until first login (triggers passcode creation screen)
+- **DB constraint**: `profiles_role_check` CHECK on `role` column — must include all valid role values. When adding a new role, update via Supabase SQL Editor: `ALTER TABLE profiles DROP CONSTRAINT profiles_role_check; ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('admin','service_mgr','site_auditor','installer','auditor_installer'));`
 
 ### Table: `audit_orders`
 Created by Service Manager, worked by site auditors.
@@ -93,8 +94,9 @@ Created by Service Manager, worked by installers.
 - `localStorage` key: `md_user` → `{name, email, role}` — **persistent across browser sessions**
 - Every page reads session on load via `getSession()` and role-guards; redirects to `Login.html` on failure
 - Login flow: email → check profiles → if no passcode: create passcode screen; else: enter passcode screen
-- Role → file routing on login: `admin→Admin.html`, `service_mgr→SM_Audit_Dashboard.html`, `site_auditor→Site_Auditor_App.html`, `installer→Site_Installer_App.html`
+- Role → file routing on login: `admin→Admin.html`, `service_mgr→SM_Audit_Dashboard.html`, `site_auditor→Site_Auditor_App.html`, `installer→Site_Installer_App.html`, `auditor_installer→Site_Auditor_App.html` (default; can switch)
 - **SM dashboards accept both `service_mgr` and `admin` roles** — guard is `!['service_mgr','admin'].includes(SESSION.role)`. Admins can navigate directly to SM dashboards even though login routes them to Admin.html first.
+- **`auditor_installer` role**: accepted by both `Site_Auditor_App.html` (guard: `['site_auditor','auditor_installer']`) and `Site_Installer_App.html` (guard: `['installer','auditor_installer']`). A **"⇄ Installer"** / **"⇄ Auditor"** button appears in the header; tapping navigates between the two apps. Implemented via `#switchRole` button shown/wired in JS after session check.
 - Logout: clears `localStorage.removeItem('md_user')` then redirects to Login.html
 - Admin.html role viewer iframe trick also uses localStorage (not sessionStorage)
 
@@ -110,7 +112,8 @@ Created by Service Manager, worked by installers.
 - Nav views: Orders, Today's schedule, To reschedule, Follow-ups, Availability calendar, Slots & timings, Auditors & caps, Deleted Orders, Rectifications
 - **Follow-up date**: SM can set `service.follow_up_date` (YYYY-MM-DD) on any created/call_na order to defer slot booking. Shown as amber badge in orders table and dedicated Follow-ups view.
 - **Reschedule remarks**: when an order is in `reschedule` status, the drawer shows an optional Remarks textarea above the "Rebook slot" button. The remark is appended to the log entry as `"Slot rebooked: <date> · <slot> — <remark>"`. Toast also says "Slot rebooked" instead of "Slot booked".
-- **Add Staff**: SM can add site auditors and installers (name, email, role) from the Auditors & caps view. Passcode not set by SM — user creates it on first login.
+- **Add Staff**: SM can add site auditors, installers, and auditor+installers from the Auditors & caps view. Options: `site_auditor`, `installer_flooring`, `installer_wallpaper`, `auditor_installer_flooring`, `auditor_installer_wallpaper`. Passcode not set by SM — user creates it on first login.
+- **Auditor pool query**: `profiles?role=in.(site_auditor,auditor_installer)` — `auditor_installer` users appear as assignable auditors.
 - Order detail opens in right-side drawer
 - Slot system: in-memory `SLOTS` array with labels; `CAPS[auditorId][date]` per-auditor daily caps
 - `AUTO_STATUSES = ["onway", "atsite", "completed"]` — set by auditor app
@@ -120,7 +123,8 @@ Created by Service Manager, worked by installers.
 - Nav views: Orders, Call Operations today, Today's installs, To reschedule, Follow-ups, Installer calendar, Slots & timings, Installers, Deleted Orders, Rectifications
 - **Follow-up date**: SM can set `service.follow_up_date` on any order to defer installer scheduling. Shown as badge in orders table and dedicated Follow-ups view. Count badge in rail nav when follow-ups are due.
 - **Reschedule remarks**: when a sub-job is in `reschedule` status, `renderAssignSection` shows an optional Remarks textarea and relabels the save button to "Save reschedule". Remark is written to the log as `"<type> rescheduled — <remark>: <installer names>"`.
-- **Add Staff**: SM can add installers/auditors from the Installers view. Passcode not set by SM.
+- **Add Staff**: SM can add installers, auditors, and auditor+installers from the Installers view. Options: `installer_flooring`, `installer_wallpaper`, `site_auditor`, `auditor_installer_flooring`, `auditor_installer_wallpaper`. Passcode not set by SM.
+- **Installer pool query**: `profiles?role=in.(installer,auditor_installer)` — `auditor_installer` users appear as assignable installers.
 - **Multi-installer assignment UI**: Each sub-job (sj_fl, sj_wp) shows Standard/Custom toggle + installer cards. SM adds installers one by one with date/slots. Saved to `sj.assignments` array. No capacity limits enforced in Custom mode.
 - **Assignment validation**: Save button requires date for each installer (standard: `a.date`, custom: `a.dates.length > 0`). Wallpaper also requires `a.slots.length > 0`. Missing date/slots shows toast error and blocks save.
 - **Wallpaper slot logic**:
@@ -179,9 +183,10 @@ Both dashboards pre-populate the service creation `draft` from `o.skus` when `o.
 - Desktop layout with sidebar nav
 - Nav views: Overview, Users, Role Viewer, Jobs Overview, Performance, Job Cards
 - **Users**: full CRUD — add user, edit role, reset passcode (sets to null), delete
-- **Role Viewer**: iframe injection trick — uses localStorage (not sessionStorage) to set impersonated user session
+- **Role Viewer**: iframe injection trick — uses localStorage (not sessionStorage) to set impersonated user session. `auditor_installer` role shows tab switcher (`rvAiTab`: `'auditor'|'installer'`) to preview both apps, mirroring SM's audit/install tabs (`rvSmTab`).
 - **Job Cards**: all signed+completed job cards with PDF download
 - Both PDF generators handle both old `photo` field and new `photos[]` array
+- **`submitEditRole` error handling**: checks that `sbPatch` returns a non-empty array (Supabase `Prefer:return=representation`). Shows error toast with DB message on failure instead of silently succeeding.
 
 ## Wallpaper Installer Slot System
 | Rolls | Slots needed | Duration |
@@ -287,8 +292,9 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 --navy:#1F3A5F   --navy2:#16294a  --blue:#2E6CA8   --yellow:#F4C20D
 --ink:#1b2230    --muted:#67748a  --line:#dde3ec   --bg:#eef1f6   --card:#fff
 --green:#1f7a3f  --red:#b3261e    --amber:#9a6200  --purple:#5b3aa6
---teal:#0f6e74   (install dashboard only)
+--teal:#0f6e74   (install dashboard + auditor_installer role colour)
 ```
+Role badge CSS in Admin.html: `.rb-site_auditor` (blue), `.rb-installer` (green), `.rb-auditor_installer` (teal `#e0f4f4 / #0f6e74`).
 
 ## Status Chips
 | Status key | CSS class | Display label |
@@ -343,7 +349,7 @@ Wallpaper calc fields: `warea, rolls, repeat, match, adh, primer`
 
 17. **Multi-installer status rollup**: when an installer updates their status, only their assignment's `status` field is updated. `sj.status` is recomputed from all `sj.assignments[i].status` values (completed only when ALL are completed). `rollupStatus()` includes `callpending` in the chain.
 
-18. **SM Add Staff**: both SM dashboards can create `site_auditor` and `installer` profiles via `sbPost('profiles', {name, email, role, installer_type, passcode: null})`. Passcode is always null on creation.
+18. **SM Add Staff**: both SM dashboards can create `site_auditor`, `installer`, and `auditor_installer` profiles via `sbPost('profiles', {name, email, role, installer_type, passcode: null})`. Passcode is always null on creation. The add-staff form uses compound option values (`installer_flooring`, `auditor_installer_wallpaper`, etc.) that are decoded server-side into `role` + `installer_type` before posting.
 
 19. **vercel.json**: sets `Cache-Control: no-cache` for all `*.html` files to prevent mobile browsers serving stale JS.
 
