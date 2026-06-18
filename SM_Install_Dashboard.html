@@ -534,7 +534,7 @@ function wpSlotLoad(id,date){
   return n;
 }
 
-let activeView="orders",filterStatus="all",searchQ="",currentPI=null;
+let activeView="orders",filterStatus="all",searchQ="",currentPI=null,sortDelivery="asc";
 
 /* ============== COUNTS ============== */
 function needActionCount(){
@@ -612,7 +612,7 @@ function ordersView(){
     <button class="btn amber" data-goto="calls">Review calls</button></div>`:"";
   const filters=["all","followup","pending","deliv_delayed","created","scheduled","assigned","partial","completed"];
   const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
-  const rows=ORDERS.filter(o=>{
+  const filteredOrders=ORDERS.filter(o=>{
     if(filterStatus!=="all"){
       if(filterStatus==="opsdue")return opsCallDue(o);
       if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
@@ -621,7 +621,11 @@ function ordersView(){
     }
     if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
     return true;
-  }).map(o=>{
+  }).sort((a,b)=>{
+    const da=a.deliveryDate||'';const db=b.deliveryDate||'';
+    return sortDelivery==="asc"?da.localeCompare(db):db.localeCompare(da);
+  });
+  const rows=filteredOrders.map(o=>{
     const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c}</span>`).join("");
     const dd=new Date(o.deliveryDate+"T00:00");const delayed=o.status==="deliv_delayed";
     const delivCls=delayed?"delayed":(o.status==="deliv_ontime"||["created","scheduled","assigned","partial","completed"].includes(o.status)?"ontime":"");
@@ -642,6 +646,7 @@ function ordersView(){
     <div class="actions"><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}${banner}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
+    <button class="btn gray sm" id="toggleSort" style="white-space:nowrap;flex:0 0 auto">Delivery date ${sortDelivery==="asc"?"↑":"↓"}</button>
     <div class="filt">${fbtns}</div></div>
   <div class="tablecard"><table>
     <thead><tr><th>PI / PO</th><th>SKUs (audit match)</th><th>Categories</th><th>Customer</th><th>Address</th><th>Delivery date</th><th>Install sub-jobs</th><th>Status</th></tr></thead>
@@ -978,8 +983,10 @@ function renderAssignSection(o,sj,container){
   let assigns=(sj.assignments&&sj.assignments.length)
     ?sj.assignments.map(a=>({...a}))
     :sj.installer_email
-      ?[{installer_id:sj.installer||'',installer_email:sj.installer_email,installer_name:(installerById(sj.installer)||{name:'?'}).name,mode:'standard',date:sj.date||'',slots:sj.slot?[sj.slot]:autoWpSlots(slotsForWp(totalRolls(sj))),dates:[]}]
+      ?[{installer_id:sj.installer||'',installer_email:sj.installer_email,installer_name:(installerById(sj.installer)||{name:'?'}).name,mode:'standard',date:sj.date||'',slots:sj.slot?[sj.slot]:autoWpSlots(slotsForWp(totalRolls(sj))),dates:[],primary:true}]
       :[];
+  // ensure exactly one primary — first is primary if none set
+  if(assigns.length&&!assigns.some(a=>a.primary))assigns[0].primary=true;
   let customMode=assigns.length>0&&assigns[0].mode==='custom';
 
   function draw(){
@@ -994,10 +1001,12 @@ function renderAssignSection(o,sj,container){
 
     assigns.forEach((a,idx)=>{
       const inst=a.installer_id?installerById(a.installer_id):null;
+      const isPrimary=!!a.primary;
       html+=`<div class="acard">
         <div class="acard-head">
           <div class="acard-num">${idx+1}</div>
           <div style="flex:1"><div style="font-weight:700;font-size:13px">${inst?inst.name:'Select installer'}</div><div style="font-size:11px;color:var(--muted)">${sj.type} installer</div></div>
+          ${isPrimary?`<span style="font-size:10px;font-weight:800;background:#fff4d6;color:#7a5800;border-radius:6px;padding:3px 8px">&#9733; Primary</span>`:`<button class="btn ghost sm" data-makeprimary="${idx}" style="font-size:11px;padding:4px 9px">Make primary</button>`}
           ${assigns.length>1?`<button class="btn danger sm" data-remove="${idx}">Remove</button>`:''}
         </div>
         <div class="acard-body">
@@ -1034,7 +1043,8 @@ function renderAssignSection(o,sj,container){
       customMode=btn.dataset.mode==='custom';
       assigns.forEach(a=>{a.mode=customMode?'custom':'standard';});draw();
     });
-    container.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{assigns.splice(Number(btn.dataset.remove),1);draw();});
+    container.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{assigns.splice(Number(btn.dataset.remove),1);if(!assigns.some(a=>a.primary)&&assigns.length)assigns[0].primary=true;draw();});
+    container.querySelectorAll('[data-makeprimary]').forEach(btn=>btn.onclick=()=>{const idx=Number(btn.getAttribute('data-makeprimary'));assigns.forEach((a,i)=>a.primary=i===idx);draw();});
     container.querySelectorAll('[data-instpick]').forEach(sel=>sel.onchange=()=>{
       const idx=Number(sel.dataset.instpick);const inst=installerById(sel.value);
       assigns[idx].installer_id=sel.value;assigns[idx].installer_email=inst?inst.email:'';assigns[idx].installer_name=inst?inst.name:'';draw();
@@ -1055,7 +1065,7 @@ function renderAssignSection(o,sj,container){
       assigns[idx].slots=slots;draw();
     });
     container.querySelector('#addAssign_'+sj.id).onclick=()=>{
-      assigns.push({installer_id:'',installer_email:'',installer_name:'',mode:customMode?'custom':'standard',date:'',slots:sj.type==='wallpaper'?autoWpSlots(slotsForWp(totalRolls(sj))):[],dates:[]});draw();
+      assigns.push({installer_id:'',installer_email:'',installer_name:'',mode:customMode?'custom':'standard',date:'',slots:sj.type==='wallpaper'?autoWpSlots(slotsForWp(totalRolls(sj))):[],dates:[],primary:false});draw();
     };
     container.querySelector('#saveAssign_'+sj.id).onclick=async()=>{
       const valid=assigns.filter(a=>a.installer_id);
@@ -1334,6 +1344,7 @@ function wire(){
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{activeView=b.dataset.goto;render();});
   if($("#q"))$("#q").oninput=e=>{searchQ=e.target.value;const tc=$("#main .tablecard");if(tc){const tmp=document.createElement("div");tmp.innerHTML=ordersView();tc.outerHTML=tmp.querySelector(".tablecard").outerHTML;}wire();const q=$("#q");if(q){q.focus();q.setSelectionRange(searchQ.length,searchQ.length);}};
   document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
+  if($("#toggleSort"))$("#toggleSort").onclick=()=>{sortDelivery=sortDelivery==="asc"?"desc":"asc";render();};
   document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{const k=s.dataset.stat;if(k==="opsdue"){activeView="calls";render();return;}filterStatus=k;render();});
   document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);render();toast("Flooring window deleted");});
   document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);render();toast("Wallpaper window deleted");});

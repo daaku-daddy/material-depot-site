@@ -95,6 +95,9 @@
   .reqstar{color:var(--red);}
   .addroom{width:100%;background:#fff;border:2px dashed var(--blue);color:var(--blue);border-radius:16px;padding:18px;font-weight:800;font-size:18px;cursor:pointer;margin-bottom:16px;}
   canvas.sign{width:100%;height:190px;border:2px dashed var(--blue);border-radius:14px;background:#fff;touch-action:none;display:block;}
+  .star-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;}
+  .star-btn{width:42px;height:42px;border-radius:10px;border:1.5px solid var(--line);background:#fff;font-weight:800;font-size:16px;cursor:pointer;color:var(--muted);display:grid;place-items:center;}
+  .star-btn.on{background:var(--navy);color:#fff;border-color:var(--navy);}
   .footer{position:fixed;left:0;right:0;bottom:0;max-width:480px;margin:0 auto;background:#fff;border-top:2px solid var(--line);padding:12px 16px;display:flex;gap:10px;z-index:45;}
   .footer .bigbtn{margin-top:0;padding:16px;font-size:17px;}
   .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--navy2);color:#fff;padding:14px 22px;border-radius:30px;font-size:16px;opacity:0;transition:.25s;z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:700;}
@@ -235,6 +238,8 @@ async function loadJobs(){
         if(myAssign||legacyMatch){
           const aDate=myAssign?(myAssign.mode==='custom'?(myAssign.dates&&myAssign.dates[0])||null:myAssign.date||null):sj.date||null;
           const aSlots=myAssign?(myAssign.slots||[]):(sj.slot?[sj.slot]:[]);
+          // Primary = the assignment with primary:true, or the first one if none set
+          const isPrimary=myAssign?(myAssign.primary===true||(!sj.assignments.some(a=>a.primary)&&sj.assignments.indexOf(myAssign)===0)):true;
           newJobs.push({
             id:r.id,
             sjId:sj.id,
@@ -252,7 +257,8 @@ async function loadJobs(){
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
             jobcard:existing[r.pi+'|'+sj.id]||sj.jobcard||null,
-            parentLog:r.log||[]
+            parentLog:r.log||[],
+            isPrimary
           });
         }
       });
@@ -379,6 +385,7 @@ function detailBody(j){
         <div class="k">Address</div><div class="v">${j.addr}</div>
         <div class="k">Product</div><div class="v">${j.sku.map(s=>[s.code,s.skuName].filter(Boolean).join(' · ')+(s.qty?`<span style="font-weight:600;color:var(--muted)"> · Qty: ${s.qty}</span>`:'')+(s.link?` <a href="${s.link}" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>`:'')).join("<br>")}</div>
         <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
+        <div class="k">Your role</div><div class="v">${j.isPrimary?'<span style="font-weight:800;color:#7a5800;background:#fff4d6;border-radius:6px;padding:2px 9px">&#9733; Primary installer</span>':'<span style="color:var(--muted)">Additional installer</span>'}</div>
         <div class="k">Your BM</div><div class="v">${j.bm}</div>
       </div>
       ${j.auditBy==='material_depot'?`<button class="bigbtn ghost" id="viewAudit" style="margin-top:14px">View site audit report</button>`:''}
@@ -405,13 +412,11 @@ function wireDetail(j){
             const myA=sj.assignments.find(a=>a.installer_email===ME.email);
             if(myA)myA.status=dbSt;
             else sj.status=dbSt;
-            const sts=sj.assignments.map(a=>a.status||'assigned');
-            if(sts.every(s=>s==='completed'))sj.status='completed';
-            else if(sts.some(s=>s==='completed')&&sts.some(s=>s!=='completed'))sj.status='partial';
-            else if(sts.some(s=>['onway','atsite'].includes(s)))sj.status=sts.find(s=>['onway','atsite'].includes(s));
-            else if(sts.some(s=>s==='reschedule'))sj.status='reschedule';
-            else if(sts.some(s=>s==='callpending'))sj.status='callpending';
-            else sj.status=dbSt;
+            // sj.status driven by the primary installer; additional installers don't affect it
+            const primaryA=sj.assignments.find(a=>a.primary===true)||sj.assignments[0];
+            const amPrimary=myA&&(myA.primary===true||(!sj.assignments.some(a=>a.primary)&&sj.assignments.indexOf(myA)===0));
+            if(amPrimary){sj.status=dbSt;}
+            // else: non-primary — their assignment is updated above but sj.status unchanged
           }else{sj.status=dbSt;}
           const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
           freshLog.push({t:logMsg,d:"Today "+now,by:"auto"});
@@ -620,9 +625,12 @@ function finishCard(j){
       </div>
     </div>
     ${roomCards}
-    <button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Sign &amp; complete &#8594;</button>
+    ${j.isPrimary
+      ?`<button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Get feedback &amp; sign &#8594;</button>`
+      :`<div class="note" style="margin-bottom:14px">You are an <b>additional installer</b> — the primary installer handles the customer signature. Tap below to mark your part complete.</div>
+       <button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Mark my part complete &#8594;</button>`}
     <button class="bigbtn ghost" id="backToRoomsFromPreview">&#8592; Back to rooms</button>`;
-  $("#proceedSign").onclick=()=>signAndFinish(j);
+  $("#proceedSign").onclick=()=>{if(j.isPrimary){signAndFinish(j);}else{markAdditionalComplete(j);}};
   $("#backToRoomsFromPreview").onclick=()=>{
     document.querySelector(".footer").classList.remove("hide");
     const saved=collectRooms();
@@ -635,7 +643,79 @@ function finishCard(j){
   };
 }
 
+async function markAdditionalComplete(j){
+  j.jobcard={rooms:collectRooms()};
+  const prev=j.status;j.status="completed";
+  const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  toast("Saving...");
+  try{
+    const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
+    if(Array.isArray(parentRows)&&parentRows[0]){
+      const subjobs=parentRows[0].subjobs||[];
+      const sj=subjobs.find(s=>s.id===j.sjId);
+      if(sj){
+        if(sj.assignments&&sj.assignments.length){
+          const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+          if(myA)myA.status='completed';
+          // sj.jobcard saves even for additional installers (their rooms)
+          sj.jobcard=j.jobcard;
+          // sj.status only changes via primary — no-op here for additional
+        }else{sj.status='completed';sj.jobcard=j.jobcard;}
+      }
+      const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
+      freshLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation done (additional installer: "+ME.name+")",d:"Today "+now,by:"auto"});
+      const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
+      await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
+      try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
+    }
+  }catch(e){j.status=prev;toast("Network error — couldn't save. Try again");return;}
+  await loadJobs();
+  document.querySelector(".footer").classList.remove("hide");
+  $("#jcScreen").classList.add("hide");
+  openDetail(j.pi+'|'+j.sjId);
+  toast("Your part marked complete");
+}
+
+function _starRowInst(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
+
 function signAndFinish(j){
+  let _ratings={q1:0,q2:0,comments:''};
+  function renderRatings(){
+    $("#jcBody").innerHTML=`
+      <div class="panel"><h2 style="margin:0 0 14px">Customer feedback</h2>
+        <p style="font-size:14px;color:var(--muted);margin:0 0 20px">Ask the customer to rate their experience. Tap a number from 1 (lowest) to 10 (highest).</p>
+        <div style="margin-bottom:20px">
+          <label style="font-weight:700;font-size:15px">1. How would you like to rate the overall site installation experience?</label>
+          ${_starRowInst('q1',_ratings.q1)}
+        </div>
+        <div style="margin-bottom:20px">
+          <label style="font-weight:700;font-size:15px">2. How would you like to rate your Site Installer?</label>
+          ${_starRowInst('q2',_ratings.q2)}
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-weight:700;font-size:15px">Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
+          <textarea id="ratingComments" placeholder="Any feedback or comments from the customer…" style="width:100%;margin-top:10px;padding:12px;border:1.5px solid var(--line);border-radius:12px;font-size:14px;min-height:90px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
+        </div>
+      </div>
+      <button class="bigbtn navy" id="proceedToSignInst">Next: Customer signature &#8594;</button>
+      <button class="bigbtn ghost" id="backFromRatingsInst" style="margin-top:10px">&#8592; Back to preview</button>`;
+    document.querySelectorAll("[data-star-id]").forEach(btn=>btn.onclick=()=>{
+      const id=btn.getAttribute('data-star-id');const val=+btn.getAttribute('data-star-val');
+      _ratings[id]=val;renderRatings();
+    });
+    $("#ratingComments").oninput=e=>_ratings.comments=e.target.value;
+    $("#backFromRatingsInst").onclick=()=>finishCard(j);
+    $("#proceedToSignInst").onclick=()=>{
+      if(!_ratings.q1){toast("Please rate the overall experience");return;}
+      if(!_ratings.q2){toast("Please rate the installer");return;}
+      _ratings.comments=$("#ratingComments").value;
+      showInstallSignature(j,_ratings);
+    };
+  }
+  renderRatings();
+}
+
+function showInstallSignature(j,ratings){
   $("#jcBody").innerHTML=`
     <div class="panel"><h2>Customer signature <span class="reqstar">★</span></h2>
       <div class="note">Show the phone to the customer. Ask them to sign that the installation is done and they are happy.</div>
@@ -644,13 +724,13 @@ function signAndFinish(j){
       <div class="fieldgap" style="margin-top:12px"><label>Customer name</label><input id="signName" value="${j.name}"></div>
     </div>
     <button class="bigbtn green" id="reallyDone">Save &amp; finish job</button>
-    <button class="bigbtn ghost" id="backToPreviewFromSign" style="margin-top:10px">&#8592; Back to preview</button>`;
+    <button class="bigbtn ghost" id="backToPreviewFromSign" style="margin-top:10px">&#8592; Back</button>`;
   jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
-  $("#backToPreviewFromSign").onclick=()=>finishCard(j);
+  $("#backToPreviewFromSign").onclick=()=>signAndFinish(j);
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
-    j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value}};
+    j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:"Today "+now,by:"auto"});
@@ -664,7 +744,8 @@ function signAndFinish(j){
           if(sj.assignments&&sj.assignments.length){
             const myA=sj.assignments.find(a=>a.installer_email===ME.email);
             if(myA)myA.status='completed';
-            sj.status=sj.assignments.every(a=>a.status==='completed')?'completed':'partial';
+            // Primary completing drives the sj to completed (additional installers tracked separately)
+            sj.status='completed';
           }else{sj.status='completed';}
           sj.jobcard=j.jobcard;
         }
@@ -719,7 +800,14 @@ async function genPDF(j){
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
   const consent="I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.";
-  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=70;
+  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=56;
+  const R=j.jobcard.sign&&j.jobcard.sign.ratings;
+  if(R){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      body:[['Overall installation experience',String(R.q1||'—')+' / 10'],['Site Installer rating',String(R.q2||'—')+' / 10'],...(R.comments?[['Comments',R.comments]]:[])].filter(Boolean)});
+    y=doc.lastAutoTable.finalY+12;
+  }
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((j.jobcard.sign&&j.jobcard.sign.name)||j.name),M,y);y+=18;doc.text('Date: '+fmtDate(j.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
   if(j.jobcard.sign&&j.jobcard.sign.img){const si=await compress(j.jobcard.sign.img,800,0.88);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}

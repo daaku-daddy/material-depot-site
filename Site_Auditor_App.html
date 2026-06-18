@@ -96,6 +96,9 @@
   .footer{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;z-index:45;}
   .footer .btn{font-size:14px;padding:13px 8px;}
   canvas.sign{width:100%;height:170px;border:1px dashed var(--blue);border-radius:10px;background:#fff;touch-action:none;display:block;}
+  .star-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .star-btn{width:38px;height:38px;border-radius:9px;border:1.5px solid var(--line);background:#fff;font-weight:800;font-size:15px;cursor:pointer;color:var(--muted);display:grid;place-items:center;}
+  .star-btn.on{background:var(--navy);color:#fff;border-color:var(--navy);}
   .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--navy2);color:#fff;padding:11px 18px;border-radius:30px;font-size:14px;opacity:0;transition:.25s;z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3);}
   .toast.show{opacity:1;}
   .hide{display:none!important;}
@@ -583,7 +586,48 @@ function reviewAndSign(o){
   $("#proceedSign").onclick=()=>signAndComplete(o);
 }
 
+function _starRow(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
+
 function signAndComplete(o){
+  let _ratings={q1:0,q2:0,comments:''};
+  function renderRatings(){
+    $("#jcBody").innerHTML=`
+      <div class="card"><h2 style="margin:0 0 14px">Client feedback</h2>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Ask the client to rate their experience. Tap a number from 1 (lowest) to 10 (highest).</p>
+        <div style="margin-bottom:18px">
+          <label style="font-weight:700;font-size:14px">1. How would you like to rate the overall Site Audit experience?</label>
+          ${_starRow('q1',_ratings.q1)}
+        </div>
+        <div style="margin-bottom:18px">
+          <label style="font-weight:700;font-size:14px">2. How would you like to rate your site auditor and their behaviour?</label>
+          ${_starRow('q2',_ratings.q2)}
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="font-weight:700;font-size:14px">Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
+          <textarea id="ratingComments" placeholder="Any feedback or comments from the client…" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;min-height:80px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
+        </div>
+      </div>
+      <div class="actions" style="margin-bottom:24px">
+        <button class="btn ghost" id="backFromRatings">&#8592; Back to preview</button>
+        <button class="btn navy" id="proceedToSign">Next: Signature &#8594;</button>
+      </div>`;
+    document.querySelectorAll("[data-star-id]").forEach(btn=>btn.onclick=()=>{
+      const id=btn.getAttribute('data-star-id');const val=+btn.getAttribute('data-star-val');
+      _ratings[id]=val;renderRatings();
+    });
+    $("#ratingComments").oninput=e=>_ratings.comments=e.target.value;
+    $("#backFromRatings").onclick=()=>reviewAndSign(o);
+    $("#proceedToSign").onclick=()=>{
+      if(!_ratings.q1){toast("Please rate the overall experience");return;}
+      if(!_ratings.q2){toast("Please rate the site auditor");return;}
+      _ratings.comments=$("#ratingComments").value;
+      showAuditSignature(o,_ratings);
+    };
+  }
+  renderRatings();
+}
+
+function showAuditSignature(o,ratings){
   const roomSummary=jcRooms.map((r,i)=>`<div class="kv" style="margin-bottom:8px"><div class="k">Room ${i+1}</div><div class="v">${r.name||'(unnamed)'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU ${r.sku||'NA'}</div></div>`).join("");
   $("#jcBody").innerHTML=`
    <div class="card"><h2>Summary</h2><div class="kv">
@@ -602,16 +646,16 @@ function signAndComplete(o){
      </div>
    </div>
    <div class="actions" style="margin-bottom:24px">
-     <button class="btn ghost" id="backToPreview">&#8592; Back to preview</button>
+     <button class="btn ghost" id="backToPreview">&#8592; Back</button>
      <button class="btn green" id="finishAudit">Generate PDF &amp; complete</button>
    </div>`;
   const sc=$("#signCanvas");jcSignPad=new SignPad(sc);setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
-  $("#backToPreview").onclick=()=>reviewAndSign(o);
+  $("#backToPreview").onclick=()=>signAndComplete(o);
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
     const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
-    jcSign={img:jcSignPad.export(),name:$("#signName").value};
+    jcSign={img:jcSignPad.export(),name:$("#signName").value,ratings};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
@@ -700,7 +744,14 @@ async function genPDF(o){
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
   const consent="I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.";
-  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=70;
+  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=58;
+  const R=o.jobcard.sign&&o.jobcard.sign.ratings;
+  if(R){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      body:[['Overall Site Audit experience',String(R.q1||'—')+' / 10'],['Site Auditor behaviour',String(R.q2||'—')+' / 10'],[R.comments?'Comments':null,R.comments||null].filter(Boolean).length?['Comments',R.comments||'']:null].filter(Boolean)});
+    y=doc.lastAutoTable.finalY+12;
+  }
   doc.setFontSize(10);doc.setTextColor(...muted);
   doc.text('Client name: '+((o.jobcard.sign&&o.jobcard.sign.name)||o.name),M,y);y+=18;
   doc.text('Date: '+fmtDate(o.date),M,y);
