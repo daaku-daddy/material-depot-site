@@ -248,7 +248,7 @@ async function loadJobs(){
             slot:aSlots[0]||null,
             slots:aSlots,
             status:sj.status==='assigned'?'scheduled':sj.status,
-            sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||''})),
+            sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||'',qty:it.qty||''})),
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
             jobcard:existing[r.pi+'|'+sj.id]||sj.jobcard||null,
@@ -377,7 +377,7 @@ function detailBody(j){
         <div class="k">Customer</div><div class="v">${j.name}</div>
         <div class="k">Phone</div><div class="v">${j.phone}</div>
         <div class="k">Address</div><div class="v">${j.addr}</div>
-        <div class="k">Product</div><div class="v">${j.sku.map(s=>[s.code,s.skuName].filter(Boolean).join(' · ')+(s.link?` <a href="${s.link}" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>`:'')).join("<br>")}</div>
+        <div class="k">Product</div><div class="v">${j.sku.map(s=>[s.code,s.skuName].filter(Boolean).join(' · ')+(s.qty?`<span style="font-weight:600;color:var(--muted)"> · Qty: ${s.qty}</span>`:'')+(s.link?` <a href="${s.link}" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>`:'')).join("<br>")}</div>
         <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
         <div class="k">Your BM</div><div class="v">${j.bm}</div>
       </div>
@@ -506,7 +506,7 @@ function openJobCard(j){
 }
 function addRoom(restore){
   const id=++jcSeq;
-  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),qty:restore?restore.qty||'':'',height:restore?restore.height||'':'',width:restore?restore.width||'':'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?restore.comments:''};
+  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),qty:restore?restore.qty||'':(jcJob.sku[0]&&jcJob.sku[0].qty?jcJob.sku[0].qty:''),height:restore?restore.height||'':'',width:restore?restore.width||'':'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?restore.comments:''};
   const block=el('div','roomblock');block.dataset.id=id;
   const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+(jcRooms.length+1)));
   const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();autosave();};top.appendChild(rm);block.appendChild(top);

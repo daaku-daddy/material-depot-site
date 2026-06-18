@@ -238,6 +238,7 @@
   <nav class="rail" id="rail">
     <div class="grp">INSTALLATIONS</div>
     <a class="active" data-view="orders"><span class="ico">&#9638;</span>Orders<span class="ct" id="cOrders">0</span></a>
+    <a data-view="needaction"><span class="ico">&#9888;</span>Need Action<span class="ct alert" id="cNeedAction"></span></a>
     <a data-view="calls"><span class="ico">&#9742;</span>Call Operations today<span class="ct alert" id="cCalls">0</span></a>
     <a data-view="schedule"><span class="ico">&#9719;</span>Today's installs<span class="ct" id="cToday">0</span></a>
     <a data-view="reschedule"><span class="ico">&#8635;</span>To reschedule<span class="ct" id="cResched">0</span></a>
@@ -411,7 +412,10 @@ document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 /* ============== CONFIG ============== */
 const INSTALL_SKU="SVC-INSTALL-001";
 const CUSTOM_WP_SKU="WP-CUST";
-let SLOTS=[{id:"s1",label:"9 AM – 12 PM"},{id:"s2",label:"12 PM – 3 PM"},{id:"s3",label:"3 PM – 6 PM"}];
+// Flooring install windows (configurable, full day per slot)
+let SLOTS_FL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
+// Wallpaper install windows (configurable, replaces hardcoded SLOTS_WP)
+let SLOTS_WP=[{id:"sw1",label:"8:00 AM – 11:00 AM"},{id:"sw2",label:"11:00 AM – 2:00 PM"},{id:"sw3",label:"2:00 PM – 5:00 PM"}];
 
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
@@ -420,15 +424,10 @@ function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 let INSTALLERS=[];
 const FLOOR_DAY_CAP=1;        // flooring jobs/installer/day
 const WP_DAY_SLOTS=3;         // max wallpaper slots/installer/day (3 × 3h windows)
-const WP_TIME_SLOTS=[
-  {id:'s1',label:'8:00 AM – 11:00 AM'},
-  {id:'s2',label:'11:00 AM – 2:00 PM'},
-  {id:'s3',label:'2:00 PM – 5:00 PM'}
-];
 function slotsForWp(rolls){const r=Number(rolls)||0;return r<=3?1:r<=6?2:3;}
 function totalRolls(sj){return(sj.items||[]).reduce((s,it)=>s+Number(it.rolls||0),0);}
 function dateRange(from,to){if(!from||!to||from>to)return from?[from]:[];const out=[];let d=new Date(from+'T00:00');const end=new Date(to+'T00:00');while(d<=end){out.push(dstr(d));d.setDate(d.getDate()+1);}return out;}
-function autoWpSlots(n){return WP_TIME_SLOTS.slice(0,n).map(s=>s.id);}
+function autoWpSlots(n){return SLOTS_WP.slice(0,n).map(s=>s.id);}
 
 const STATUS={
   pending:{l:"Pending",c:"c-pending"},
@@ -491,7 +490,7 @@ async function loadOrders(){
 const $=s=>document.querySelector(s);
 function fmtDateRaw(d){return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return fmtDateRaw(d);};
-const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
+const slotLabel=id=>([...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id)||{}).label||"—";
 const installerById=id=>INSTALLERS.find(a=>a.id===id);
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
 function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
@@ -499,8 +498,10 @@ function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target=
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
 
 // Ops-call window: custom WP -> 3 days prior; else -> 1 day prior
+// Also fires for deliv_delayed so SM is reminded to re-confirm the new delivery date
 function opsCallDue(o){
-  if(o.status!=="pending")return false;
+  if(!['pending','deliv_delayed'].includes(o.status))return false;
+  if(!o.deliveryDate)return false;
   const dd=new Date(o.deliveryDate+"T00:00");
   const daysToDelivery=Math.round((dd-today)/(86400000));
   return o.customWp? daysToDelivery<=3 : daysToDelivery<=1;
@@ -536,8 +537,15 @@ function wpSlotLoad(id,date){
 let activeView="orders",filterStatus="all",searchQ="",currentPI=null;
 
 /* ============== COUNTS ============== */
+function needActionCount(){
+  const opsDue=ORDERS.filter(opsCallDue).length;
+  const fuDue=ORDERS.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today)).length;
+  const resched=ORDERS.filter(o=>o.status==="reschedule"||(o.subjobs||[]).some(sj=>sj.status==="reschedule")).length;
+  return opsDue+fuDue+resched;
+}
 function counts(){
   $("#cOrders").textContent=ORDERS.length;
+  const na=needActionCount();if($("#cNeedAction"))$("#cNeedAction").textContent=na||'';
   $("#cCalls").textContent=ORDERS.filter(opsCallDue).length;
   $("#cToday").textContent=ORDERS.filter(o=>(o.subjobs||[]).some(sj=>sj.date===dstr(today))).length;
   $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule"||(o.subjobs||[]).some(sj=>sj.status==="reschedule")).length;
@@ -553,6 +561,7 @@ function render(){
   document.querySelectorAll("#rail a").forEach(a=>a.classList.toggle("active",a.dataset.view===activeView));
   const m=$("#main");
   if(activeView==="orders")m.innerHTML=ordersView();
+  else if(activeView==="needaction")m.innerHTML=needActionView();
   else if(activeView==="calls")m.innerHTML=callsView();
   else if(activeView==="schedule")m.innerHTML=scheduleView();
   else if(activeView==="reschedule")m.innerHTML=reschedView();
@@ -566,6 +575,20 @@ function render(){
 }
 function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
 
+function orderCategoriesInstall(o){
+  if(o.service){
+    const cats=[];
+    if(o.service.flooring&&o.service.flooring.length)cats.push('<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>');
+    if(o.service.wallpaper&&o.service.wallpaper.length)cats.push(o.customWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>');
+    if(cats.length)return `<div class="pill-list">${cats.join("")}</div>`;
+  }
+  const cats=new Set();
+  (o.skus||[]).forEach(s=>{
+    if(s.type==='flooring')cats.add('<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>');
+    if(s.type==='wallpaper')cats.add(o.customWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>');
+  });
+  return cats.size?`<div class="pill-list">${[...cats].join("")}</div>`:'<span style="color:var(--muted)">—</span>';
+}
 function subjobSummary(o){
   if(!o.subjobs)return '<span style="color:var(--muted)">—</span>';
   return `<div class="subjobs">`+o.subjobs.map(sj=>{
@@ -607,6 +630,7 @@ function ordersView(){
     return `<tr data-pi="${o.pi}">
       <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
       <td><div class="pill-list">${skupills}</div><div style="margin-top:4px">${auditBadge}</div></td>
+      <td>${orderCategoriesInstall(o)}</td>
       <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
       <td style="max-width:170px">${mapLink(o.addr)}</td>
       <td><span class="deliv ${delivCls}">${fmtDate(o.deliveryDate)}</span>${opsFlag}</td>
@@ -620,9 +644,75 @@ function ordersView(){
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <div class="filt">${fbtns}</div></div>
   <div class="tablecard"><table>
-    <thead><tr><th>PI / PO</th><th>SKUs (audit match)</th><th>Customer</th><th>Address</th><th>Delivery date</th><th>Install sub-jobs</th><th>Status</th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">No orders match.</td></tr>`}</tbody>
+    <thead><tr><th>PI / PO</th><th>SKUs (audit match)</th><th>Categories</th><th>Customer</th><th>Address</th><th>Delivery date</th><th>Install sub-jobs</th><th>Status</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">No orders match.</td></tr>`}</tbody>
   </table></div>`;
+}
+
+function needActionView(){
+  const opsList=ORDERS.filter(opsCallDue);
+  const fuList=ORDERS.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today))
+    .filter(o=>!opsCallDue(o));
+  const reschedItems=[];
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.status==="reschedule")reschedItems.push({o,sj});}));
+  const reschedPIs=new Set(reschedItems.map(x=>x.o.pi));
+  const fuPIs=new Set(fuList.map(x=>x.pi));
+  const opsPIs=new Set(opsList.map(x=>x.pi));
+
+  let html=`<div class="crumbs">Installations / Need Action</div>
+  <div class="pagehead"><div><h1>Need Action today</h1><p>All orders requiring your attention today — ops calls due, follow-ups overdue, and sub-jobs to reschedule.</p></div></div>`;
+
+  if(!opsList.length&&!fuList.length&&!reschedItems.length){
+    html+=`<div class="tablecard" style="padding:30px;text-align:center;color:var(--muted)">Nothing needs action today.</div>`;
+    return html;
+  }
+
+  if(opsList.length){
+    const rows=opsList.map(o=>{
+      const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
+      return `<tr data-pi="${o.pi}">
+        <td><div class="pi">${o.pi}</div></td>
+        <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+        <td>${o.customWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill">Standard</span>'}</td>
+        <td>${fmtDate(o.deliveryDate)} <span style="color:var(--muted)">(${dleft<=0?'today/overdue':'in '+dleft+'d'})</span></td>
+        <td>${chip(o.status)}</td>
+        <td><button class="btn amber sm" data-open="${o.pi}">Call ops &amp; confirm</button></td></tr>`;
+    }).join("");
+    html+=`<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--amber);margin:0 0 8px">&#9742; Operations calls due (${opsList.length})</div>
+    <div class="tablecard" style="margin-bottom:16px"><table>
+      <thead><tr><th>PI</th><th>Customer</th><th>Type</th><th>Delivery date</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }
+
+  if(fuList.length){
+    const rows=fuList.map(o=>{
+      const fu=o.service.follow_up_date;const over=fu<dstr(today);const isToday=fu===dstr(today);
+      return `<tr data-pi="${o.pi}">
+        <td><div class="pi">${o.pi}</div></td>
+        <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+        <td><span style="font-weight:700;color:${isToday?'var(--amber)':over?'var(--red)':'var(--ink)'}">${fmtDate(fu)}${isToday?' ⏰':over?' (overdue)':''}</span></td>
+        <td>${chip(o.status)}</td>
+        <td><button class="btn navy sm" data-open="${o.pi}">Open &amp; schedule</button></td></tr>`;
+    }).join("");
+    html+=`<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--navy);margin:0 0 8px">📅 Follow-ups due (${fuList.length})</div>
+    <div class="tablecard" style="margin-bottom:16px"><table>
+      <thead><tr><th>PI</th><th>Customer</th><th>Follow-up date</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }
+
+  if(reschedItems.length){
+    const rows=reschedItems.map(({o,sj})=>`<tr data-pi="${o.pi}">
+      <td><div class="pi">${o.pi}</div></td>
+      <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
+      <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
+      <td>${fmtDate(sj.date)}</td>
+      <td><button class="btn primary sm" data-open="${o.pi}">Call &amp; rebook</button></td></tr>`).join("");
+    html+=`<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--red);margin:0 0 8px">&#8635; To reschedule (${reschedItems.length})</div>
+    <div class="tablecard"><table>
+      <thead><tr><th>PI</th><th>Type</th><th>Customer</th><th>Was booked</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }
+  return html;
 }
 
 function callsView(){
@@ -657,7 +747,7 @@ function scheduleView(){
     });
   }));
   const rows=items.map(({o,sj,a})=>`<tr data-pi="${o.pi}">
-    <td><b>${sj.type==='wallpaper'?(a.slots||[]).map(sid=>(WP_TIME_SLOTS.find(s=>s.id===sid)||{label:sid}).label).join(', ')||'—':'Full day'}</b></td>
+    <td><b>${sj.type==='wallpaper'?(a.slots||[]).map(sid=>(SLOTS_WP.find(s=>s.id===sid)||{label:sid}).label).join(', ')||'—':'Full day'}</b></td>
     <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
     <td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
@@ -734,13 +824,32 @@ function calendarView(){
 }
 
 function slotsView(){
-  const rows=SLOTS.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
-    <td><input class="slotedit" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
-    <td><button class="btn danger sm" data-delslot="${i}">Delete</button></td></tr>`).join("");
+  const flRows=SLOTS_FL.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
+    <td><input class="slotedit-fl" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
+    <td><button class="btn danger sm" data-delslot-fl="${i}">Delete</button></td></tr>`).join("");
+  const wpRows=SLOTS_WP.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
+    <td><input class="slotedit-wp" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
+    <td><button class="btn danger sm" data-delslot-wp="${i}">Delete</button></td></tr>`).join("");
   return `<div class="crumbs">Setup / Slots &amp; timings</div>
-  <div class="pagehead"><div><h1>Slots &amp; timings</h1><p>Add, rename, or delete install windows.</p></div>
-   <div class="actions"><button class="btn ghost sm" id="addSlot">+ Add window</button><button class="btn navy sm" id="saveSlots">Save</button></div></div>
-  <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  <div class="pagehead"><div><h1>Slots &amp; timings</h1><p>Configure install windows separately for Wooden Flooring and Wallpaper.</p></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <h2 style="margin:0;font-size:15px;color:#7a5800">Wooden Flooring</h2>
+        <button class="btn ghost sm" id="addSlotFl">+ Add window</button>
+        <button class="btn navy sm" id="saveSlotsFl">Save</button>
+      </div>
+      <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${flRows}</tbody></table></div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <h2 style="margin:0;font-size:15px;color:var(--purple)">Wallpapers</h2>
+        <button class="btn ghost sm" id="addSlotWp">+ Add window</button>
+        <button class="btn navy sm" id="saveSlotsWp">Save</button>
+      </div>
+      <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${wpRows}</tbody></table></div>
+    </div>
+  </div>`;
 }
 
 function installersView(){
@@ -845,7 +954,7 @@ function drawerBody(o){
       const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
       html+=`<div class="sjcard" data-sj="${sj.id}">
         <div class="sjh"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WALLPAPER':'FLOORING'}</span>
-          <span class="sk">${sj.items.map(it=>it.sku+(it.name?(' · '+it.name):'')+(sj.type==='wallpaper'?(' · '+(it.rolls||'?')+' rolls'):'')).join(', ')}</span>
+          <span class="sk">${sj.items.map(it=>it.sku+(it.name?(' · '+it.name):'')+(it.qty?(' · Qty: '+it.qty):'')+(sj.type==='wallpaper'?(' · '+(it.rolls||'?')+' rolls'):'')).join(', ')}</span>
           <span class="st">${chip(sj.status)}</span></div>
         ${sj.type==='wallpaper'
           ?`<div class="wp-dur-badge"><span>${rolls} rolls → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
@@ -904,12 +1013,12 @@ function renderAssignSection(o,sj,container){
               <div><label class="lbl-sm">To</label><input type="date" data-to="${idx}" class="inp-sm" min="${minDate}" value="${(a.dates&&a.dates[a.dates.length-1])||a.date||''}"></div>
             </div>
             ${sj.type==='wallpaper'
-              ?`<div><label class="lbl-sm">Slot windows per day</label><div class="slot-chip-row">${WP_TIME_SLOTS.map(s=>`<div class="slot-chip ${(a.slots||[]).includes(s.id)?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
+              ?`<div><label class="lbl-sm">Slot windows per day</label><div class="slot-chip-row">${SLOTS_WP.map(s=>`<div class="slot-chip ${(a.slots||[]).includes(s.id)?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
               :`<div style="font-size:11.5px;color:var(--green)">Full day (8 AM – 5 PM) per selected date</div>`}
           `:`
             <div><label class="lbl-sm">Date</label><input type="date" data-date="${idx}" class="inp-sm" min="${minDate}" value="${a.date||''}"></div>
             ${sj.type==='wallpaper'
-              ?`<div><label class="lbl-sm">Time slots (${slotsN} needed for ${rolls} rolls)</label><div class="slot-chip-row">${WP_TIME_SLOTS.map(s=>`<div class="slot-chip ${((a.slots&&a.slots.length?a.slots:autoWpSlots(slotsN)).includes(s.id))?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
+              ?`<div><label class="lbl-sm">Time slots (${slotsN} needed for ${rolls} rolls)</label><div class="slot-chip-row">${SLOTS_WP.map(s=>`<div class="slot-chip ${((a.slots&&a.slots.length?a.slots:autoWpSlots(slotsN)).includes(s.id))?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
               :`<div style="font-size:11.5px;color:var(--green)">Full day · 8 AM – 5 PM</div>`}
           `}
         </div>
@@ -1002,6 +1111,7 @@ function _preSkuRowsInstall(items,grp){
     <div class="sr-top">
       <input placeholder="SKU Code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
       <input placeholder="SKU Name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name">
+      <input class="rolls" placeholder="Qty" value="${r.qty||''}" data-grp="${grp}" data-i="${i}" data-f="qty" style="flex:0 0 70px" title="Quantity required">
       ${grp==='wallpaper'?`<input class="rolls" placeholder="Rolls" inputmode="numeric" value="${r.rolls||''}" data-grp="${grp}" data-i="${i}" data-f="rolls">`:''}
       <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button>
     </div>
@@ -1047,8 +1157,8 @@ function wireDrawer(o){
     draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));
   } else {
     const _sk=o.skus||[];
-    draft.flooring=_sk.filter(s=>s.type==='flooring').map(s=>({sku:s.c,name:'',link:'',rolls:''}));
-    draft.wallpaper=_sk.filter(s=>s.type==='wallpaper').map(s=>({sku:s.c,name:'',link:'',rolls:''}));
+    draft.flooring=_sk.filter(s=>s.type==='flooring').map(s=>({sku:s.c,name:'',link:'',qty:'',rolls:''}));
+    draft.wallpaper=_sk.filter(s=>s.type==='wallpaper').map(s=>({sku:s.c,name:'',link:'',qty:'',rolls:''}));
   }
   $("#dwClose").onclick=closeDrawer;
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
@@ -1077,6 +1187,7 @@ function wireDrawer(o){
       <div class="sr-top">
         <input placeholder="SKU Code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
         <input placeholder="SKU Name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name">
+        <input class="rolls" placeholder="Qty" value="${r.qty||''}" data-grp="${grp}" data-i="${i}" data-f="qty" style="flex:0 0 70px" title="Quantity required">
         ${grp==='wallpaper'?`<input class="rolls" placeholder="Rolls" inputmode="numeric" value="${r.rolls||''}" data-grp="${grp}" data-i="${i}" data-f="rolls">`:''}
         <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button>
       </div>
@@ -1089,10 +1200,10 @@ function wireDrawer(o){
     const grp=sw.dataset.tog;const on=!sw.classList.contains("on");sw.classList.toggle("on",on);
     const rows=document.querySelector(`[data-rows="${grp}"]`),add=document.querySelector(`[data-add="${grp}"]`);
     rows.classList.toggle("hide",!on);add.classList.toggle("hide",!on);
-    if(on&&draft[grp].length===0){draft[grp].push({sku:"",name:"",link:"",rolls:""});renderSkuRows(grp);}
+    if(on&&draft[grp].length===0){draft[grp].push({sku:"",name:"",link:"",qty:"",rolls:""});renderSkuRows(grp);}
     if(!on)draft[grp]=[];
   });
-  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push({sku:"",name:"",link:"",rolls:""});renderSkuRows(grp);});
+  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push({sku:"",name:"",link:"",qty:"",rolls:""});renderSkuRows(grp);});
   if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
   if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
 
@@ -1224,9 +1335,12 @@ function wire(){
   if($("#q"))$("#q").oninput=e=>{searchQ=e.target.value;const tc=$("#main .tablecard");if(tc){const tmp=document.createElement("div");tmp.innerHTML=ordersView();tc.outerHTML=tmp.querySelector(".tablecard").outerHTML;}wire();const q=$("#q");if(q){q.focus();q.setSelectionRange(searchQ.length,searchQ.length);}};
   document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
   document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{const k=s.dataset.stat;if(k==="opsdue"){activeView="calls";render();return;}filterStatus=k;render();});
-  document.querySelectorAll("[data-delslot]").forEach(b=>b.onclick=()=>{if(SLOTS.length<=1){toast("Keep at least one window");return;}SLOTS.splice(+b.dataset.delslot,1);render();toast("Window deleted");});
-  if($("#addSlot"))$("#addSlot").onclick=()=>{SLOTS.push({id:"s"+Date.now(),label:"New window"});render();toast("Window added");};
-  if($("#saveSlots"))$("#saveSlots").onclick=()=>{document.querySelectorAll(".slotedit").forEach(i=>SLOTS[i.dataset.i].label=i.value);toast("Saved");render();};
+  document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);render();toast("Flooring window deleted");});
+  document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);render();toast("Wallpaper window deleted");});
+  if($("#addSlotFl"))$("#addSlotFl").onclick=()=>{SLOTS_FL.push({id:"sf"+Date.now(),label:"New window"});render();toast("Flooring window added");};
+  if($("#addSlotWp"))$("#addSlotWp").onclick=()=>{SLOTS_WP.push({id:"sw"+Date.now(),label:"New window"});render();toast("Wallpaper window added");};
+  if($("#saveSlotsFl"))$("#saveSlotsFl").onclick=()=>{document.querySelectorAll(".slotedit-fl").forEach(i=>SLOTS_FL[i.dataset.i].label=i.value);toast("Flooring slots saved");render();};
+  if($("#saveSlotsWp"))$("#saveSlotsWp").onclick=()=>{document.querySelectorAll(".slotedit-wp").forEach(i=>SLOTS_WP[i.dataset.i].label=i.value);toast("Wallpaper slots saved");render();};
   if($("#pushDemo"))$("#pushDemo").onclick=()=>{const n=Math.floor(Math.random()*900+100);
     ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],bm:"Karthik R",name:"New Customer",phone:"90000 0"+n,addr:"MG Road, Bengaluru 560001",matchedAudit:true,deliveryDate:dstr(addDays(1)),customWp:false,status:"pending",subjobs:null,service:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"},{t:"Matched to completed Site Audit",d:"Just now",by:"auto"}]});
     render();toast("New installation order received");};

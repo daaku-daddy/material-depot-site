@@ -390,7 +390,12 @@ document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 
 /* ============== CONFIG ============== */
 const AUDIT_SKU="SVC-AUDIT-001";
-let SLOTS=[{id:"s1",label:"9 AM – 12 PM"},{id:"s2",label:"12 PM – 3 PM"},{id:"s3",label:"3 PM – 6 PM"}];
+// Flooring audit windows
+let SLOTS_FL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
+// Wallpaper audit windows
+let SLOTS_WP=[{id:"sw1",label:"9 AM – 12 PM"},{id:"sw2",label:"12 PM – 3 PM"},{id:"sw3",label:"3 PM – 6 PM"}];
+// Combined for backward-compat (used in slot booking)
+function slotsForOrder(o){const at=Array.isArray(o.auditTicked)?o.auditTicked:[];const fl=at.some(x=>/floor/i.test(x));const wp=at.some(x=>/wall/i.test(x));if(fl&&wp){const seen=new Set();return[...SLOTS_FL,...SLOTS_WP].filter(s=>{if(seen.has(s.id))return false;seen.add(s.id);return true;});}return wp?SLOTS_WP:SLOTS_FL;}
 
 let AUDITORS=[];
 
@@ -470,7 +475,7 @@ async function loadOrders(){
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});};
-const slotLabel=id=>(SLOTS.find(s=>s.id===id)||{}).label||"—";
+const slotLabel=id=>([...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id)||{}).label||"—";
 const auditorById=id=>AUDITORS.find(a=>a.id===id);
 function getAuditorName(o){if(!o.auditor)return null;const a=auditorById(o.auditor);return a?a.name:(o.auditorName||'?');}
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
@@ -481,6 +486,28 @@ function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");cl
 const BOOKED=["scheduled","assigned","onway","atsite","completed"];
 function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===slotId&&BOOKED.includes(o.status)).length;}
 function auditorLoad(aid,date){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
+function orderCategoriesAudit(o){
+  const at=o.auditTicked;
+  if(Array.isArray(at)&&at.length){
+    return `<div class="pill-list">${at.map(c=>{
+      if(/floor/i.test(c))return '<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>';
+      if(/custom/i.test(c))return '<span class="skupill" style="background:#fde2cf;color:#8a4516">Custom WP</span>';
+      if(/wall/i.test(c))return '<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>';
+      return `<span class="skupill">${c}</span>`;
+    }).join("")}</div>`;
+  }
+  if(at&&Array.isArray(at.rooms)&&at.rooms.length){
+    const cats=new Set(at.rooms.map(r=>r.type==='wallpaper'?'Wallpaper':'Flooring'));
+    return `<div class="pill-list">${[...cats].map(c=>c==='Flooring'?'<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>':'<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>').join("")}</div>`;
+  }
+  if(o.service){
+    const cats=[];
+    if(o.service.flooring&&o.service.flooring.length)cats.push('<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>');
+    if(o.service.wallpaper&&o.service.wallpaper.length)cats.push('<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>');
+    if(cats.length)return `<div class="pill-list">${cats.join("")}</div>`;
+  }
+  return '<span style="color:var(--muted)">—</span>';
+}
 
 let activeView="orders",filterStatus="all",searchQ="",currentPI=null;
 
@@ -539,6 +566,7 @@ function ordersView(){
     return `<tr data-pi="${o.pi}">
       <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
       <td><div class="pill-list">${skupills}</div></td>
+      <td>${orderCategoriesAudit(o)}</td>
       <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
       <td style="max-width:180px">${mapLink(o.addr)}</td>
       <td>${fmtDate(o.date)}</td>
@@ -552,8 +580,8 @@ function ordersView(){
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <div class="filt">${fbtns}</div></div>
   <div class="tablecard"><table>
-    <thead><tr><th>PI / PO</th><th>SKUs in cart</th><th>Customer</th><th>Address</th><th>Audit date</th><th>Auditor allocated</th><th>Status</th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">No orders match.</td></tr>`}</tbody>
+    <thead><tr><th>PI / PO</th><th>SKUs in cart</th><th>Categories</th><th>Customer</th><th>Address</th><th>Audit date</th><th>Auditor allocated</th><th>Status</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">No orders match.</td></tr>`}</tbody>
   </table></div>`;
 }
 
@@ -627,13 +655,32 @@ function calendarView(){
 }
 
 function slotsView(){
-  const rows=SLOTS.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
-    <td><input class="slotedit" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
-    <td><button class="btn danger sm" data-delslot="${i}">Delete</button></td></tr>`).join("");
+  const flRows=SLOTS_FL.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
+    <td><input class="slotedit-fl" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
+    <td><button class="btn danger sm" data-delslot-fl="${i}">Delete</button></td></tr>`).join("");
+  const wpRows=SLOTS_WP.map((s,i)=>`<tr><td><b>Window ${i+1}</b></td>
+    <td><input class="slotedit-wp" data-i="${i}" value="${s.label}" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px"/></td>
+    <td><button class="btn danger sm" data-delslot-wp="${i}">Delete</button></td></tr>`).join("");
   return `<div class="crumbs">Setup / Slots &amp; timings</div>
-  <div class="pagehead"><div><h1>Slots &amp; timings</h1><p>Add, rename, or delete windows. Capacity per window comes from auditor availability.</p></div>
-   <div class="actions"><button class="btn ghost sm" id="addSlot">+ Add window</button><button class="btn navy sm" id="saveSlots">Save</button></div></div>
-  <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  <div class="pagehead"><div><h1>Slots &amp; timings</h1><p>Configure audit windows separately for Wooden Flooring and Wallpaper.</p></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <h2 style="margin:0;font-size:15px;color:#7a5800">Wooden Flooring</h2>
+        <button class="btn ghost sm" id="addSlotFl">+ Add window</button>
+        <button class="btn navy sm" id="saveSlotsFl">Save</button>
+      </div>
+      <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${flRows}</tbody></table></div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <h2 style="margin:0;font-size:15px;color:var(--purple)">Wallpapers</h2>
+        <button class="btn ghost sm" id="addSlotWp">+ Add window</button>
+        <button class="btn navy sm" id="saveSlotsWp">Save</button>
+      </div>
+      <div class="tablecard"><table><thead><tr><th>Window</th><th>Timing</th><th></th></tr></thead><tbody>${wpRows}</tbody></table></div>
+    </div>
+  </div>`;
 }
 
 function auditorsView(){
@@ -935,7 +982,8 @@ function wireDrawer(o){
   function renderSlots(){
     const grid=$("#slotGrid");if(!grid)return;const date=$("#bookDate").value;draft.date=date;
     const winCap=auditorsAvailable(date);
-    grid.innerHTML=SLOTS.map(s=>{
+    const slots=slotsForOrder(o);
+    grid.innerHTML=slots.map(s=>{
       const used=slotUsage(date,s.id);const free=winCap-used;const full=free<=0;
       return `<div class="slot ${draft.slot===s.id?'on':''} ${full?'full':''}" data-slot="${s.id}">
         <div class="w">${s.label}</div><div class="cap">${full?'Full':free+' of '+winCap+' free'}</div></div>`;
@@ -1039,9 +1087,12 @@ function wire(){
   });
   document.querySelectorAll("[data-cap]").forEach(inp=>inp.onchange=()=>{setCap(inp.dataset.cap,inp.dataset.date,parseInt(inp.value)||0);});
   if($("#saveCaps"))$("#saveCaps").onclick=()=>{toast("Auditor caps saved");render();};
-  if($("#saveSlots"))$("#saveSlots").onclick=()=>{document.querySelectorAll(".slotedit").forEach(i=>SLOTS[i.dataset.i].label=i.value);toast("Slot timings saved");render();};
-  document.querySelectorAll("[data-delslot]").forEach(b=>b.onclick=()=>{if(SLOTS.length<=1){toast("Keep at least one window");return;}SLOTS.splice(+b.dataset.delslot,1);render();toast("Window deleted");});
-  if($("#addSlot"))$("#addSlot").onclick=()=>{SLOTS.push({id:"s"+Date.now(),label:"New window"});render();toast("Window added");};
+  document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);render();toast("Flooring window deleted");});
+  document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);render();toast("Wallpaper window deleted");});
+  if($("#addSlotFl"))$("#addSlotFl").onclick=()=>{SLOTS_FL.push({id:"sf"+Date.now(),label:"New window"});render();toast("Flooring window added");};
+  if($("#addSlotWp"))$("#addSlotWp").onclick=()=>{SLOTS_WP.push({id:"sw"+Date.now(),label:"New window"});render();toast("Wallpaper window added");};
+  if($("#saveSlotsFl"))$("#saveSlotsFl").onclick=()=>{document.querySelectorAll(".slotedit-fl").forEach(i=>SLOTS_FL[i.dataset.i].label=i.value);toast("Flooring slots saved");render();};
+  if($("#saveSlotsWp"))$("#saveSlotsWp").onclick=()=>{document.querySelectorAll(".slotedit-wp").forEach(i=>SLOTS_WP[i.dataset.i].label=i.value);toast("Wallpaper slots saved");render();};
   if($("#pushDemo"))$("#pushDemo").onclick=()=>{const n=Math.floor(Math.random()*900+100);
     ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],auditTicked:["Wooden Flooring"],bm:"Karthik R",status:"pending",name:"New Customer",phone:"90000 0"+n,addr:"MG Road, Bengaluru 560001",service:null,slot:null,date:null,auditor:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"}]});
     render();toast("New audit order received");};
