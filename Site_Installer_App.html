@@ -346,17 +346,19 @@ function openDetail(key){
 function detailBody(j){
   const tel=j.phone.replace(/\s/g,'');
   let stage="";
+  const reschedBtn=`<button class="bigbtn red" id="triggerReschedule" style="margin-top:8px">Can't proceed — Reschedule</button>`;
   if(j.status==="scheduled"){
     stage=`<div class="bigstage"><div class="lbl">Now</div><div class="now">Scheduled</div>
       <div class="say">This turns into <b>Call Pending</b> 3 hours before your time. You can call the customer now to start.</div>
-      <button class="bigbtn navy" id="toCall">Start — call customer now</button></div>`;
+      <button class="bigbtn navy" id="toCall">Start — call customer now</button>
+      ${reschedBtn}</div>`;
   } else if(j.status==="callpending"){
     stage=`<div class="bigstage"><div class="lbl">Step 1 of 3</div><div class="now">Call the customer</div>
       <div class="say">Call 1–2 hours before. Ask if they are ready for you to come.</div>
       <a class="calllink callink" href="tel:${tel}" style="background:var(--greenbg);color:var(--green);"><span class="ic">&#128222;</span> Call ${j.name}</a>
       <div class="say" style="margin-top:14px">After the call, choose:</div>
       <button class="bigbtn green" id="yes">They said YES — I'm on the way</button>
-      <button class="bigbtn red" id="no">They said NO — need to reschedule</button></div>
+      <button class="bigbtn red" id="triggerReschedule">They said NO or can't proceed — Reschedule</button></div>
       <div class="note">Also call your BM (${j.bm}) to confirm which room each product goes in.</div>`;
   } else if(j.status==="reschedule"){
     stage=`<div class="bigstage"><div class="lbl">Now</div><div class="now" style="color:var(--red)">To Reschedule</div>
@@ -364,12 +366,14 @@ function detailBody(j){
   } else if(j.status==="onway"){
     stage=`<div class="bigstage"><div class="lbl">Step 2 of 3</div><div class="now">On the way</div>
       <div class="say">Tap when you reach the site.</div>
-      <button class="bigbtn blue" id="reached">I have reached the site</button></div>`;
+      <button class="bigbtn blue" id="reached">I have reached the site</button>
+      ${reschedBtn}</div>`;
   } else if(j.status==="atsite"){
     stage=`<div class="bigstage"><div class="lbl">Step 3 of 3</div><div class="now">At the site</div>
       <div class="say">Do the installation, then fill the card and take photos.</div>
       ${j.auditBy==='material_depot'?`<button class="bigbtn ghost" id="viewAuditBtn">View site audit report</button>`:''}
-      <button class="bigbtn navy" id="openJC">${j.jobcard?'Continue installation card':'Start installation card'}</button></div>`;
+      <button class="bigbtn navy" id="openJC">${j.jobcard?'Continue installation card':'Start installation card'}</button>
+      ${reschedBtn}</div>`;
   } else if(j.status==="completed"){
     stage=`<div class="bigstage"><div class="lbl">Done</div><div class="now" style="color:var(--green)">Completed</div>
       <div class="say">Card saved and sent to the office.</div>
@@ -394,12 +398,12 @@ function detailBody(j){
 function wireDetail(j){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
   let _advBusy=false;
-  const adv=async(st,msg)=>{
+  const adv=async(st,msg,logOverride)=>{
     if(_advBusy)return;_advBusy=true;
     document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=true);
     const prev=j.status;j.status=st;
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    const logMsg={callpending:"Pre-install call started",onway:"Installer on the way · customer confirmed",reschedule:"Customer declined → sent to office to reschedule",atsite:"Installer arrived at site",completed:"Installation completed"}[st]||st;
+    const logMsg=logOverride||{callpending:"Pre-install call started",onway:"Installer on the way · customer confirmed",reschedule:"Customer declined → sent to office to reschedule",atsite:"Installer arrived at site",completed:"Installation completed"}[st]||st;
     if(j.id&&j.sjId){
       try{
         const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
@@ -427,11 +431,28 @@ function wireDetail(j){
     }
     await loadJobs();toast(msg);openDetail(j.pi+'|'+j.sjId);
   };
+  function showRescheduleForm(){
+    $("#detBody").innerHTML=`
+      <div class="panel">
+        <h2 style="color:var(--red);margin:0 0 12px">Reschedule installation</h2>
+        <p style="font-size:14px;color:var(--muted);margin:0 0 16px">Explain why this visit can't proceed. This will be sent to the office to pick a new time.</p>
+        <label style="font-weight:700;font-size:15px">Reason <span style="color:var(--red)">*</span></label>
+        <textarea id="reschedReason" placeholder="e.g. Customer not available, site not ready, access issue, material problem…" style="display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:14px;border:1.5px solid var(--line);border-radius:14px;font-size:15px;min-height:120px;resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <button class="bigbtn red" id="confirmResched" style="margin-top:8px">Confirm Reschedule</button>
+      <button class="bigbtn ghost" id="cancelResched">Cancel</button>`;
+    $("#cancelResched").onclick=()=>openDetail(j.pi+'|'+j.sjId);
+    $("#confirmResched").onclick=()=>{
+      const reason=($("#reschedReason").value||'').trim();
+      if(!reason){toast("Please enter a reason for rescheduling");return;}
+      adv("reschedule","Sent to office to reschedule","Reschedule requested: "+reason);
+    };
+  }
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Now: call the customer");
   if($("#yes"))$("#yes").onclick=()=>adv("onway","Marked: on the way");
-  if($("#no"))$("#no").onclick=()=>adv("reschedule","Sent to office to reschedule");
   if($("#reached"))$("#reached").onclick=()=>adv("atsite","You are at the site");
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(j);
+  if($("#triggerReschedule"))$("#triggerReschedule").onclick=()=>showRescheduleForm();
   if($("#viewAuditBtn"))$("#viewAuditBtn").onclick=()=>openAudit(j);
   if($("#viewAudit"))$("#viewAudit").onclick=()=>openAudit(j);
   if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
@@ -752,6 +773,8 @@ function showInstallSignature(j,ratings){
         const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
         await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
+        // Write ratings to dedicated table for reporting/NPS
+        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){console.error('ratings write failed',e);}
       }
     }catch(e){j.status=prev;toast("Network error — couldn't save. Try again");return;}
     await genPDF(j);

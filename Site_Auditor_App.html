@@ -312,28 +312,32 @@ function openDetail(pi){
 function detailBody(o){
   const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}${s.n&&s.n!==s.c?' · '+s.n:''}</span>`).join(" ")||"NA";
   let stage="";
+  const reschedBtn=`<button class="btn warn" id="triggerReschedule" style="margin-top:10px;width:100%">Can't proceed — Reschedule</button>`;
   if(o.status==="scheduled"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">Scheduled</div>
       <div class="desc">This flips to <b>Call Pending</b> automatically 3 hours before your slot. You can also start the pre-visit call now.</div>
-      <div class="actions"><button class="btn navy" id="toCall">Start pre-visit call</button></div></div>`;
+      <div class="actions"><button class="btn navy" id="toCall">Start pre-visit call</button></div>
+      ${reschedBtn}</div>`;
   } else if(o.status==="callpending"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">Call Pending</div>
       <div class="desc">Call the customer 1–2 hours before. Confirm they're available, then choose an outcome.</div>
       <div class="note">Also call the BM (${o.bm}) to confirm which room each selected SKU is for, and cross-verify with the client.</div>
       <div class="actions">
         <button class="btn green" id="custYes">Customer confirmed → On the way</button>
-        <button class="btn warn" id="custNo">Customer declined → Reschedule</button></div></div>`;
+        <button class="btn warn" id="triggerReschedule">Customer declined → Reschedule</button></div></div>`;
   } else if(o.status==="reschedule"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">To Reschedule</div>
       <div class="desc">Sent back to the Service Manager to rebook. No action needed from you until it's reassigned.</div></div>`;
   } else if(o.status==="onway"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">On The Way</div>
       <div class="desc">Mark <b>At Site</b> when you arrive — that opens the Job Card.</div>
-      <div class="actions"><button class="btn blue" id="atSite">I've arrived → At Site</button></div></div>`;
+      <div class="actions"><button class="btn blue" id="atSite">I've arrived → At Site</button></div>
+      ${reschedBtn}</div>`;
   } else if(o.status==="atsite"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big">At Site</div>
       <div class="desc">Fill the Job Card, capture the client's signature, and complete the audit.</div>
-      <div class="actions"><button class="btn navy" id="openJC">${o.jobcard?'Resume Job Card':'Open Job Card'}</button></div></div>`;
+      <div class="actions"><button class="btn navy" id="openJC">${o.jobcard?'Resume Job Card':'Open Job Card'}</button></div>
+      ${reschedBtn}</div>`;
   } else if(o.status==="completed"){
     stage=`<div class="stagebar"><div class="now">Current stage</div><div class="big" style="color:var(--green)">Site Audit Completed</div>
       <div class="desc">Job card submitted. You can add more rooms or details by reopening the job card.</div>
@@ -354,21 +358,39 @@ function detailBody(o){
 }
 function wireDetail(o){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
-  const adv=async(st,msg)=>{
+  const adv=async(st,msg,logOverride)=>{
     const prev=o.status;o.status=st;
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    const logMsg={callpending:"Pre-visit call started",onway:"Auditor on the way · customer confirmed",reschedule:"Customer declined → sent to SM to reschedule",atsite:"Auditor arrived at site",completed:"Site audit completed"}[st]||st;
+    const logMsg=logOverride||{callpending:"Pre-visit call started",onway:"Auditor on the way · customer confirmed",reschedule:"Customer declined → sent to SM to reschedule",atsite:"Auditor arrived at site",completed:"Site audit completed"}[st]||st;
     o.log=o.log||[];o.log.push({t:logMsg,d:"Today "+now,by:"auto"});
-    // Map auditor status back to SM status vocabulary for DB
     const dbStatus=st==='scheduled'?'assigned':st;
     if(o.id){try{await sbPatch('audit_orders',o.id,{status:dbStatus,log:o.log});}catch(e){o.status=prev;toast("Network error — try again");return;}}
     await loadJobs();toast(msg);openDetail(o.pi);
   };
+  function showRescheduleForm(){
+    $("#detBody").innerHTML=`
+      <div class="card">
+        <h2 style="color:var(--red);margin:0 0 10px">Reschedule audit</h2>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Explain why this visit can't proceed. This will be sent to the Service Manager along with the request to rebook.</p>
+        <label style="font-weight:700;font-size:13px">Reason <span style="color:var(--red)">*</span></label>
+        <textarea id="reschedReason" placeholder="e.g. Customer not available, site not accessible, material not matching…" style="display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:11px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;min-height:110px;resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn ghost" id="cancelResched">Cancel</button>
+        <button class="btn warn" id="confirmResched">Confirm Reschedule</button>
+      </div>`;
+    $("#cancelResched").onclick=()=>openDetail(o.pi);
+    $("#confirmResched").onclick=()=>{
+      const reason=($("#reschedReason").value||'').trim();
+      if(!reason){toast("Please enter a reason for rescheduling");return;}
+      adv("reschedule","Sent to SM to reschedule","Reschedule requested: "+reason);
+    };
+  }
   if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Moved to Call Pending");
   if($("#custYes"))$("#custYes").onclick=()=>adv("onway","On the way — SM notified");
-  if($("#custNo"))$("#custNo").onclick=()=>adv("reschedule","Sent to SM for reschedule");
   if($("#atSite"))$("#atSite").onclick=()=>adv("atsite","At site — open the Job Card");
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(o);
+  if($("#triggerReschedule"))$("#triggerReschedule").onclick=()=>showRescheduleForm();
   if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
     const btn=$("#dlPdf");btn.disabled=true;const oldTxt=btn.textContent;btn.textContent="Building PDF…";
     if(!o.jobcard){
@@ -664,6 +686,8 @@ function showAuditSignature(o,ratings){
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photos:r.photos||[],sketchStrokes:r.sketchStrokes||[]}))};
       await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});
       try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
+      // Write ratings to dedicated table for reporting/NPS
+      try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){console.error('ratings write failed',e);}
     }catch(e){toast("Saved locally — sync failed");}}
     btn.textContent="Building PDF…";
     let pdfUrl=null;
