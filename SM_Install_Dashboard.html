@@ -457,33 +457,38 @@ async function loadInstallers(){
   }catch(e){console.error('loadInstallers',e);}
 }
 
+const mapInstallRow=r=>({
+  id:r.id,
+  pi:r.pi||'',
+  po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
+  skus:r.skus||[],
+  bm:r.bm||'—',
+  name:r.customer_name||'',
+  phone:r.phone||'',
+  addr:r.addr||'',
+  matchedAudit:r.matched_audit||false,
+  auditBy:(r.service&&r.service.audit_by)||null,
+  deliveryDate:r.delivery_date||null,
+  customWp:r.custom_wp||false,
+  status:r.status||'pending',
+  subjobs:r.subjobs||null,
+  service:r.service||null,
+  log:r.log||[]
+});
 async function loadOrders(){
   try{
-    const rows=await sbGet('install_orders?select=*&order=created_at.desc');
+    const rows=await sbGet('install_orders?select=*&status=neq.deleted&order=created_at.desc');
     if(!Array.isArray(rows)){return;}
-    const mapRow=r=>({
-      id:r.id,
-      pi:r.pi||'',
-      po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
-      skus:r.skus||[],
-      bm:r.bm||'—',
-      name:r.customer_name||'',
-      phone:r.phone||'',
-      addr:r.addr||'',
-      matchedAudit:r.matched_audit||false,
-      auditBy:(r.service&&r.service.audit_by)||null,
-      deliveryDate:r.delivery_date||null,
-      customWp:r.custom_wp||false,
-      status:r.status||'pending',
-      subjobs:r.subjobs||null,
-      service:r.service||null,
-      log:r.log||[]
-    });
-    DELETED=rows.filter(r=>r.status==='deleted').map(mapRow);
-    ORDERS=rows.filter(r=>r.status!=='deleted').map(mapRow);
+    ORDERS=rows.map(mapInstallRow);
     const drawerOpen=document.querySelector("#drawer")&&document.querySelector("#drawer").classList.contains("show");
     if(!drawerOpen)render();else counts();
   }catch(e){console.error('loadOrders',e);}
+}
+async function loadDeletedOrders(){
+  try{
+    const rows=await sbGet('install_orders?select=id,pi,po,skus,bm,customer_name,phone,addr,status,log,delivery_date&status=eq.deleted&order=created_at.desc');
+    DELETED=(Array.isArray(rows)?rows:[]).map(mapInstallRow);
+  }catch(e){console.error('loadDeletedOrders',e);}
 }
 
 /* ============== HELPERS ============== */
@@ -1295,7 +1300,7 @@ function wireDrawer(o){
     if(!confirm("Move this install order to Deleted? It will be stored in the Deleted Orders section and can be restored."))return;
     try{
       if(o.id)await sbPatch('install_orders',o.id,{status:'deleted'});
-      closeDrawer();await loadOrders();toast("Order moved to Deleted");
+      closeDrawer();await Promise.all([loadOrders(),loadDeletedOrders()]);toast("Order moved to Deleted");
     }catch(e){toast("Couldn't delete — try again");}
   };
 }
@@ -1336,7 +1341,7 @@ function deletedView(){
 function wire(){
   document.querySelectorAll("[data-restore]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.restore,pi=b.dataset.pi;b.disabled=true;b.textContent="Restoring…";
-    try{await sbPatch('install_orders',id,{status:'pending'});await loadOrders();toast("Order "+pi+" restored to Pending");}
+    try{await sbPatch('install_orders',id,{status:'pending'});await Promise.all([loadOrders(),loadDeletedOrders()]);toast("Order "+pi+" restored to Pending");}
     catch(e){toast("Restore failed — "+e.message);b.disabled=false;b.textContent="Restore";}
   });
   document.querySelectorAll("#main tbody tr[data-pi]").forEach(tr=>tr.onclick=e=>{if(e.target.closest(".maplink")||e.target.closest("[data-open]"))return;openOrder(tr.dataset.pi);});
@@ -1357,7 +1362,11 @@ function wire(){
     render();toast("New installation order received");};
 }
 
-document.querySelectorAll("#rail a").forEach(a=>a.onclick=()=>{activeView=a.dataset.view;filterStatus="all";render();});
+document.querySelectorAll("#rail a").forEach(a=>a.onclick=async()=>{
+  activeView=a.dataset.view;filterStatus="all";
+  if(activeView==="deleted"&&!DELETED.length){await loadDeletedOrders();}
+  render();
+});
 $("#scrim").onclick=closeDrawer;
 $("#vSiteAudit").onclick=()=>{window.location.href="SM_Audit_Dashboard.html";};
 
@@ -1559,7 +1568,10 @@ async function submitAddStaff(){
 }
 document.getElementById('addStaffOverlay').addEventListener('click',e=>{if(e.target.id==='addStaffOverlay')closeAddStaff();});
 
-Promise.all([loadInstallers(),loadOrders()]).then(()=>{setInterval(loadOrders,30000);});
+Promise.all([loadInstallers(),loadOrders()]).then(()=>{
+  setInterval(()=>{if(!document.hidden)loadOrders();},60000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
+});
 </script>
 </body>
 </html>

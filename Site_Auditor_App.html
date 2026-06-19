@@ -211,9 +211,10 @@ function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+enc
 
 let ORDERS=[];
 
+const AUDITOR_COLS='id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log';
 async function loadJobs(){
   try{
-    const rows=await sbGet('audit_orders?auditor_email=eq.'+encodeURIComponent(ME.email)+'&select=*&order=created_at.desc');
+    const rows=await sbGet('audit_orders?auditor_email=eq.'+encodeURIComponent(ME.email)+'&select='+AUDITOR_COLS+'&status=neq.deleted&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
     const existing={};ORDERS.forEach(o=>{if(o.jobcard)existing[o.pi]=o.jobcard;});
     ORDERS=rows.map(r=>({
@@ -228,12 +229,13 @@ async function loadJobs(){
       status:r.status==='assigned'?'scheduled':r.status,
       skus:r.skus||[],
       log:r.log||[],
-      jobcard:existing[r.pi]||(r.audit_ticked&&r.audit_ticked.sign?{rooms:r.audit_ticked.rooms||[],sign:r.audit_ticked.sign}:null)
+      jobcard:existing[r.pi]||null
     }));
     renderList();
   }catch(e){console.error('loadJobs',e);renderList();}
 }
-setInterval(loadJobs,10000);
+setInterval(()=>{if(!document.hidden)loadJobs();},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs();});
 
 /* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
 const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
@@ -393,12 +395,12 @@ function wireDetail(o){
   if($("#triggerReschedule"))$("#triggerReschedule").onclick=()=>showRescheduleForm();
   if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
     const btn=$("#dlPdf");btn.disabled=true;const oldTxt=btn.textContent;btn.textContent="Building PDF…";
-    if(!o.jobcard){
+    if(!o.jobcard||!o.jobcard.sign||!o.jobcard.sign.img){
       const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
       if(Array.isArray(rows)&&rows[0]&&rows[0].audit_ticked&&rows[0].audit_ticked.sign)
         o.jobcard={rooms:rows[0].audit_ticked.rooms||[],sign:rows[0].audit_ticked.sign};
     }
-    if(!o.jobcard){toast("Job card not available");btn.disabled=false;btn.textContent=oldTxt;return;}
+    if(!o.jobcard||!o.jobcard.sign){toast("Job card not available");btn.disabled=false;btn.textContent=oldTxt;return;}
     let url=null;try{url=await genPDF(o);}catch(e){console.error('PDF:',e);}
     btn.disabled=false;btn.textContent=oldTxt;
     if(url){
@@ -439,15 +441,21 @@ class SignPad{
   export(){const W=900,H=Math.round(900*((this.h/this.w)||0.3));const o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.strokeStyle='#13294a';x.lineWidth=3;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}return o.toDataURL('image/jpeg',0.9);}
 }
 
-function openJobCard(o){
+async function openJobCard(o){
   jcOrder=o; jcRooms=[]; jcSeq=0; jcSign=null;
   $("#jcSub").textContent=`${o.pi} · ${o.name}`;
   $("#jcScreen").classList.remove("hide");
   $("#jcFooter").classList.remove("hide");
   renderJCHeader();
-  // restore from localStorage draft first, then DB jobcard
+  // restore from localStorage draft first, then DB jobcard (fetched on demand — not in poll)
   let rooms=null;
   try{const d=JSON.parse(localStorage.getItem('md_audit_'+o.pi)||'null');if(d&&d.rooms&&d.rooms.length)rooms=d.rooms;}catch(e){}
+  if(!rooms&&!o.jobcard&&o.id){
+    try{const r=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
+      if(Array.isArray(r)&&r[0]&&r[0].audit_ticked&&!Array.isArray(r[0].audit_ticked))
+        o.jobcard={rooms:r[0].audit_ticked.rooms||[],sign:r[0].audit_ticked.sign||null};
+    }catch(e){}
+  }
   if(!rooms&&o.jobcard&&o.jobcard.rooms&&o.jobcard.rooms.length)rooms=o.jobcard.rooms;
   if(rooms&&rooms.length)rooms.forEach(r=>addRoom(r));else addRoom();
   $("#jcBack").onclick=()=>{o.jobcard={rooms:collectRooms()};autosave();$("#jcScreen").classList.add("hide");openDetail(o.pi);};

@@ -226,7 +226,7 @@ let JOBS=[];
 
 async function loadJobs(){
   try{
-    const rows=await sbGet('install_orders?select=*&order=created_at.desc');
+    const rows=await sbGet('install_orders?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
     // Preserve existing jobcard data
     const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'|'+j.sjId]=j.jobcard;});
@@ -267,7 +267,8 @@ async function loadJobs(){
     renderList();
   }catch(e){console.error('loadJobs',e);renderList();}
 }
-setInterval(loadJobs,10000);
+setInterval(()=>{if(!document.hidden)loadJobs();},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs();});
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
