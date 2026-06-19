@@ -143,6 +143,7 @@ const SLOTS = {
 - **Poll query**: `audit_orders?select=id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log,created_by_email&status=neq.deleted`
 - `auditTicked` in mapRow is always `null` (not fetched in poll); `slotsForOrder(o)` falls back to `service`
 - `CAPS[auditorId][date]` now saved to localStorage key `md_audit_caps`
+- **📋 Kylas Sheet import**: "Kylas Sheet" button in Orders view header opens `kylasOverlay`. Fetches `KYLAS_SHEET_ID` Google Sheet via `gviz/tq?tqx=out:json` (no API key needed — sheet must be public). Deduplicates by PO number against `ORDERS[].po`. "Use this" pre-fills the Add Order form and shows a blue `ao-kylas-note` banner. Sheet columns: 0=PO, 4=Client name, 5=Phone, 6=BM, 13=Booking date.
 
 ### SM Install Dashboard (`SM_Install_Dashboard.html`)
 - Nav views: Orders, **Need Action**, Call Operations today, Today's installs, To reschedule, Follow-ups, **📅 Schedule**, Slots & timings, Installers, Deleted Orders, Rectifications
@@ -313,7 +314,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 10. **Q3 DB column**: `ALTER TABLE ratings ADD COLUMN IF NOT EXISTS q3_score int CHECK (q3_score BETWEEN 1 AND 10);` — must be run in Supabase SQL Editor. Ratings write is non-blocking (`try/catch`) so the app won't break if the column is missing, but Q3 won't persist to the table.
 
-11. **PDF client feedback table**: All PDF generators (both field apps and Admin genAuditPDF/genInstallPDF) include 3 rows: Q1, Q2, Q3 scores + comments when ratings are present.
+11. **PDF client feedback table**: All PDF generators include 3 rows (Q1, Q2, Q3 scores + comments) when ratings are present. This covers: field apps (`genPDF` in both), Admin (`genAuditPDF`, `genInstallPDF`), and SM dashboards (`genAuditPDFSM`, `genInstallPDFSM`). The SM dashboard versions were missing this section and were fixed 2026-06-19.
 
 12. **Admin job detail modal**: `openJobDetail(pi, type)` fetches full order on demand. Modal uses `.modal.wide` class (`max-width:720px`). Cleanup: `document.getElementById('modal').className='modal'` on close to reset width.
 
@@ -332,6 +333,29 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 19. **opsCallDue covers deliv_delayed**: `opsCallDue(o)` checks `['pending','deliv_delayed'].includes(o.status)`.
 
 20. **SM_Audit slotsForOrder fallback**: When `o.auditTicked` is null (not fetched in poll), `slotsForOrder(o)` falls back to `o.service.flooring/wallpaper` to determine FL vs WP slots correctly. Do NOT revert this fallback.
+
+21. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
+
+## Kylas Sheet Integration
+
+**Sheet ID**: `1nDN5t7d25rMvuDa_j2VRpIvObXtLzPGXTfR19Hmd3Ho`  
+**Constant**: `KYLAS_SHEET_ID` in `SM_Audit_Dashboard.html`  
+**Endpoint**: `https://docs.google.com/spreadsheets/d/{ID}/gviz/tq?tqx=out:json` — no API key, sheet must be public  
+**Parse**: Strip `google.visualization.Query.setResponse(` prefix and `);` suffix, then JSON.parse. Rows are `table.rows[].c[]` with `v` (raw) and `f` (formatted) per cell.
+
+### Kylas Sheet Column Map (0-indexed)
+| Index | Column | Mapped to |
+|---|---|---|
+| 0 | PO number | `ao-po` / dedup key |
+| 4 | Client name | `ao-name` |
+| 5 | Contact number | `ao-phone` (strip non-digits) |
+| 6 | BM | `ao-bm` |
+| 9 | Service category | display only |
+| 13 | Booking date | display only |
+| 18 | Status | display only |
+
+**Deduplication**: `existingPOs = new Set(ORDERS.flatMap(o => o.po || []))` — if `po` is already in any audit order, row shows "Imported".  
+**Not in sheet**: PI Number and Site Address — SM must fill these manually. A blue `ao-kylas-note` banner reminds them when the form is pre-filled.
 
 ## Deployment Workflow
 ```bash
