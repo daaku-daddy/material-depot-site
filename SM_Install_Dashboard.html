@@ -1541,8 +1541,8 @@ async function genInstallPDFSM(o,sj,jobcard){
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
   const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
   const rooms=jobcard.rooms||[];
-  const inst=sj.installer?installerById(sj.installer):null;
-  const installerName=inst?inst.name:(sj.installer_email||'—');
+  const primaryAssign=sj.assignments&&(sj.assignments.find(a=>a.primary)||sj.assignments[0]);
+  const installerName=(primaryAssign&&primaryAssign.installer_name)||(sj.installer&&(installerById(sj.installer)||{}).name)||(sj.installer_email||'—');
   function hdr(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Installation Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
   hdr();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
@@ -1562,6 +1562,11 @@ async function genInstallPDFSM(o,sj,jobcard){
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
   doc.text(doc.splitTextToSize("I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  const RI=jobcard.sign&&jobcard.sign.ratings;
+  if(RI){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      body:[['Overall installation experience',String(RI.q1||'—')+' / 10'],['Site Installer rating',String(RI.q2||'—')+' / 10'],['Site cleanliness after installation',String(RI.q3||'—')+' / 10'],...(RI.comments?[['Comments',RI.comments]]:[])].filter(Boolean)});
+    y=doc.lastAutoTable.finalY+10;}
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((jobcard.sign&&jobcard.sign.name)||o.name||''),M,y);y+=18;doc.text('Date: '+fmtDate(sj.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
   if(jobcard.sign&&jobcard.sign.img){const si=await _compressInst(jobcard.sign.img);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}

@@ -1307,6 +1307,11 @@ async function genAuditPDFSM(o,ticked){
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
   doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  const RS=ticked.sign&&ticked.sign.ratings;
+  if(RS){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      body:[['Overall Site Audit experience',String(RS.q1||'—')+' / 10'],['Site Auditor behaviour',String(RS.q2||'—')+' / 10'],['Site cleanliness after audit',String(RS.q3||'—')+' / 10'],...(RS.comments?[['Comments',RS.comments]]:[])].filter(Boolean)});
+    y=doc.lastAutoTable.finalY+10;}
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((ticked.sign&&ticked.sign.name)||o.name||''),M,y);y+=18;doc.text('Date: '+fmtDate(o.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
   if(ticked.sign&&ticked.sign.img){const si=await _compressSM(ticked.sign.img);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
