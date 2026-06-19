@@ -181,15 +181,50 @@
   .auditorrow .load{margin-left:auto;font-size:11.5px;font-weight:800;}
   .dfoot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:9px;background:#fff;flex-wrap:wrap;}
   .dfoot .btn{flex:1;justify-content:center;min-width:120px;}
-  .calwrap{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);}
-  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
-  .daycell{border:1px solid var(--line);border-radius:10px;padding:9px;min-height:104px;}
-  .daycell .dn{font-size:11px;color:var(--muted);font-weight:700;}
-  .daycell.past{opacity:.5;background:#f7f8fa;}
-  .daycell .avs{margin-top:6px;font-size:11px;font-weight:800;color:var(--navy);}
-  .daycell .cap{font-size:10px;color:var(--blue);font-weight:700;margin-top:3px;}
-  .daycell .bk{font-size:10px;color:var(--muted);margin-top:2px;}
-  .dow{font-size:10px;color:var(--muted);font-weight:800;text-align:center;padding-bottom:4px;letter-spacing:.5px;}
+  .calschedwrap{display:flex;flex-direction:column;gap:16px;}
+  .caldays{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;}
+  .daycol{flex:0 0 158px;border:1.5px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:border-color .15s;overflow:hidden;}
+  .daycol:hover{border-color:var(--blue);}
+  .daycol-h{padding:10px 12px 8px;border-bottom:1px solid var(--line);}
+  .daycol-dow{font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);}
+  .daycol-dt{font-size:15px;font-weight:800;color:var(--ink);margin:2px 0 3px;}
+  .daycol-cnt{font-size:11px;font-weight:700;color:var(--blue);}
+  .daycol-cnt.zero{color:var(--muted);}
+  .daycol.today .daycol-h{background:var(--navy);}
+  .daycol.today .daycol-dow{color:rgba(255,255,255,.7);}
+  .daycol.today .daycol-dt{color:#fff;}
+  .daycol.today .daycol-cnt{color:rgba(255,255,255,.85);}
+  .daycol.today .daycol-cnt.zero{color:rgba(255,255,255,.4);}
+  .daycol.sel .daycol-h{background:var(--blue);}
+  .daycol.sel .daycol-dow{color:rgba(255,255,255,.7);}
+  .daycol.sel .daycol-dt{color:#fff;}
+  .daycol.sel .daycol-cnt{color:rgba(255,255,255,.85);}
+  .daycol.sel .daycol-cnt.zero{color:rgba(255,255,255,.4);}
+  .daycol.past{opacity:.65;}
+  .daycol-b{padding:8px;display:flex;flex-direction:column;gap:5px;}
+  .calmini{border-radius:7px;padding:6px 8px;background:var(--bg);}
+  .calmini:hover{background:#dde5f0;}
+  .calmini-name{font-size:11.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .calmini-meta{font-size:10.5px;color:var(--muted);margin:2px 0 3px;}
+  .calmini-foot{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+  .calmini-person{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;}
+  .calmore{font-size:11px;color:var(--blue);font-weight:700;padding:3px 0 2px;text-align:center;}
+  .calempty-day{font-size:11px;color:var(--muted);text-align:center;padding:10px 0;}
+  .caldetail{background:#fff;border:1.5px solid var(--blue);border-radius:12px;overflow:hidden;}
+  .caldet-head{padding:14px 18px;border-bottom:1px solid var(--line);background:#eef3fb;}
+  .caldet-hdr{font-size:14px;font-weight:800;color:var(--navy);}
+  .caldet-hsub{font-size:12px;color:var(--muted);margin-top:3px;}
+  .caldet-cards{display:flex;flex-direction:column;}
+  .caldet-card{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .1s;}
+  .caldet-card:last-child{border-bottom:none;}
+  .caldet-card:hover{background:#f4f7fb;}
+  .caldet-name{font-size:14px;font-weight:700;color:var(--ink);}
+  .caldet-sub{font-size:11.5px;color:var(--muted);margin:2px 0;}
+  .caldet-addr{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px;}
+  .caldet-r{text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end;}
+  .caldet-slot{font-size:12.5px;font-weight:700;color:var(--navy);}
+  .caldet-person{font-size:11.5px;color:var(--muted);}
+  .caldet-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px;}
   .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted);}
   .capgrid{overflow:auto;}
   .capgrid table{min-width:600px;}
@@ -227,7 +262,7 @@
     <a data-view="schedule"><span class="ico">&#9719;</span>Today's schedule<span class="ct" id="cToday">0</span></a>
     <a data-view="reschedule"><span class="ico">&#8635;</span>To reschedule<span class="ct" id="cResched">0</span></a>
     <a data-view="followups"><span class="ico">📅</span>Follow-ups<span class="ct alert" id="cFollowUp"></span></a>
-    <a data-view="calendar"><span class="ico">&#9636;</span>Availability calendar</a>
+    <a data-view="calendar"><span class="ico">&#128197;</span>Schedule</a>
     <div class="grp">SETUP</div>
     <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
     <a data-view="auditors"><span class="ico">&#9673;</span>Auditors &amp; caps</a>
@@ -523,7 +558,7 @@ function orderCategoriesAudit(o){
   return '<span style="color:var(--muted)">—</span>';
 }
 
-let activeView="orders",filterStatus="all",searchQ="",currentPI=null;
+let activeView="orders",filterStatus="all",searchQ="",currentPI=null,calSelDay=dstr(today);
 
 /* ============== NAV COUNTS ============== */
 function counts(){
@@ -649,23 +684,54 @@ function reschedView(){
 }
 
 function calendarView(){
-  const dows=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  let cells="";const startDow=today.getDay();
-  for(let i=0;i<startDow;i++)cells+=`<div></div>`;
-  for(let i=0;i<28;i++){
-    const d=addDays(i);const ds=dstr(d);const past=d<today;
-    const avail=auditorsAvailable(ds);const total=dailyTotalCap(ds);
-    const booked=ORDERS.filter(o=>o.date===ds&&BOOKED.includes(o.status)).length;
-    cells+=`<div class="daycell ${past?'past':''}">
-      <div class="dn">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
-      <div class="avs">${avail} auditors</div>
-      <div class="cap">${avail}/window · ${total} max/day</div>
-      <div class="bk">${booked} booked</div></div>`;
-  }
-  return `<div class="crumbs">Site Audit / Availability calendar</div>
-  <div class="pagehead"><div><h1>Availability calendar</h1><p>Per-window capacity = auditors available that day. Edit each auditor's daily cap under Auditors &amp; caps.</p></div></div>
-  <div class="calwrap"><div class="calgrid">${dows.map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>
-   <div class="legend"><span>An auditor is "available" on a day when their daily cap is 1 or more. Each available auditor opens <b>one booking in every window</b>.</span></div></div>`;
+  const todayStr=dstr(today);
+  const days=Array.from({length:10},(_,i)=>addDays(i-3));
+  const cols=days.map(d=>{
+    const ds=dstr(d);const isToday=ds===todayStr;const isSel=ds===calSelDay;const isPast=d<today;
+    const dayOrds=ORDERS.filter(o=>o.date===ds).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+    const cnt=dayOrds.length;
+    const minis=dayOrds.slice(0,3).map(o=>`<div class="calmini" data-pi="${o.pi}">
+      <div class="calmini-name">${o.name}</div>
+      <div class="calmini-meta">${slotLabel(o.slot)}</div>
+      <div class="calmini-foot">${chip(o.status)}${o.auditorName?`<span class="calmini-person">${o.auditorName.split(' ')[0]}</span>`:''}</div>
+    </div>`).join('');
+    const more=cnt>3?`<div class="calmore">+${cnt-3} more</div>`:'';
+    return `<div class="daycol${isSel?' sel':''}${isPast?' past':''}${isToday?' today':''}" data-calday="${ds}">
+      <div class="daycol-h">
+        <div class="daycol-dow">${isToday?'Today':d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+        <div class="daycol-dt">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
+        <div class="daycol-cnt${cnt===0?' zero':''}">${cnt>0?cnt+' '+(cnt===1?'audit':'audits'):'No audits'}</div>
+      </div>
+      <div class="daycol-b">${minis}${more}${cnt===0?'<div class="calempty-day">—</div>':''}</div>
+    </div>`;
+  }).join('');
+  const selOrds=ORDERS.filter(o=>o.date===calSelDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+  const selDate=new Date(calSelDay+'T00:00');
+  const selLabel=calSelDay===todayStr?'Today — '+selDate.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'}):selDate.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const detCards=selOrds.map(o=>`<div class="caldet-card" data-pi="${o.pi}">
+    <div>
+      <div class="caldet-name">${o.name}</div>
+      <div class="caldet-sub">${o.pi} · BM ${o.bm} · <a class="maplink" href="tel:${o.phone.replace(/\s/g,'')}" onclick="event.stopPropagation()">${o.phone}</a></div>
+      <div class="caldet-addr">${o.addr}</div>
+    </div>
+    <div class="caldet-r">
+      <div class="caldet-slot">${slotLabel(o.slot)}</div>
+      <div class="caldet-person">${o.auditorName||'Unassigned'}</div>
+      ${chip(o.status)}
+    </div>
+  </div>`).join('');
+  return `<div class="crumbs">Site Audit / Schedule</div>
+  <div class="pagehead"><div><h1>Schedule</h1><p>T−3 to T+6 — click any day column to see all bookings in detail.</p></div></div>
+  <div class="calschedwrap">
+    <div class="caldays">${cols}</div>
+    <div class="caldetail">
+      <div class="caldet-head">
+        <div class="caldet-hdr">${selLabel}</div>
+        <div class="caldet-hsub">${selOrds.length===0?'No audits scheduled':`${selOrds.length} ${selOrds.length===1?'audit':'audits'} scheduled`}</div>
+      </div>
+      <div class="caldet-cards">${selOrds.length>0?detCards:'<div class="caldet-empty">No audits scheduled for this day.</div>'}</div>
+    </div>
+  </div>`;
 }
 
 function slotsView(){
@@ -1110,6 +1176,9 @@ function wire(){
   if($("#pushDemo"))$("#pushDemo").onclick=()=>{const n=Math.floor(Math.random()*900+100);
     ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],auditTicked:["Wooden Flooring"],bm:"Karthik R",status:"pending",name:"New Customer",phone:"90000 0"+n,addr:"MG Road, Bengaluru 560001",service:null,slot:null,date:null,auditor:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"}]});
     render();toast("New audit order received");};
+  document.querySelectorAll(".daycol[data-calday]").forEach(col=>col.onclick=e=>{if(e.target.closest(".calmini"))return;calSelDay=col.dataset.calday;render();});
+  document.querySelectorAll(".calmini[data-pi]").forEach(m=>m.onclick=e=>{e.stopPropagation();openOrder(m.dataset.pi);});
+  document.querySelectorAll(".caldet-card[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openOrder(c.dataset.pi);});
 }
 
 document.querySelectorAll("#rail a").forEach(a=>a.onclick=async()=>{

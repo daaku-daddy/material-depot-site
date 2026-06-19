@@ -183,14 +183,50 @@
   .tl .tt{font-weight:700;font-size:13px;} .tl .td{font-size:11.5px;color:var(--muted);}
   .dfoot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:9px;background:#fff;flex-wrap:wrap;}
   .dfoot .btn{flex:1;justify-content:center;min-width:120px;}
-  .calwrap{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);}
-  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
-  .daycell{border:1px solid var(--line);border-radius:10px;padding:9px;min-height:104px;}
-  .daycell .dn{font-size:11px;color:var(--muted);font-weight:700;}
-  .daycell.past{opacity:.5;background:#f7f8fa;}
-  .daycell .row{margin-top:6px;font-size:11px;font-weight:700;}
-  .daycell .row.fl{color:#7a5800;} .daycell .row.wp{color:#5b3aa6;}
-  .dow{font-size:10px;color:var(--muted);font-weight:800;text-align:center;padding-bottom:4px;letter-spacing:.5px;}
+  .calschedwrap{display:flex;flex-direction:column;gap:16px;}
+  .caldays{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;}
+  .daycol{flex:0 0 158px;border:1.5px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:border-color .15s;overflow:hidden;}
+  .daycol:hover{border-color:var(--blue);}
+  .daycol-h{padding:10px 12px 8px;border-bottom:1px solid var(--line);}
+  .daycol-dow{font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);}
+  .daycol-dt{font-size:15px;font-weight:800;color:var(--ink);margin:2px 0 3px;}
+  .daycol-cnt{font-size:11px;font-weight:700;color:var(--blue);}
+  .daycol-cnt.zero{color:var(--muted);}
+  .daycol.today .daycol-h{background:var(--navy);}
+  .daycol.today .daycol-dow{color:rgba(255,255,255,.7);}
+  .daycol.today .daycol-dt{color:#fff;}
+  .daycol.today .daycol-cnt{color:rgba(255,255,255,.85);}
+  .daycol.today .daycol-cnt.zero{color:rgba(255,255,255,.4);}
+  .daycol.sel .daycol-h{background:var(--blue);}
+  .daycol.sel .daycol-dow{color:rgba(255,255,255,.7);}
+  .daycol.sel .daycol-dt{color:#fff;}
+  .daycol.sel .daycol-cnt{color:rgba(255,255,255,.85);}
+  .daycol.sel .daycol-cnt.zero{color:rgba(255,255,255,.4);}
+  .daycol.past{opacity:.65;}
+  .daycol-b{padding:8px;display:flex;flex-direction:column;gap:5px;}
+  .calmini{border-radius:7px;padding:6px 8px;background:var(--bg);}
+  .calmini:hover{background:#dde5f0;}
+  .calmini-name{font-size:11.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .calmini-meta{font-size:10.5px;color:var(--muted);margin:2px 0 3px;}
+  .calmini-foot{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+  .calmini-person{font-size:10px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;}
+  .calmore{font-size:11px;color:var(--blue);font-weight:700;padding:3px 0 2px;text-align:center;}
+  .calempty-day{font-size:11px;color:var(--muted);text-align:center;padding:10px 0;}
+  .caldetail{background:#fff;border:1.5px solid var(--blue);border-radius:12px;overflow:hidden;}
+  .caldet-head{padding:14px 18px;border-bottom:1px solid var(--line);background:#eef3fb;}
+  .caldet-hdr{font-size:14px;font-weight:800;color:var(--navy);}
+  .caldet-hsub{font-size:12px;color:var(--muted);margin-top:3px;}
+  .caldet-cards{display:flex;flex-direction:column;}
+  .caldet-card{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .1s;}
+  .caldet-card:last-child{border-bottom:none;}
+  .caldet-card:hover{background:#f4f7fb;}
+  .caldet-name{font-size:14px;font-weight:700;color:var(--ink);}
+  .caldet-sub{font-size:11.5px;color:var(--muted);margin:2px 0;}
+  .caldet-addr{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px;}
+  .caldet-r{text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end;}
+  .caldet-slot{font-size:12.5px;font-weight:700;color:var(--navy);}
+  .caldet-person{font-size:11.5px;color:var(--muted);}
+  .caldet-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px;}
   .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted);}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:12px 20px;border-radius:30px;font-size:13.5px;opacity:0;transition:.25s;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.3);font-weight:600;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
@@ -243,7 +279,7 @@
     <a data-view="schedule"><span class="ico">&#9719;</span>Today's installs<span class="ct" id="cToday">0</span></a>
     <a data-view="reschedule"><span class="ico">&#8635;</span>To reschedule<span class="ct" id="cResched">0</span></a>
     <a data-view="followups"><span class="ico">📅</span>Follow-ups<span class="ct alert" id="cFollowUp"></span></a>
-    <a data-view="calendar"><span class="ico">&#9636;</span>Installer calendar</a>
+    <a data-view="calendar"><span class="ico">&#128197;</span>Schedule</a>
     <div class="grp">SETUP</div>
     <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
     <a data-view="installers"><span class="ico">&#9673;</span>Installers</a>
@@ -539,7 +575,7 @@ function wpSlotLoad(id,date){
   return n;
 }
 
-let activeView="orders",filterStatus="all",searchQ="",currentPI=null,sortDelivery="asc";
+let activeView="orders",filterStatus="all",searchQ="",currentPI=null,sortDelivery="asc",calSelDay=dstr(today);
 
 /* ============== COUNTS ============== */
 function needActionCount(){
@@ -805,32 +841,73 @@ function followupsView(){
    <tbody>${rows||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No follow-ups set.</td></tr>`}</tbody></table></div>`;
 }
 
+function sjsForDay(ds){
+  const res=[];
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
+    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:
+      (sj.installer?[{installer_id:sj.installer,installer_name:(installerById(sj.installer)||{name:'?'}).name,date:sj.date,mode:'standard',primary:true}]:[]);
+    if(asgns.some(a=>{const dates=a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]);return dates.includes(ds);}))
+      res.push({o,sj});
+  }));
+  return res;
+}
 function calendarView(){
-  const dows=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  let cells="";const startDow=today.getDay();
-  for(let i=0;i<startDow;i++)cells+=`<div></div>`;
-  const flInst=INSTALLERS.filter(i=>i.type==="flooring").length;
-  const wpInst=INSTALLERS.filter(i=>i.type==="wallpaper").length;
-  for(let i=0;i<28;i++){
-    const d=addDays(i);const ds=dstr(d);const past=d<today;
-    let flUsed=0,wpUsed=0;
-    ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
-      const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_id:sj.installer,date:sj.date,dates:[],mode:'standard'}]:[]);
-      asgns.forEach(a=>{
-        const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
-        if(!dates.includes(ds))return;
-        if(sj.type==='flooring')flUsed++;else wpUsed+=slotsForWp(totalRolls(sj));
-      });
-    }));
-    cells+=`<div class="daycell ${past?'past':''}">
-      <div class="dn">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
-      <div class="row fl">FL ${flUsed}/${flInst*FLOOR_DAY_CAP}</div>
-      <div class="row wp">WP ${wpUsed}/${wpInst*WP_DAY_SLOTS} slots</div></div>`;
-  }
-  return `<div class="crumbs">Installations / Installer calendar</div>
-  <div class="pagehead"><div><h1>Installer calendar</h1><p>Daily capacity by type. Flooring: 1 job/installer/day. Wallpaper: 3 slots/day — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h).</p></div></div>
-  <div class="calwrap"><div class="calgrid">${dows.map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>
-   <div class="legend"><span>FL = flooring jobs booked / capacity · WP = wallpaper slots used / capacity.</span></div></div>`;
+  const todayStr=dstr(today);
+  const days=Array.from({length:10},(_,i)=>addDays(i-3));
+  const sjChip=st=>{const M={created:{l:'Service Created',c:'c-created'},assigned:{l:'Assigned',c:'c-assigned'},onway:{l:'On the Way',c:'c-onway'},atsite:{l:'At Site',c:'c-atsite'},completed:{l:'Completed',c:'c-completed'},reschedule:{l:'Reschedule',c:'c-reschedule'},partial:{l:'Partial',c:'c-partial'}};const s=M[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;};
+  const typeTag=t=>t==='wallpaper'?`<span class="skupill" style="background:var(--purplebg);color:var(--purple);font-size:10px">WP</span>`:`<span class="skupill" style="background:#fff4d6;color:#7a5800;font-size:10px">FL</span>`;
+  const primaryName=sj=>{if(sj.assignments&&sj.assignments.length){const p=sj.assignments.find(a=>a.primary)||sj.assignments[0];return p.installer_name||'?';}return(installerById(sj.installer)||{name:'?'}).name;};
+  const cols=days.map(d=>{
+    const ds=dstr(d);const isToday=ds===todayStr;const isSel=ds===calSelDay;const isPast=d<today;
+    const items=sjsForDay(ds);const cnt=items.length;
+    const minis=items.slice(0,3).map(({o,sj})=>`<div class="calmini" data-pi="${o.pi}">
+      <div class="calmini-name">${o.name}</div>
+      <div class="calmini-meta">${typeTag(sj.type)} ${primaryName(sj).split(' ')[0]}</div>
+      <div class="calmini-foot">${sjChip(sj.status)}</div>
+    </div>`).join('');
+    const more=cnt>3?`<div class="calmore">+${cnt-3} more</div>`:'';
+    return `<div class="daycol${isSel?' sel':''}${isPast?' past':''}${isToday?' today':''}" data-calday="${ds}">
+      <div class="daycol-h">
+        <div class="daycol-dow">${isToday?'Today':d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+        <div class="daycol-dt">${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
+        <div class="daycol-cnt${cnt===0?' zero':''}">${cnt>0?cnt+' '+(cnt===1?'install':'installs'):'No installs'}</div>
+      </div>
+      <div class="daycol-b">${minis}${more}${cnt===0?'<div class="calempty-day">—</div>':''}</div>
+    </div>`;
+  }).join('');
+  const selItems=sjsForDay(calSelDay);
+  const selDate=new Date(calSelDay+'T00:00');
+  const selLabel=calSelDay===todayStr?'Today — '+selDate.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'}):selDate.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const detCards=selItems.map(({o,sj})=>{
+    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_name:(installerById(sj.installer)||{name:'?'}).name,primary:true,slots:sj.slot?[sj.slot]:[]}]:[]);
+    const primary=asgns.find(a=>a.primary)||asgns[0]||{};
+    const slotStr=(primary.slots||[]).map(s=>slotLabel(s)).join(' + ')||slotLabel(sj.slot)||'—';
+    const allNames=asgns.map(a=>a.installer_name||'?').join(', ');
+    return `<div class="caldet-card" data-pi="${o.pi}">
+      <div>
+        <div class="caldet-name">${o.name} ${typeTag(sj.type)}</div>
+        <div class="caldet-sub">${o.pi} · BM ${o.bm} · <a class="maplink" href="tel:${o.phone.replace(/\s/g,'')}" onclick="event.stopPropagation()">${o.phone}</a></div>
+        <div class="caldet-addr">${o.addr}</div>
+      </div>
+      <div class="caldet-r">
+        <div class="caldet-slot">${slotStr}</div>
+        <div class="caldet-person">${allNames}</div>
+        ${sjChip(sj.status)}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="crumbs">Installations / Schedule</div>
+  <div class="pagehead"><div><h1>Schedule</h1><p>T−3 to T+6 — click any day column to see all bookings in detail.</p></div></div>
+  <div class="calschedwrap">
+    <div class="caldays">${cols}</div>
+    <div class="caldetail">
+      <div class="caldet-head">
+        <div class="caldet-hdr">${selLabel}</div>
+        <div class="caldet-hsub">${selItems.length===0?'No installations scheduled':`${selItems.length} ${selItems.length===1?'installation':'installations'} scheduled`}</div>
+      </div>
+      <div class="caldet-cards">${selItems.length>0?detCards:'<div class="caldet-empty">No installations scheduled for this day.</div>'}</div>
+    </div>
+  </div>`;
 }
 
 function slotsView(){
@@ -1360,6 +1437,9 @@ function wire(){
   if($("#pushDemo"))$("#pushDemo").onclick=()=>{const n=Math.floor(Math.random()*900+100);
     ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",type:"flooring",audit:false},{c:INSTALL_SKU,n:"Installation",type:"install",audit:false}],bm:"Karthik R",name:"New Customer",phone:"90000 0"+n,addr:"MG Road, Bengaluru 560001",matchedAudit:true,deliveryDate:dstr(addDays(1)),customWp:false,status:"pending",subjobs:null,service:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"},{t:"Matched to completed Site Audit",d:"Just now",by:"auto"}]});
     render();toast("New installation order received");};
+  document.querySelectorAll(".daycol[data-calday]").forEach(col=>col.onclick=e=>{if(e.target.closest(".calmini"))return;calSelDay=col.dataset.calday;render();});
+  document.querySelectorAll(".calmini[data-pi]").forEach(m=>m.onclick=e=>{e.stopPropagation();openOrder(m.dataset.pi);});
+  document.querySelectorAll(".caldet-card[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openOrder(c.dataset.pi);});
 }
 
 document.querySelectorAll("#rail a").forEach(a=>a.onclick=async()=>{
