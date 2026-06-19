@@ -160,6 +160,34 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .loading-row{text-align:center;padding:40px;color:var(--muted);}
 
+  /* Analytics */
+  .an-section{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:20px;}
+  .an-section-head{display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--line);background:#f8f9fc;}
+  .an-section-ico{font-size:24px;flex:0 0 auto;}
+  .an-section-title{font-size:16px;font-weight:800;color:var(--navy);}
+  .an-section-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+  .an-hero{margin-left:auto;text-align:right;flex:0 0 auto;}
+  .an-hero-val{font-size:40px;font-weight:900;color:var(--navy);line-height:1;}
+  .an-hero-label{font-size:11px;color:var(--muted);margin-top:2px;}
+  .an-grid{display:grid;grid-template-columns:repeat(3,1fr);}
+  .an-card{padding:16px 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-height:110px;}
+  .an-card:nth-child(3n){border-right:none;}
+  .an-card-na{background:#fafbfc;}
+  .an-card-ico{font-size:14px;margin-bottom:5px;}
+  .an-label{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;}
+  .an-val{font-size:30px;font-weight:900;line-height:1;margin-bottom:5px;}
+  .an-bar{height:4px;background:var(--lighter,#e8edf4);border-radius:2px;margin:5px 0 6px;}
+  .an-bar-fill{height:100%;border-radius:2px;}
+  .an-sub{font-size:11.5px;color:var(--muted);}
+  .an-sub2{font-size:11px;color:var(--muted);margin-top:2px;}
+  .an-stars{font-size:19px;color:var(--amber,#9a6200);margin:4px 0 3px;letter-spacing:1px;}
+  .an-nps-row{display:flex;flex-direction:column;gap:2px;margin:5px 0 4px;font-size:11.5px;font-weight:700;}
+  .an-nps-p{color:var(--green);}
+  .an-nps-n{color:var(--muted);font-weight:500;}
+  .an-nps-d{color:var(--red);}
+  .an-note{font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--line);line-height:1.5;}
+  @media(max-width:780px){.an-grid{grid-template-columns:repeat(2,1fr);}.an-card:nth-child(3n){border-right:1px solid var(--line);}.an-card:nth-child(2n){border-right:none;}}
+
   #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:10px;padding:10px 18px;font-size:13.5px;font-weight:600;opacity:0;transition:all .25s;pointer-events:none;z-index:200;white-space:nowrap;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
@@ -194,6 +222,7 @@
       <button class="nav-item" data-view="roleviewer"><span class="ico">👁</span>Role Viewer</button>
       <button class="nav-item" data-view="jobs"><span class="ico">📋</span>Job Overview</button>
       <button class="nav-item" data-view="perf"><span class="ico">📊</span>Performance</button>
+      <button class="nav-item" data-view="analytics"><span class="ico">📉</span>Analytics</button>
     </nav>
 
     <main id="main"></main>
@@ -273,6 +302,7 @@ async function renderView(v){
   else if(v==='roleviewer') await renderRoleViewer(m);
   else if(v==='jobs')    await renderJobs(m);
   else if(v==='perf')    await renderPerf(m);
+  else if(v==='analytics') await renderAnalytics(m);
 }
 
 /* ---- OVERVIEW ---- */
@@ -987,6 +1017,167 @@ function dlJobCard(i){
   const c=window._jcCards[i];if(!c)return;
   if(c.type==='audit')genAuditPDF(c.order,c.ticked);
   else genInstallPDF(c.order,c.sj,c.jobcard,c.assigned);
+}
+
+/* ---- ANALYTICS ---- */
+let analyticsPeriod='30';
+
+async function renderAnalytics(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  const [auditRes,installRes,ratingsRes]=await Promise.all([
+    sbGet('audit_orders?select=pi,status,date,log,created_at&status=neq.deleted&order=created_at.desc'),
+    sbGet('install_orders?select=pi,status,matched_audit,delivery_date,created_at,log,service&status=neq.deleted&order=created_at.desc'),
+    sbGet('ratings?select=order_type,pi,q1_score,q2_score,created_at&order=created_at.desc'),
+  ]);
+  window._anData={
+    audits:Array.isArray(auditRes)?auditRes:[],
+    installs:Array.isArray(installRes)?installRes:[],
+    ratings:Array.isArray(ratingsRes)?ratingsRes:[],
+  };
+  drawAnalytics(m);
+}
+
+function drawAnalytics(m){
+  const {audits,installs,ratings}=window._anData||{audits:[],installs:[],ratings:[]};
+  const days=parseInt(analyticsPeriod)||0;
+  const cutoff=days>0?new Date(Date.now()-days*86400000):null;
+  const inP=r=>!cutoff||new Date(r.created_at)>=cutoff;
+
+  const A=audits.filter(inP);
+  const I=installs.filter(inP);
+  const AR=ratings.filter(r=>r.order_type==='audit').filter(inP);
+  const IR=ratings.filter(r=>r.order_type==='install').filter(inP);
+
+  /* ---- Audit calcs ---- */
+  const A_total=A.length;
+  const A_slotBooked=A.filter(o=>o.date).length;
+  const A_rescheduled=A.filter(o=>(o.log||[]).some(l=>(l.t||'').toLowerCase().includes('reschedule'))).length;
+  const A_activated=A.filter(o=>!['pending','created'].includes(o.status)).length;
+  const A_reachedSite=A.filter(o=>['atsite','completed'].includes(o.status)).length;
+  const A_completed=A.filter(o=>o.status==='completed').length;
+  const avgF=(arr,k)=>arr.length?+(arr.reduce((s,r)=>s+(+r[k]||0),0)/arr.length).toFixed(1):null;
+  const AR_q1=avgF(AR,'q1_score'); const AR_q2=avgF(AR,'q2_score');
+  const AR_prom=AR.filter(r=>r.q1_score>=9).length;
+  const AR_det=AR.filter(r=>r.q1_score<=6).length;
+  const AR_nps=AR.length?Math.round((AR_prom-AR_det)/AR.length*100):null;
+  // Unique audited PIs with ratings = completed with signature (ratings written post-sign)
+  const AR_pis=new Set(AR.map(r=>r.pi)).size;
+
+  /* ---- Install calcs ---- */
+  const I_total=I.length;
+  const I_withSvc=I.filter(o=>o.service).length;
+  const I_extAudit=I.filter(o=>o.service&&o.service.audit_by==='customer').length;
+  const I_smFollowUp=I.filter(o=>o.status!=='pending').length;
+  const I_delayed=I.filter(o=>(o.log||[]).some(l=>(l.t||'').toLowerCase().includes('delay'))).length;
+  const I_completed=I.filter(o=>['completed','partial'].includes(o.status)).length;
+  const IR_q1=avgF(IR,'q1_score'); const IR_q2=avgF(IR,'q2_score');
+  const IR_prom=IR.filter(r=>r.q1_score>=9).length;
+  const IR_det=IR.filter(r=>r.q1_score<=6).length;
+  const IR_nps=IR.length?Math.round((IR_prom-IR_det)/IR.length*100):null;
+  const IR_pis=new Set(IR.map(r=>r.pi)).size;
+
+  /* ---- Render helpers ---- */
+  const pc=(n,d)=>d>0?Math.round(n/d*100):null;
+  const pcColor=p=>p===null?'var(--muted)':p>=80?'var(--green)':p>=50?'var(--amber)':'var(--red)';
+  const npsColor=n=>n===null?'var(--muted)':n>=50?'var(--green)':n>=0?'var(--amber)':'var(--red)';
+
+  function pctCard(ico,label,num,den,sub){
+    const p=pc(num,den);const c=pcColor(p);
+    const v=p!==null?p+'%':'N/A';
+    const bar=p!==null?`<div class="an-bar"><div class="an-bar-fill" style="width:${p}%;background:${c}"></div></div>`:'';
+    return `<div class="an-card">
+      <div class="an-card-ico">${ico}</div><div class="an-label">${label}</div>
+      <div class="an-val" style="color:${c}">${v}</div>${bar}
+      <div class="an-sub">${den>0?num+' of '+den+' orders':'No data yet'}</div>
+      ${sub?`<div class="an-sub2">${sub}</div>`:''}
+    </div>`;
+  }
+  function ratingCard(ico,label,avgVal,count){
+    if(avgVal===null)return `<div class="an-card an-card-na"><div class="an-card-ico">${ico}</div><div class="an-label">${label}</div><div class="an-val" style="color:var(--muted)">N/A</div><div class="an-sub">No ratings yet</div></div>`;
+    const fv=parseFloat(avgVal);const c=fv>=8?'var(--green)':fv>=6?'var(--amber)':'var(--red)';
+    const filled=Math.min(5,Math.round(fv/2));const empty=5-filled;
+    return `<div class="an-card">
+      <div class="an-card-ico">${ico}</div><div class="an-label">${label}</div>
+      <div class="an-val" style="color:${c}">${avgVal}<span style="font-size:14px;font-weight:600;color:var(--muted)">/10</span></div>
+      <div class="an-stars">${'★'.repeat(filled)+'☆'.repeat(empty)}</div>
+      <div class="an-sub">${count} rating${count!==1?'s':''}</div>
+    </div>`;
+  }
+  function npsCard(ico,label,nps,prom,det,total){
+    if(nps===null)return `<div class="an-card an-card-na"><div class="an-card-ico">${ico}</div><div class="an-label">${label}</div><div class="an-val" style="color:var(--muted)">N/A</div><div class="an-sub">No ratings yet</div></div>`;
+    const c=npsColor(nps);const pass=total-prom-det;
+    return `<div class="an-card">
+      <div class="an-card-ico">${ico}</div><div class="an-label">${label}</div>
+      <div class="an-val" style="color:${c}">${nps>=0?'+':''}${nps}</div>
+      <div class="an-nps-row">
+        <span class="an-nps-p">▲ ${total?Math.round(prom/total*100):0}% Promoters (9–10)</span>
+        <span class="an-nps-n">● ${total?Math.round(pass/total*100):0}% Neutral (7–8)</span>
+        <span class="an-nps-d">▼ ${total?Math.round(det/total*100):0}% Detractors (0–6)</span>
+      </div>
+      <div class="an-sub">${total} response${total!==1?'s':''}</div>
+    </div>`;
+  }
+  function naCard(ico,label,note){
+    return `<div class="an-card an-card-na"><div class="an-card-ico">${ico}</div><div class="an-label">${label}</div><div class="an-val" style="color:var(--muted)">N/A</div><div class="an-sub">${note}</div></div>`;
+  }
+
+  const periodLabel={'7':'This Week','30':'This Month','90':'Last 90 Days','0':'All Time'}[analyticsPeriod]||'';
+
+  m.innerHTML=`
+    <div class="page-head"><h1>Analytics</h1><p>Operational metrics across all job entries. Filtered: ${periodLabel}.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap">
+      ${[['7','This Week'],['30','This Month'],['90','Last 90 Days'],['0','All Time']].map(([v,l])=>
+        `<button class="filt-btn${analyticsPeriod===v?' active':''}" onclick="analyticsPeriod='${v}';drawAnalytics(document.getElementById('main'))">${l}</button>`
+      ).join('')}
+    </div>
+
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-ico">🔍</span>
+        <div><div class="an-section-title">Site Audit</div><div class="an-section-sub">Parameters tracked across all site audit orders</div></div>
+        <div class="an-hero"><div class="an-hero-val">${A_total}</div><div class="an-hero-label">Total Orders · ${periodLabel}</div></div>
+      </div>
+      <div class="an-grid">
+        ${pctCard('📞','SM Slot Booking %',A_slotBooked,A_total,'Orders where SM booked a date & slot')}
+        ${pctCard('🔄','Slot Postpone Rate',A_rescheduled,A_slotBooked,'Booked orders that were rescheduled at least once')}
+        ${pctCard('🚗','Auditor Visit Success %',A_reachedSite,A_activated,'Assigned audits where auditor reached the site')}
+        ${pctCard('📋','Job Card Filling %',AR_pis,A_completed,'Completed audits with a rated job card')}
+        ${pctCard('✍️','Signature & Acknowledgement %',AR_pis,A_completed,'Completed audits with customer sign + rating recorded')}
+        ${npsCard('📈','NPS Score',AR_nps,AR_prom,AR_det,AR.length)}
+        ${ratingCard('⭐','Overall Service Rating',AR_q1,AR.length)}
+        ${ratingCard('👤','Auditor Rating',AR_q2,AR.length)}
+        ${naCard('🧹','Site Cleanliness Rating','Not yet captured in job card questions — add Q3 to track')}
+      </div>
+    </div>
+
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-ico">🔧</span>
+        <div><div class="an-section-title">Site Installation</div><div class="an-section-sub">Parameters tracked across all site installation orders</div></div>
+        <div class="an-hero"><div class="an-hero-val">${I_total}</div><div class="an-hero-label">Total Orders · ${periodLabel}</div></div>
+      </div>
+      <div class="an-grid">
+        ${pctCard('🔍','External Audit %',I_extAudit,I_withSvc,'Installations where customer provided their own measurement')}
+        ${pctCard('📞','SM Follow-Up %',I_smFollowUp,I_total,'Orders SM progressed past initial pending stage')}
+        ${pctCard('🚚','Delivery Delay %',I_delayed,I_total,'Orders with a delivery delay event logged')}
+        ${pctCard('🚗','Installer Visit Success %',I_completed,I_total,'Install orders fully or partially completed')}
+        ${pctCard('📋','Job Card Filling %',IR_pis,I_completed,'Completed installs with rated job card')}
+        ${pctCard('✍️','Signature & Acknowledgement %',IR_pis,I_completed,'Completed installs with customer sign + rating')}
+        ${npsCard('📈','NPS Score',IR_nps,IR_prom,IR_det,IR.length)}
+        ${ratingCard('⭐','Overall Service Rating',IR_q1,IR.length)}
+        ${ratingCard('👤','Installer Rating',IR_q2,IR.length)}
+        ${naCard('🧹','Site Cleanliness Rating','Not yet captured — add Q3 to job card questions to track')}
+      </div>
+    </div>
+
+    <div class="an-note" style="margin-top:0;background:#f8f9fc;border-radius:0 0 14px 14px;padding:14px 20px;font-size:12px;color:var(--muted);line-height:1.7;border:1px solid var(--line);border-top:none">
+      <b>How metrics are derived:</b>
+      Job Card % &amp; Signature % use the <b>ratings table</b> as proxy — a rating is written immediately after the customer signs, so a rating entry confirms both card filled and signature obtained.
+      Auditor/Installer Visit Success = audits/installs that progressed past assignment to site or completion.
+      Reschedule Rate counts any order whose log contains a reschedule event (includes SM-initiated rebooking and auditor requests).
+      NPS = % Promoters (Q1 ≥ 9) − % Detractors (Q1 ≤ 6) from customer ratings.
+      External Audit % = installs where service.audit_by = 'customer' (customer provided own measurement).
+    </div>`;
 }
 
 /* ---- INIT ---- */
