@@ -196,7 +196,11 @@ const AUDIT_SKU="SVC-AUDIT-001";
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
-const SLOTS={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+const SLOTS={
+  s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15},
+  sf1:{label:"9 AM – 12 PM",start:9},sf2:{label:"12 PM – 3 PM",start:12},sf3:{label:"3 PM – 6 PM",start:15},
+  sw1:{label:"9 AM – 12 PM",start:9},sw2:{label:"12 PM – 3 PM",start:12},sw3:{label:"3 PM – 6 PM",start:15}
+};
 
 // auditor-side statuses
 const STATUS={
@@ -257,7 +261,9 @@ function autoFlip(){
   const now=new Date();
   ORDERS.forEach(o=>{
     if(o.status==="scheduled"&&o.date===dstr(today)){
-      const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);
+      const slotInfo=SLOTS[o.slot];
+      if(!slotInfo)return;
+      const start=new Date(today);start.setHours(slotInfo.start,0,0,0);
       if(now>=new Date(start.getTime()-3*3600*1000)) o.status="callpending";
     }
   });
