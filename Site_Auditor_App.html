@@ -616,35 +616,88 @@ function reviewAndSign(o){
     ${roomCards}
     <div class="actions" style="margin-bottom:24px">
       <button class="btn ghost" id="backToRooms">&#8592; Back to rooms</button>
-      <button class="btn green" id="proceedSign">Sign &amp; complete &#8594;</button>
+      <button class="btn green" id="proceedSign">Proceed to client &#8594;</button>
     </div>`;
   $("#backToRooms").onclick=()=>{$("#jcFooter").classList.remove("hide");renderJCHeader();const saved=collectRooms();jcRooms=[];jcSeq=0;saved.forEach(r=>addRoom(r));};
-  $("#proceedSign").onclick=()=>signAndComplete(o);
+  $("#proceedSign").onclick=()=>showPassToClientAudit(o);
 }
 
 function _starRow(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
 
+function showPassToClientAudit(o){
+  $("#jcFooter").classList.add("hide");
+  $("#jcBody").innerHTML=`
+    <div class="card" style="text-align:center;padding:32px 16px;margin-top:12px">
+      <div style="font-size:56px;margin-bottom:16px">📱</div>
+      <div style="font-size:20px;font-weight:800;color:var(--navy);margin-bottom:8px">Please hand the phone to the client</div>
+      <p style="font-size:13.5px;color:var(--muted);margin:0 0 24px">The client will now complete the final steps:</p>
+      <div style="text-align:left;background:var(--bg);border-radius:12px;padding:14px 18px;margin-bottom:28px;line-height:2.2;font-size:13.5px">
+        <div><b>Step 1</b> &nbsp; Read &amp; agree to the Terms &amp; Conditions</div>
+        <div><b>Step 2</b> &nbsp; Rate the service (3 questions)</div>
+        <div><b>Step 3</b> &nbsp; Sign the job card</div>
+      </div>
+      <button class="btn green" id="clientReadyBtn" style="width:100%;justify-content:center;font-size:15px;padding:14px">Client is ready &#8594;</button>
+      <button class="btn ghost" id="backToReviewBtn" style="margin-top:10px;width:100%;justify-content:center">&#8592; Back to job card</button>
+    </div>`;
+  $("#clientReadyBtn").onclick=()=>showTCsAudit(o);
+  $("#backToReviewBtn").onclick=()=>{$("#jcFooter").classList.remove("hide");reviewAndSign(o);};
+}
+
+const MD_TC=`Material Depot — Client Acknowledgement
+
+By ticking the box and signing below, I confirm that:
+
+• The site visit described in this job card was carried out to my satisfaction.
+• The details, measurements and room information recorded are accurate and correct.
+• I am satisfied with the service provided by the Material Depot team.
+• I consent to being contacted for quality feedback purposes if required.
+
+[Full terms and conditions will be provided by Material Depot]`;
+
+function showTCsAudit(o){
+  $("#jcBody").innerHTML=`
+    <div class="card" style="margin-top:12px">
+      <h2 style="margin:0 0 12px">Terms &amp; Conditions</h2>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:14px;max-height:200px;overflow-y:auto;font-size:13px;line-height:1.7;color:var(--ink);white-space:pre-line">${MD_TC}</div>
+      <label style="display:flex;align-items:flex-start;gap:12px;margin-top:18px;cursor:pointer">
+        <input type="checkbox" id="tcAgree" style="margin-top:2px;width:20px;height:20px;accent-color:var(--navy);flex-shrink:0">
+        <span style="font-size:13.5px;font-weight:600;line-height:1.4">I have read and agree to the terms and conditions above</span>
+      </label>
+    </div>
+    <div class="actions" style="margin-top:14px;margin-bottom:24px">
+      <button class="btn ghost" id="tcBack">&#8592; Back</button>
+      <button class="btn navy" id="tcProceed" disabled>Agree &amp; proceed &#8594;</button>
+    </div>`;
+  $("#tcAgree").onchange=()=>{$("#tcProceed").disabled=!$("#tcAgree").checked;};
+  $("#tcBack").onclick=()=>showPassToClientAudit(o);
+  $("#tcProceed").onclick=()=>signAndComplete(o);
+}
+
 function signAndComplete(o){
-  let _ratings={q1:0,q2:0,comments:''};
+  let _ratings={q1:0,q2:0,q3:0,comments:''};
   function renderRatings(){
     $("#jcBody").innerHTML=`
       <div class="card"><h2 style="margin:0 0 14px">Client feedback</h2>
-        <p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Ask the client to rate their experience. Tap a number from 1 (lowest) to 10 (highest).</p>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Please rate your experience. Tap a number from 1 (lowest) to 10 (highest).</p>
         <div style="margin-bottom:18px">
-          <label style="font-weight:700;font-size:14px">1. How would you like to rate the overall Site Audit experience?</label>
+          <label style="font-weight:700;font-size:14px">1. How would you rate the overall Site Audit experience?</label>
           ${_starRow('q1',_ratings.q1)}
         </div>
         <div style="margin-bottom:18px">
-          <label style="font-weight:700;font-size:14px">2. How would you like to rate your site auditor and their behaviour?</label>
+          <label style="font-weight:700;font-size:14px">2. How would you rate your site auditor and their behaviour?</label>
           ${_starRow('q2',_ratings.q2)}
+        </div>
+        <div style="margin-bottom:18px">
+          <label style="font-weight:700;font-size:14px">3. How clean did the site auditor leave the site after the audit?</label>
+          ${_starRow('q3',_ratings.q3)}
         </div>
         <div style="margin-bottom:8px">
           <label style="font-weight:700;font-size:14px">Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
-          <textarea id="ratingComments" placeholder="Any feedback or comments from the client…" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;min-height:80px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
+          <textarea id="ratingComments" placeholder="Any feedback or comments…" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;min-height:80px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
         </div>
       </div>
       <div class="actions" style="margin-bottom:24px">
-        <button class="btn ghost" id="backFromRatings">&#8592; Back to preview</button>
+        <button class="btn ghost" id="backFromRatings">&#8592; Back to terms</button>
         <button class="btn navy" id="proceedToSign">Next: Signature &#8594;</button>
       </div>`;
     document.querySelectorAll("[data-star-id]").forEach(btn=>btn.onclick=()=>{
@@ -652,10 +705,11 @@ function signAndComplete(o){
       _ratings[id]=val;renderRatings();
     });
     $("#ratingComments").oninput=e=>_ratings.comments=e.target.value;
-    $("#backFromRatings").onclick=()=>reviewAndSign(o);
+    $("#backFromRatings").onclick=()=>showTCsAudit(o);
     $("#proceedToSign").onclick=()=>{
       if(!_ratings.q1){toast("Please rate the overall experience");return;}
       if(!_ratings.q2){toast("Please rate the site auditor");return;}
+      if(!_ratings.q3){toast("Please rate the site cleanliness");return;}
       _ratings.comments=$("#ratingComments").value;
       showAuditSignature(o,_ratings);
     };
@@ -702,7 +756,7 @@ function showAuditSignature(o,ratings){
       await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});
       try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
       // Write ratings to dedicated table for reporting/NPS
-      try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){console.error('ratings write failed',e);}
+      try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){console.error('ratings write failed',e);}
     }catch(e){toast("Saved locally — sync failed");}}
     btn.textContent="Building PDF…";
     let pdfUrl=null;
@@ -788,7 +842,7 @@ async function genPDF(o){
   if(R){
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
     doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-      body:[['Overall Site Audit experience',String(R.q1||'—')+' / 10'],['Site Auditor behaviour',String(R.q2||'—')+' / 10'],[R.comments?'Comments':null,R.comments||null].filter(Boolean).length?['Comments',R.comments||'']:null].filter(Boolean)});
+      body:[['Overall Site Audit experience',String(R.q1||'—')+' / 10'],['Site Auditor behaviour',String(R.q2||'—')+' / 10'],['Site cleanliness after audit',String(R.q3||'—')+' / 10'],...(R.comments?[['Comments',R.comments]]:[])]});
     y=doc.lastAutoTable.finalY+12;
   }
   doc.setFontSize(10);doc.setTextColor(...muted);

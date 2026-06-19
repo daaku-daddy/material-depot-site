@@ -727,7 +727,7 @@ async function openJobDetail(pi,type){
       const hasCard=rooms.length||hasSign;
       window._jdAudit={order:o,ticked:at};
       const roomsHtml=rooms.map((r,i)=>jdRoomCard(r,i)).join('');
-      const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${at.sign.name||'—'}</b>${at.sign.ratings?` · ⭐ ${at.sign.ratings.q1}/10 · 👤 ${at.sign.ratings.q2}/10`:''}</div>`:'';
+      const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${at.sign.name||'—'}</b>${at.sign.ratings?` · ⭐ ${at.sign.ratings.q1}/10 · 👤 ${at.sign.ratings.q2}/10 · 🧹 ${at.sign.ratings.q3||'—'}/10`:''}</div>`:'';
       document.getElementById('modal').innerHTML=`
         <div class="jd-head"><div class="jd-pi">${o.pi} · Site Audit</div>${jobChip(o.status)}</div>
         <div class="jd-info">
@@ -922,7 +922,12 @@ function genAuditPDF(order,ticked){
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
-  doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=58;
+  const RA=ticked.sign&&ticked.sign.ratings;
+  if(RA){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=12;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      body:[['Overall Site Audit experience',String(RA.q1||'—')+' / 10'],['Site Auditor behaviour',String(RA.q2||'—')+' / 10'],['Site cleanliness after audit',String(RA.q3||'—')+' / 10'],...(RA.comments?[['Comments',RA.comments]]:[])].filter(Boolean)});
+    y=doc.lastAutoTable.finalY+10;}
   doc.setFontSize(10);doc.setTextColor(...muted);
   doc.text('Client name: '+((ticked.sign&&ticked.sign.name)||order.customer_name||''),M,y);y+=18;
   doc.text('Date: '+fmtDateA(order.date),M,y);
@@ -957,7 +962,12 @@ function genInstallPDF(order,sj,jobcard,installerName){
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
-  doc.text(doc.splitTextToSize("I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
+  doc.text(doc.splitTextToSize("I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.",W-2*M),M,y);y+=58;
+  const RI=jobcard.sign&&jobcard.sign.ratings;
+  if(RI){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=12;
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
+      body:[['Overall installation experience',String(RI.q1||'—')+' / 10'],['Site Installer rating',String(RI.q2||'—')+' / 10'],['Site cleanliness after installation',String(RI.q3||'—')+' / 10'],...(RI.comments?[['Comments',RI.comments]]:[])].filter(Boolean)});
+    y=doc.lastAutoTable.finalY+10;}
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((jobcard.sign&&jobcard.sign.name)||order.customer_name||''),M,y);y+=18;doc.text('Date: '+fmtDateA(sj.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
   if(jobcard.sign&&jobcard.sign.img){try{doc.addImage(jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
@@ -1027,7 +1037,7 @@ async function renderAnalytics(m){
   const [auditRes,installRes,ratingsRes]=await Promise.all([
     sbGet('audit_orders?select=pi,status,date,log,created_at&status=neq.deleted&order=created_at.desc'),
     sbGet('install_orders?select=pi,status,matched_audit,delivery_date,created_at,log,service&status=neq.deleted&order=created_at.desc'),
-    sbGet('ratings?select=order_type,pi,q1_score,q2_score,created_at&order=created_at.desc'),
+    sbGet('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at&order=created_at.desc'),
   ]);
   window._anData={
     audits:Array.isArray(auditRes)?auditRes:[],
@@ -1056,9 +1066,9 @@ function drawAnalytics(m){
   const A_reachedSite=A.filter(o=>['atsite','completed'].includes(o.status)).length;
   const A_completed=A.filter(o=>o.status==='completed').length;
   const avgF=(arr,k)=>arr.length?+(arr.reduce((s,r)=>s+(+r[k]||0),0)/arr.length).toFixed(1):null;
-  const AR_q1=avgF(AR,'q1_score'); const AR_q2=avgF(AR,'q2_score');
+  const AR_q1=avgF(AR,'q1_score'); const AR_q2=avgF(AR,'q2_score'); const AR_q3=avgF(AR,'q3_score');
   const AR_prom=AR.filter(r=>r.q1_score>=9).length;
-  const AR_det=AR.filter(r=>r.q1_score<=6).length;
+  const AR_det=AR.filter(r=>r.q1_score<=7).length;
   const AR_nps=AR.length?Math.round((AR_prom-AR_det)/AR.length*100):null;
   // Unique audited PIs with ratings = completed with signature (ratings written post-sign)
   const AR_pis=new Set(AR.map(r=>r.pi)).size;
@@ -1070,9 +1080,9 @@ function drawAnalytics(m){
   const I_smFollowUp=I.filter(o=>o.status!=='pending').length;
   const I_delayed=I.filter(o=>(o.log||[]).some(l=>(l.t||'').toLowerCase().includes('delay'))).length;
   const I_completed=I.filter(o=>['completed','partial'].includes(o.status)).length;
-  const IR_q1=avgF(IR,'q1_score'); const IR_q2=avgF(IR,'q2_score');
+  const IR_q1=avgF(IR,'q1_score'); const IR_q2=avgF(IR,'q2_score'); const IR_q3=avgF(IR,'q3_score');
   const IR_prom=IR.filter(r=>r.q1_score>=9).length;
-  const IR_det=IR.filter(r=>r.q1_score<=6).length;
+  const IR_det=IR.filter(r=>r.q1_score<=7).length;
   const IR_nps=IR.length?Math.round((IR_prom-IR_det)/IR.length*100):null;
   const IR_pis=new Set(IR.map(r=>r.pi)).size;
 
@@ -1146,7 +1156,7 @@ function drawAnalytics(m){
         ${npsCard('📈','NPS Score',AR_nps,AR_prom,AR_det,AR.length)}
         ${ratingCard('⭐','Overall Service Rating',AR_q1,AR.length)}
         ${ratingCard('👤','Auditor Rating',AR_q2,AR.length)}
-        ${naCard('🧹','Site Cleanliness Rating','Not yet captured in job card questions — add Q3 to track')}
+        ${ratingCard('🧹','Site Cleanliness (post-audit)',AR_q3,AR.length)}
       </div>
     </div>
 
@@ -1166,7 +1176,7 @@ function drawAnalytics(m){
         ${npsCard('📈','NPS Score',IR_nps,IR_prom,IR_det,IR.length)}
         ${ratingCard('⭐','Overall Service Rating',IR_q1,IR.length)}
         ${ratingCard('👤','Installer Rating',IR_q2,IR.length)}
-        ${naCard('🧹','Site Cleanliness Rating','Not yet captured — add Q3 to job card questions to track')}
+        ${ratingCard('🧹','Site Cleanliness (post-install)',IR_q3,IR.length)}
       </div>
     </div>
 
@@ -1175,8 +1185,9 @@ function drawAnalytics(m){
       Job Card % &amp; Signature % use the <b>ratings table</b> as proxy — a rating is written immediately after the customer signs, so a rating entry confirms both card filled and signature obtained.
       Auditor/Installer Visit Success = audits/installs that progressed past assignment to site or completion.
       Reschedule Rate counts any order whose log contains a reschedule event (includes SM-initiated rebooking and auditor requests).
-      NPS = % Promoters (Q1 ≥ 9) − % Detractors (Q1 ≤ 6) from customer ratings.
+      NPS = % Promoters (Q1 ≥ 9) − % Detractors (Q1 ≤ 7) from customer ratings.
       External Audit % = installs where service.audit_by = 'customer' (customer provided own measurement).
+      Site Cleanliness Rating = average Q3 score (added June 2026 — older orders will show N/A).
     </div>`;
 }
 

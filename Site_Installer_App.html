@@ -648,11 +648,11 @@ function finishCard(j){
     </div>
     ${roomCards}
     ${j.isPrimary
-      ?`<button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Get feedback &amp; sign &#8594;</button>`
+      ?`<button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Proceed to client &#8594;</button>`
       :`<div class="note" style="margin-bottom:14px">You are an <b>additional installer</b> — the primary installer handles the customer signature. Tap below to mark your part complete.</div>
        <button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Mark my part complete &#8594;</button>`}
     <button class="bigbtn ghost" id="backToRoomsFromPreview">&#8592; Back to rooms</button>`;
-  $("#proceedSign").onclick=()=>{if(j.isPrimary){signAndFinish(j);}else{markAdditionalComplete(j);}};
+  $("#proceedSign").onclick=()=>{if(j.isPrimary){showPassToClientInst(j);}else{markAdditionalComplete(j);}};
   $("#backToRoomsFromPreview").onclick=()=>{
     document.querySelector(".footer").classList.remove("hide");
     const saved=collectRooms();
@@ -701,36 +701,88 @@ async function markAdditionalComplete(j){
 
 function _starRowInst(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
 
+function showPassToClientInst(j){
+  document.querySelector(".footer").classList.add("hide");
+  $("#jcBody").innerHTML=`
+    <div class="panel" style="text-align:center;padding:32px 16px;margin-top:12px">
+      <div style="font-size:56px;margin-bottom:16px">📱</div>
+      <div style="font-size:20px;font-weight:800;color:var(--navy);margin-bottom:8px">Please hand the phone to the customer</div>
+      <p style="font-size:14px;color:var(--muted);margin:0 0 24px">The customer will now complete the final steps:</p>
+      <div style="text-align:left;background:var(--bg);border-radius:12px;padding:14px 18px;margin-bottom:28px;line-height:2.2;font-size:14px">
+        <div><b>Step 1</b> &nbsp; Read &amp; agree to the Terms &amp; Conditions</div>
+        <div><b>Step 2</b> &nbsp; Rate the service (3 questions)</div>
+        <div><b>Step 3</b> &nbsp; Provide their signature</div>
+      </div>
+      <button class="bigbtn green" id="clientReadyBtnInst">Customer is ready &#8594;</button>
+      <button class="bigbtn ghost" id="backToReviewBtnInst" style="margin-top:10px">&#8592; Back to job card</button>
+    </div>`;
+  $("#clientReadyBtnInst").onclick=()=>showTCsInst(j);
+  $("#backToReviewBtnInst").onclick=()=>{document.querySelector(".footer").classList.remove("hide");finishCard(j);};
+}
+
+const MD_TC_INSTALL=`Material Depot — Customer Acknowledgement
+
+By ticking the box and signing below, I confirm that:
+
+• The installation described in this job card has been carried out to my satisfaction.
+• The rooms, materials and details recorded are accurate and correct.
+• I am satisfied with the service provided by the Material Depot team.
+• I consent to being contacted for quality feedback purposes if required.
+
+[Full terms and conditions will be provided by Material Depot]`;
+
+function showTCsInst(j){
+  $("#jcBody").innerHTML=`
+    <div class="panel" style="margin-top:12px">
+      <h2 style="margin:0 0 12px">Terms &amp; Conditions</h2>
+      <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px;max-height:200px;overflow-y:auto;font-size:13.5px;line-height:1.7;color:var(--ink);white-space:pre-line">${MD_TC_INSTALL}</div>
+      <label style="display:flex;align-items:flex-start;gap:12px;margin-top:20px;cursor:pointer">
+        <input type="checkbox" id="tcAgreeInst" style="margin-top:3px;width:22px;height:22px;accent-color:var(--navy);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600;line-height:1.4">I have read and agree to the terms and conditions above</span>
+      </label>
+    </div>
+    <button class="bigbtn navy" id="tcProceedInst" style="margin-top:14px" disabled>Agree &amp; proceed &#8594;</button>
+    <button class="bigbtn ghost" id="tcBackInst" style="margin-top:10px">&#8592; Back</button>`;
+  $("#tcAgreeInst").onchange=()=>{$("#tcProceedInst").disabled=!$("#tcAgreeInst").checked;};
+  $("#tcBackInst").onclick=()=>showPassToClientInst(j);
+  $("#tcProceedInst").onclick=()=>signAndFinish(j);
+}
+
 function signAndFinish(j){
-  let _ratings={q1:0,q2:0,comments:''};
+  let _ratings={q1:0,q2:0,q3:0,comments:''};
   function renderRatings(){
     $("#jcBody").innerHTML=`
       <div class="panel"><h2 style="margin:0 0 14px">Customer feedback</h2>
-        <p style="font-size:14px;color:var(--muted);margin:0 0 20px">Ask the customer to rate their experience. Tap a number from 1 (lowest) to 10 (highest).</p>
+        <p style="font-size:14px;color:var(--muted);margin:0 0 20px">Please rate your experience. Tap a number from 1 (lowest) to 10 (highest).</p>
         <div style="margin-bottom:20px">
-          <label style="font-weight:700;font-size:15px">1. How would you like to rate the overall site installation experience?</label>
+          <label style="font-weight:700;font-size:15px">1. How would you rate the overall site installation experience?</label>
           ${_starRowInst('q1',_ratings.q1)}
         </div>
         <div style="margin-bottom:20px">
-          <label style="font-weight:700;font-size:15px">2. How would you like to rate your Site Installer?</label>
+          <label style="font-weight:700;font-size:15px">2. How would you rate your site installer?</label>
           ${_starRowInst('q2',_ratings.q2)}
+        </div>
+        <div style="margin-bottom:20px">
+          <label style="font-weight:700;font-size:15px">3. How clean did the site installer leave the site after the installation?</label>
+          ${_starRowInst('q3',_ratings.q3)}
         </div>
         <div style="margin-bottom:12px">
           <label style="font-weight:700;font-size:15px">Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
-          <textarea id="ratingComments" placeholder="Any feedback or comments from the customer…" style="width:100%;margin-top:10px;padding:12px;border:1.5px solid var(--line);border-radius:12px;font-size:14px;min-height:90px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
+          <textarea id="ratingComments" placeholder="Any feedback or comments…" style="width:100%;margin-top:10px;padding:12px;border:1.5px solid var(--line);border-radius:12px;font-size:14px;min-height:90px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
         </div>
       </div>
       <button class="bigbtn navy" id="proceedToSignInst">Next: Customer signature &#8594;</button>
-      <button class="bigbtn ghost" id="backFromRatingsInst" style="margin-top:10px">&#8592; Back to preview</button>`;
+      <button class="bigbtn ghost" id="backFromRatingsInst" style="margin-top:10px">&#8592; Back to terms</button>`;
     document.querySelectorAll("[data-star-id]").forEach(btn=>btn.onclick=()=>{
       const id=btn.getAttribute('data-star-id');const val=+btn.getAttribute('data-star-val');
       _ratings[id]=val;renderRatings();
     });
     $("#ratingComments").oninput=e=>_ratings.comments=e.target.value;
-    $("#backFromRatingsInst").onclick=()=>finishCard(j);
+    $("#backFromRatingsInst").onclick=()=>showTCsInst(j);
     $("#proceedToSignInst").onclick=()=>{
       if(!_ratings.q1){toast("Please rate the overall experience");return;}
       if(!_ratings.q2){toast("Please rate the installer");return;}
+      if(!_ratings.q3){toast("Please rate the site cleanliness");return;}
       _ratings.comments=$("#ratingComments").value;
       showInstallSignature(j,_ratings);
     };
@@ -777,7 +829,7 @@ function showInstallSignature(j,ratings){
         await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
         // Write ratings to dedicated table for reporting/NPS
-        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){console.error('ratings write failed',e);}
+        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){console.error('ratings write failed',e);}
       }
     }catch(e){j.status=prev;toast("Network error — couldn't save. Try again");return;}
     await genPDF(j);
@@ -831,7 +883,7 @@ async function genPDF(j){
   if(R){
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
     doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:4},columnStyles:{0:{cellWidth:260,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-      body:[['Overall installation experience',String(R.q1||'—')+' / 10'],['Site Installer rating',String(R.q2||'—')+' / 10'],...(R.comments?[['Comments',R.comments]]:[])].filter(Boolean)});
+      body:[['Overall installation experience',String(R.q1||'—')+' / 10'],['Site Installer rating',String(R.q2||'—')+' / 10'],['Site cleanliness after installation',String(R.q3||'—')+' / 10'],...(R.comments?[['Comments',R.comments]]:[])]});
     y=doc.lastAutoTable.finalY+12;
   }
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((j.jobcard.sign&&j.jobcard.sign.name)||j.name),M,y);y+=18;doc.text('Date: '+fmtDate(j.date),M,y);
