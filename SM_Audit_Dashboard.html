@@ -429,6 +429,7 @@ const AUDIT_SKU="SVC-AUDIT-001";
 let SLOTS_FL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
 // Wallpaper audit windows
 let SLOTS_WP=[{id:"sw1",label:"9 AM – 12 PM"},{id:"sw2",label:"12 PM – 3 PM"},{id:"sw3",label:"3 PM – 6 PM"}];
+(function(){try{const sf=localStorage.getItem('md_audit_slots_fl');const sw=localStorage.getItem('md_audit_slots_wp');if(sf)SLOTS_FL=JSON.parse(sf);if(sw)SLOTS_WP=JSON.parse(sw);}catch(e){}}());
 // Combined for backward-compat (used in slot booking)
 function slotsForOrder(o){
   const at=o.auditTicked;
@@ -449,8 +450,9 @@ function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 // PER-AUDITOR, PER-DATE caps. CAPS[auditorId][yyyy-mm-dd] = number. Default applied if absent.
 const DEFAULT_CAP=3;
 const CAPS={};
+(function(){try{const c=localStorage.getItem('md_audit_caps');if(c)Object.assign(CAPS,JSON.parse(c));}catch(e){}}());
 function capFor(aid,ds){const c=CAPS[aid];if(c&&c[ds]!==undefined)return c[ds];return DEFAULT_CAP;}
-function setCap(aid,ds,v){if(!CAPS[aid])CAPS[aid]={};CAPS[aid][ds]=v;}
+function setCap(aid,ds,v){if(!CAPS[aid])CAPS[aid]={};CAPS[aid][ds]=v;try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}}
 // auditors available on a date = those with cap>=1
 function auditorsAvailable(ds){return AUDITORS.filter(a=>capFor(a.id,ds)>=1).length;}
 // total daily throughput = sum of caps
@@ -1166,13 +1168,13 @@ function wire(){
     catch(e){toast("Restore failed — "+e.message);b.disabled=false;b.textContent="Restore";}
   });
   document.querySelectorAll("[data-cap]").forEach(inp=>inp.onchange=()=>{setCap(inp.dataset.cap,inp.dataset.date,parseInt(inp.value)||0);});
-  if($("#saveCaps"))$("#saveCaps").onclick=()=>{toast("Auditor caps saved");render();};
-  document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);render();toast("Flooring window deleted");});
-  document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);render();toast("Wallpaper window deleted");});
-  if($("#addSlotFl"))$("#addSlotFl").onclick=()=>{SLOTS_FL.push({id:"sf"+Date.now(),label:"New window"});render();toast("Flooring window added");};
-  if($("#addSlotWp"))$("#addSlotWp").onclick=()=>{SLOTS_WP.push({id:"sw"+Date.now(),label:"New window"});render();toast("Wallpaper window added");};
-  if($("#saveSlotsFl"))$("#saveSlotsFl").onclick=()=>{document.querySelectorAll(".slotedit-fl").forEach(i=>SLOTS_FL[i.dataset.i].label=i.value);toast("Flooring slots saved");render();};
-  if($("#saveSlotsWp"))$("#saveSlotsWp").onclick=()=>{document.querySelectorAll(".slotedit-wp").forEach(i=>SLOTS_WP[i.dataset.i].label=i.value);toast("Wallpaper slots saved");render();};
+  if($("#saveCaps"))$("#saveCaps").onclick=()=>{try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}toast("Auditor caps saved");render();};
+  document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);try{localStorage.setItem('md_audit_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}render();toast("Flooring window deleted");});
+  document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);try{localStorage.setItem('md_audit_slots_wp',JSON.stringify(SLOTS_WP));}catch(e){}render();toast("Wallpaper window deleted");});
+  if($("#addSlotFl"))$("#addSlotFl").onclick=()=>{SLOTS_FL.push({id:"sf"+Date.now(),label:"New window"});try{localStorage.setItem('md_audit_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}render();toast("Flooring window added");};
+  if($("#addSlotWp"))$("#addSlotWp").onclick=()=>{SLOTS_WP.push({id:"sw"+Date.now(),label:"New window"});try{localStorage.setItem('md_audit_slots_wp',JSON.stringify(SLOTS_WP));}catch(e){}render();toast("Wallpaper window added");};
+  if($("#saveSlotsFl"))$("#saveSlotsFl").onclick=()=>{document.querySelectorAll(".slotedit-fl").forEach(i=>SLOTS_FL[i.dataset.i].label=i.value);try{localStorage.setItem('md_audit_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}toast("Flooring slots saved");render();};
+  if($("#saveSlotsWp"))$("#saveSlotsWp").onclick=()=>{document.querySelectorAll(".slotedit-wp").forEach(i=>SLOTS_WP[i.dataset.i].label=i.value);try{localStorage.setItem('md_audit_slots_wp',JSON.stringify(SLOTS_WP));}catch(e){}toast("Wallpaper slots saved");render();};
   if($("#pushDemo"))$("#pushDemo").onclick=()=>{const n=Math.floor(Math.random()*900+100);
     ORDERS.unshift({pi:"PI-2026-00"+n,po:["PO-WF-9"+n],skus:[{c:"WF-OAK-12MM",n:"Oak Laminate",audit:false},{c:AUDIT_SKU,n:"Site Audit",audit:true}],auditTicked:["Wooden Flooring"],bm:"Karthik R",status:"pending",name:"New Customer",phone:"90000 0"+n,addr:"MG Road, Bengaluru 560001",service:null,slot:null,date:null,auditor:null,log:[{t:"Order confirmed (POs generated)",d:"Just now"}]});
     render();toast("New audit order received");};

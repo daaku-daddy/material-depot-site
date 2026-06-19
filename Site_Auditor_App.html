@@ -690,6 +690,7 @@ function showAuditSignature(o,ratings){
   $("#backToPreview").onclick=()=>signAndComplete(o);
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;
     const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
     jcSign={img:jcSignPad.export(),name:$("#signName").value,ratings};
     o.jobcard={rooms:collectRooms(),sign:jcSign};

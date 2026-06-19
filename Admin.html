@@ -93,6 +93,29 @@
 
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:none;align-items:center;justify-content:center;padding:20px;}
   .modal{background:#fff;border-radius:16px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;}
+  .modal.wide{max-width:720px;max-height:88vh;overflow-y:auto;}
+  .jd-head{display:flex;align-items:center;gap:12px;padding:20px 24px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2;}
+  .jd-pi{font-size:15px;font-weight:800;color:var(--navy);flex:1;}
+  .jd-info{padding:14px 24px;display:flex;flex-direction:column;gap:7px;border-bottom:1px solid var(--line);}
+  .jd-row{display:flex;gap:10px;font-size:13px;align-items:flex-start;}
+  .jd-label{color:var(--muted);font-weight:700;min-width:88px;flex-shrink:0;font-size:12px;}
+  .jd-section{padding:14px 24px;border-bottom:1px solid var(--line);}
+  .jd-sec-head{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;}
+  .jc-room{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;}
+  .jc-room-head{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:6px;}
+  .jc-kvs{display:flex;flex-wrap:wrap;gap:4px 16px;}
+  .jc-kv{font-size:12px;line-height:1.4;}
+  .jc-k{color:var(--muted);font-size:11px;}
+  .jc-v{font-weight:700;}
+  .jc-photos{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+  .jd-log{display:flex;flex-direction:column;gap:5px;}
+  .jd-tl{font-size:12px;padding:4px 0;border-bottom:1px solid var(--line);}
+  .jd-tl:last-child{border-bottom:none;}
+  .jd-tl-t{font-weight:600;color:var(--ink);}
+  .jd-tl-d{color:var(--muted);font-size:11px;margin-top:1px;}
+  .jd-btns{padding:16px 24px 20px;display:flex;gap:10px;flex-wrap:wrap;}
+  .btn-ghost{background:#f0f2f5;border:0;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;color:var(--ink);}
+  .btn-ghost:hover{background:#e0e4ea;}
   .modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;}
   .modal-head h3{font-size:16px;font-weight:800;color:var(--navy);}
   .modal-close{margin-left:auto;background:transparent;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:0 4px;}
@@ -169,9 +192,8 @@
       <button class="nav-item" data-view="users"><span class="ico">👥</span>Users<span class="nav-badge" id="users-count">—</span></button>
       <div class="rail-section">Insights</div>
       <button class="nav-item" data-view="roleviewer"><span class="ico">👁</span>Role Viewer</button>
-      <button class="nav-item" data-view="jobs"><span class="ico">📋</span>Jobs Overview</button>
+      <button class="nav-item" data-view="jobs"><span class="ico">📋</span>Job Overview</button>
       <button class="nav-item" data-view="perf"><span class="ico">📊</span>Performance</button>
-      <button class="nav-item" data-view="jobcards"><span class="ico">📄</span>Job Cards</button>
     </nav>
 
     <main id="main"></main>
@@ -251,7 +273,6 @@ async function renderView(v){
   else if(v==='roleviewer') await renderRoleViewer(m);
   else if(v==='jobs')    await renderJobs(m);
   else if(v==='perf')    await renderPerf(m);
-  else if(v==='jobcards') await renderJobCards(m);
 }
 
 /* ---- OVERVIEW ---- */
@@ -629,12 +650,13 @@ function drawJobs(m){
               ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':JOB_STATUS[f]?.l||f}
             </button>`).join('')}
         </div>
+        <span style="font-size:12px;color:var(--muted);margin-left:auto;align-self:center">Tap any row for full details &amp; job card</span>
       </div>
       <table>
         <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th><th>Location</th><th>Assigned To</th><th>Status</th><th>Date</th></tr></thead>
         <tbody>
           ${filtered.length?filtered.map(j=>`
-            <tr>
+            <tr style="cursor:pointer" onclick="openJobDetail('${j.id}','${j.type}')">
               <td><b style="font-family:monospace;font-size:12px;color:var(--navy)">${j.id}</b></td>
               <td><span style="background:${j.type==='audit'?'#fff4d6':'var(--greenbg)'};color:${j.type==='audit'?'#7a5800':'var(--green)'};border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">${j.type==='audit'?'Audit':'Install'}</span></td>
               <td><b>${j.customer}</b></td>
@@ -649,6 +671,93 @@ function drawJobs(m){
     </div>`}`;
 }
 function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));}
+
+/* ---- JOB DETAIL MODAL ---- */
+const AUDIT_FL_FIELDS=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
+const AUDIT_WP_FIELDS=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer','primer']];
+function jdRoomCard(r,i){
+  const fields=r.type==='wallpaper'?AUDIT_WP_FIELDS:AUDIT_FL_FIELDS;
+  const meas=fields.filter(([,k])=>r.calc&&r.calc[k]).map(([l,k])=>`<div class="jc-kv"><div class="jc-k">${l}</div><div class="jc-v">${r.calc[k]}</div></div>`).join('');
+  const photos=(r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]));
+  const photoHtml=photos.length?`<div class="jc-photos">${photos.slice(0,4).map(p=>`<img src="${p}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open(this.src)">`).join('')}</div>`:'';
+  return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU: ${r.sku||'NA'}</div>${meas?`<div class="jc-kvs">${meas}</div>`:''}${photoHtml}${r.notes?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Notes: ${r.notes}</div>`:''}</div>`;
+}
+function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>`<div class="jd-tl"><div class="jd-tl-t">${l.t}</div><div class="jd-tl-d">${l.d}${l.by==='auto'?' · auto':l.by==='manual'?' · manual':''}</div></div>`).join('');}
+async function openJobDetail(pi,type){
+  const m=document.getElementById('modal');m.className='modal wide';
+  showModal('<div class="loading-row" style="padding:40px 0"><span class="spinner"></span></div>');
+  try{
+    const fdt=ds=>{if(!ds)return '—';const d=new Date(ds+'T00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});};
+    if(type==='audit'){
+      const rows=await sbGet('audit_orders?pi=eq.'+encodeURIComponent(pi)+'&select=*&limit=1');
+      if(!Array.isArray(rows)||!rows[0]){showModal('<div style="padding:24px">Order not found.</div>');return;}
+      const o=rows[0];const at=o.audit_ticked;
+      const rooms=(at&&at.rooms)||[];
+      const hasSign=at&&at.sign&&at.sign.img;
+      const hasCard=rooms.length||hasSign;
+      window._jdAudit={order:o,ticked:at};
+      const roomsHtml=rooms.map((r,i)=>jdRoomCard(r,i)).join('');
+      const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${at.sign.name||'—'}</b>${at.sign.ratings?` · ⭐ ${at.sign.ratings.q1}/10 · 👤 ${at.sign.ratings.q2}/10`:''}</div>`:'';
+      document.getElementById('modal').innerHTML=`
+        <div class="jd-head"><div class="jd-pi">${o.pi} · Site Audit</div>${jobChip(o.status)}</div>
+        <div class="jd-info">
+          <div class="jd-row"><span class="jd-label">Customer</span><span><b>${o.customer_name||'—'}</b> · <a href="tel:${(o.phone||'').replace(/\s/g,'')}">${o.phone||'—'}</a></span></div>
+          <div class="jd-row"><span class="jd-label">Address</span><span>${o.addr||'—'}</span></div>
+          <div class="jd-row"><span class="jd-label">BM</span><span>${o.bm||'—'}</span></div>
+          <div class="jd-row"><span class="jd-label">Date / Slot</span><span>${fdt(o.date)} · ${o.slot||'—'}</span></div>
+          <div class="jd-row"><span class="jd-label">Auditor</span><span>${o.auditor_name||'—'}</span></div>
+        </div>
+        ${rooms.length?`<div class="jd-section"><div class="jd-sec-head">Job Card — ${rooms.length} room${rooms.length!==1?'s':''} audited</div>${roomsHtml}${signHtml}</div>`:(at&&!Array.isArray(at)&&at.draft?'<div class="jd-section" style="color:var(--amber);font-size:13px;font-weight:700">⚠️ Job card is in draft — not yet completed</div>':'<div class="jd-section" style="color:var(--muted);font-size:13px">No job card data found for this order.</div>')}
+        <div class="jd-btns">
+          ${hasCard?`<button class="btn-primary" onclick="window._jdAudit&&genAuditPDF(window._jdAudit.order,window._jdAudit.ticked)">📥 Download Job Card PDF</button>`:''}
+          <button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button>
+        </div>
+        ${o.log&&o.log.length?`<div class="jd-section"><div class="jd-sec-head">Activity</div><div class="jd-log">${jdLog(o.log)}</div></div>`:''}`;
+    }else{
+      const rows=await sbGet('install_orders?pi=eq.'+encodeURIComponent(pi)+'&select=*&limit=1');
+      if(!Array.isArray(rows)||!rows[0]){showModal('<div style="padding:24px">Order not found.</div>');return;}
+      const o=rows[0];const subjobs=o.subjobs||[];
+      window._jdInstall={order:o};
+      const sjsHtml=subjobs.map((sj,si)=>{
+        const jc=sj.jobcard;const rooms=(jc&&jc.rooms)||[];const hasSign=jc&&jc.sign&&jc.sign.img;
+        const hasCard=rooms.length||hasSign;
+        const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer_email?[{installer_email:sj.installer_email,installer_name:'—'}]:[]);
+        const names=asgns.map(a=>a.installer_name||a.installer_email||'—').join(', ');
+        const typeLabel=sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring';
+        const roomsHtml=rooms.map((r,i)=>{
+          const photos=(r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]));
+          const photoHtml=photos.length?`<div class="jc-photos">${photos.slice(0,4).map(p=>`<img src="${p}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open(this.src)">`).join('')}</div>`:'';
+          return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'}${r.sku?` · SKU: ${r.sku}`:''}${r.qty?` · ${r.qty}`:''}</div>${photoHtml}${r.comments?`<div style="font-size:12px;color:var(--muted);margin-top:4px">${r.comments}</div>`:''}</div>`;
+        }).join('');
+        const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${jc.sign.name||'—'}</b>${jc.sign.ratings?` · ⭐ ${jc.sign.ratings.q1}/10 · 👤 ${jc.sign.ratings.q2}/10`:''}</div>`:'';
+        return `<div class="jd-section">
+          <div class="jd-sec-head">${typeLabel} · ${jobChip(sj.status)}</div>
+          <div class="jd-row"><span class="jd-label">Installer(s)</span><span>${names}</span></div>
+          ${rooms.length?`<div style="margin-top:10px">${roomsHtml}${signHtml}</div>`:(!hasCard?'<div style="color:var(--muted);font-size:12px;margin-top:8px">No job card data yet.</div>':'<div style="color:var(--amber);font-size:12px;margin-top:8px">⚠️ Job card draft — not yet completed</div>')}
+          ${hasCard?`<div style="margin-top:12px"><button class="btn-primary" style="font-size:12px;padding:8px 14px" onclick="adminDlInstall(${si})">📥 Download Job Card PDF</button></div>`:''}
+        </div>`;
+      }).join('')||(subjobs.length===0?'<div class="jd-section" style="color:var(--muted);font-size:13px">No sub-jobs created yet.</div>':'');
+      document.getElementById('modal').innerHTML=`
+        <div class="jd-head"><div class="jd-pi">${o.pi} · Installation</div>${jobChip(o.status)}</div>
+        <div class="jd-info">
+          <div class="jd-row"><span class="jd-label">Customer</span><span><b>${o.customer_name||'—'}</b> · <a href="tel:${(o.phone||'').replace(/\s/g,'')}">${o.phone||'—'}</a></span></div>
+          <div class="jd-row"><span class="jd-label">Address</span><span>${o.addr||'—'}</span></div>
+          <div class="jd-row"><span class="jd-label">BM</span><span>${o.bm||'—'}</span></div>
+          <div class="jd-row"><span class="jd-label">Delivery</span><span>${fdt(o.delivery_date)}</span></div>
+        </div>
+        ${sjsHtml}
+        <div class="jd-btns"><button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button></div>
+        ${o.log&&o.log.length?`<div class="jd-section"><div class="jd-sec-head">Activity</div><div class="jd-log">${jdLog(o.log)}</div></div>`:''}`;
+    }
+  }catch(e){showModal(`<div style="padding:24px;color:var(--red)">Error: ${e.message}</div><div style="padding:0 24px 20px"><button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button></div>`);}
+}
+function adminDlInstall(sjIdx){
+  const d=window._jdInstall;if(!d)return;
+  const sj=(d.order.subjobs||[])[sjIdx];if(!sj||!sj.jobcard){toast('Job card not available');return;}
+  const asgns=sj.assignments&&sj.assignments.length?sj.assignments:[];
+  const primary=asgns.find(a=>a.primary)||asgns[0]||{};
+  genInstallPDF(d.order,sj,sj.jobcard,primary.installer_name||sj.installer_email||'—');
+}
 
 /* ---- PERFORMANCE ---- */
 async function renderPerf(m){

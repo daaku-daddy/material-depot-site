@@ -666,6 +666,7 @@ function finishCard(j){
 }
 
 async function markAdditionalComplete(j){
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;
   j.jobcard={rooms:collectRooms()};
   const prev=j.status;j.status="completed";
   const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
@@ -752,6 +753,7 @@ function showInstallSignature(j,ratings){
   $("#backToPreviewFromSign").onclick=()=>signAndFinish(j);
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
