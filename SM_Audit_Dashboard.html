@@ -295,6 +295,7 @@
       <button class="mclose" onclick="closeAddOrder()">×</button>
     </div>
     <div class="mbody">
+      <div id="ao-kylas-note" style="display:none;font-size:12.5px;color:var(--blue);background:#f0f7ff;border:1.5px solid #c5daf7;border-radius:9px;padding:10px 13px">Pre-filled from Kylas — add <b>PI Number</b> and <b>Site Address</b> to complete.</div>
       <div class="mrow">
         <div class="mfield">
           <label>PI Number *</label>
@@ -342,6 +343,18 @@
     <div class="mfoot">
       <button class="btn gray" onclick="closeAddOrder()">Cancel</button>
       <button class="btn navy" id="ao-submit" onclick="submitAddOrder()">Add Order</button>
+    </div>
+  </div>
+</div>
+
+<div class="moverlay" id="kylasOverlay">
+  <div class="mcard" style="max-width:660px">
+    <div class="mhead">
+      <h3>&#128203; Kylas Sheet — Import Orders</h3>
+      <button class="mclose" onclick="closeKylasSheet()">&#215;</button>
+    </div>
+    <div class="mbody" id="kylasBody" style="gap:0;padding:16px 20px">
+      <div style="text-align:center;padding:32px;color:var(--muted);font-weight:700">Loading…</div>
     </div>
   </div>
 </div>
@@ -410,6 +423,7 @@
 <script>
 /* ============== SUPABASE ============== */
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const KYLAS_SHEET_ID='1nDN5t7d25rMvuDa_j2VRpIvObXtLzPGXTfR19Hmd3Ho';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
@@ -626,7 +640,7 @@ function ordersView(){
   }).join("");
   return `<div class="crumbs">Site Audit / Orders</div>
   <div class="pagehead"><div><h1>Audit orders</h1><p>Every confirmed order containing the Site Audit SKU (${AUDIT_SKU}). Click a row to manage.</p></div>
-    <div class="actions"><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
+    <div class="actions"><button class="btn ghost sm" onclick="openKylasSheet()">&#128203; Kylas Sheet</button><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <div class="filt">${fbtns}</div></div>
@@ -1203,6 +1217,7 @@ function closeAddOrder(){
   ["ao-pi","ao-po","ao-name","ao-phone","ao-addr","ao-bm","ao-skus"].forEach(id=>{document.getElementById(id).value="";});
   ["ao-fl","ao-wp","ao-cwp"].forEach(id=>{document.getElementById(id).checked=false;});
   document.getElementById("ao-err").classList.remove("show");
+  document.getElementById("ao-kylas-note").style.display="none";
 }
 async function submitAddOrder(){
   const pi    = document.getElementById("ao-pi").value.trim();
@@ -1258,6 +1273,69 @@ async function submitAddOrder(){
   document.getElementById("ao-submit").disabled=false;
 }
 document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
+
+/* ============== KYLAS SHEET IMPORT ============== */
+let _kylasRows=[];
+
+async function fetchKylasSheet(){
+  const url=`https://docs.google.com/spreadsheets/d/${KYLAS_SHEET_ID}/gviz/tq?tqx=out:json`;
+  const res=await fetch(url);if(!res.ok)throw new Error('HTTP '+res.status);
+  const text=await res.text();
+  const json=JSON.parse(text.slice(text.indexOf('(')+1,text.lastIndexOf(')')));
+  if(!json.table||!json.table.rows)return[];
+  return json.table.rows.map(row=>{
+    const cv=idx=>{if(!row.c||idx>=row.c.length||!row.c[idx])return'';const cell=row.c[idx];return(cell.f!==undefined&&cell.f!==null)?String(cell.f):(cell.v!==null&&cell.v!==undefined?String(cell.v):'');};
+    return{po:cv(0).trim(),orderDate:cv(1),name:cv(4).trim(),phone:String(row.c[5]&&row.c[5].v!=null?row.c[5].v:'').replace(/\D/g,''),bm:cv(6).trim(),category:cv(9),bookingDate:cv(13),status:cv(18)};
+  }).filter(r=>r.po&&r.name);
+}
+
+function openKylasSheet(){
+  document.getElementById('kylasOverlay').classList.add('show');
+  loadKylasSheet();
+}
+function closeKylasSheet(){document.getElementById('kylasOverlay').classList.remove('show');}
+
+async function loadKylasSheet(){
+  const body=document.getElementById('kylasBody');
+  body.innerHTML='<div style="text-align:center;padding:32px;color:var(--muted);font-weight:700">Fetching Kylas Sheet…</div>';
+  try{
+    const rows=await fetchKylasSheet();
+    _kylasRows=rows;
+    const existingPOs=new Set(ORDERS.flatMap(o=>o.po||[]));
+    const newRows=rows.map((r,i)=>({...r,_i:i})).filter(r=>!existingPOs.has(r.po));
+    const doneRows=rows.map((r,i)=>({...r,_i:i})).filter(r=>existingPOs.has(r.po));
+    if(!rows.length){body.innerHTML='<div class="note">No orders found in the Kylas sheet.</div>';return;}
+    const card=(r,done)=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid ${done?'var(--line)':'#c5daf7'};border-radius:10px;margin-bottom:6px;background:${done?'transparent':'#f8fbff'};opacity:${done?.5:1}">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:800;font-size:14px;color:var(--navy)">${r.name} <span style="font-weight:500;color:var(--muted);font-size:12px">${r.phone}</span></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px">PO: <b>${r.po}</b> &nbsp;·&nbsp; BM: ${r.bm||'—'} &nbsp;·&nbsp; ${r.bookingDate||r.orderDate.slice(0,10)||'—'}</div>
+        </div>
+        ${done?`<span class="chip c-completed" style="flex-shrink:0;font-size:11px">Imported</span>`:`<button class="btn navy sm" data-ki="${r._i}" style="flex-shrink:0">Use this</button>`}
+      </div>`;
+    body.innerHTML=`
+      <div style="font-size:12px;color:var(--muted);padding-bottom:12px;margin-bottom:10px;border-bottom:1px solid var(--line)">
+        <b>${rows.length}</b> total &nbsp;·&nbsp; <b style="color:var(--green)">${newRows.length}</b> not yet imported &nbsp;·&nbsp; <b>${doneRows.length}</b> already in system
+      </div>
+      ${newRows.length?newRows.map(r=>card(r,false)).join(''):'<div class="note" style="border-color:var(--green);color:var(--green);background:var(--greenbg)">All Kylas orders are already in the system.</div>'}
+      ${doneRows.length?`<details style="margin-top:12px"><summary style="font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;margin-bottom:8px">${doneRows.length} already imported</summary><div style="margin-top:8px">${doneRows.map(r=>card(r,true)).join('')}</div></details>`:''}`;
+    body.querySelectorAll('[data-ki]').forEach(btn=>{btn.onclick=()=>useKylasRow(_kylasRows[+btn.dataset.ki]);});
+  }catch(e){body.innerHTML=`<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Could not load Kylas sheet: ${e.message}</div>`;}
+}
+
+function useKylasRow(r){
+  closeKylasSheet();
+  document.getElementById('ao-po').value=r.po;
+  document.getElementById('ao-name').value=r.name;
+  document.getElementById('ao-phone').value=r.phone;
+  document.getElementById('ao-bm').value=r.bm;
+  document.getElementById('ao-pi').value='';
+  document.getElementById('ao-addr').value='';
+  document.getElementById('ao-kylas-note').style.display='block';
+  openAddOrder();
+}
+
+document.getElementById('kylasOverlay').addEventListener('click',e=>{if(e.target.id==='kylasOverlay')closeKylasSheet();});
 
 /* ============== AUDIT PDF (SM) ============== */
 function _renderSketchSM(r){
