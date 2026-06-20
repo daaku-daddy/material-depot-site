@@ -333,6 +333,8 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 19. **opsCallDue covers deliv_delayed**: `opsCallDue(o)` checks `['pending','deliv_delayed'].includes(o.status)`.
 
+22. **Repeated delivery date updates**: A `deliv_delayed` order can be delayed again any number of times. The drawer shows a date picker pre-filled with the current delivery date and a "Further delayed" button. The `#markDelayed` handler checks `wasDelayed = o.status === "deliv_delayed"` before updating status, and logs "Delivery further delayed. New date: …" vs "Delivery delayed — BM asked to inform client. New date: …" accordingly. `delivery_date` in the DB is overwritten each time.
+
 20. **SM_Audit slotsForOrder fallback**: When `o.auditTicked` is null (not fetched in poll), `slotsForOrder(o)` falls back to `o.service.flooring/wallpaper` to determine FL vs WP slots correctly. Do NOT revert this fallback.
 
 21. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
