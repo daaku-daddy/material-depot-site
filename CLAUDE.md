@@ -150,6 +150,7 @@ const SLOTS = {
 - **Schedule tab**: Same 10-day format. Uses `sjsForDay(ds)` which scans `sj.assignments[].date` (standard) or `sj.assignments[].dates[]` (custom) or legacy `sj.date`.
 - **Poll query**: `install_orders?select=*&status=neq.deleted`
 - `loadDeletedOrders()` called on-demand; `loadOrders` + `loadDeletedOrders` both called after delete/restore actions
+- **📋 Kylas Sheet import**: identical implementation to SM Audit Dashboard — same `KYLAS_SHEET_ID`, same overlay (`kylasOverlay`/`kylasBody`), same dedup logic against `ORDERS[].po`, same `ao-kylas-note` banner. Deduplicates against `install_orders.po`.
 
 ### Site Auditor App (`Site_Auditor_App.html`)
 - 3 screens: list view, detail screen, job card screen
@@ -339,7 +340,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 ## Kylas Sheet Integration
 
 **Sheet ID**: `1nDN5t7d25rMvuDa_j2VRpIvObXtLzPGXTfR19Hmd3Ho`  
-**Constant**: `KYLAS_SHEET_ID` in `SM_Audit_Dashboard.html`  
+**Constant**: `KYLAS_SHEET_ID` in both `SM_Audit_Dashboard.html` and `SM_Install_Dashboard.html`  
 **Endpoint**: `https://docs.google.com/spreadsheets/d/{ID}/gviz/tq?tqx=out:json` — no API key, sheet must be public  
 **Parse**: Strip `google.visualization.Query.setResponse(` prefix and `);` suffix, then JSON.parse. Rows are `table.rows[].c[]` with `v` (raw) and `f` (formatted) per cell.
 
