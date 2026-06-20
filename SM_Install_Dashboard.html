@@ -1015,8 +1015,11 @@ function drawerBody(o){
   if(o.status==="pending"){
     html+=`<div class="note ${opsCallDue(o)?'amber':''}">${opsCallDue(o)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
       <div class="field"><label>If delayed — new delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
+  } else if(o.status==='deliv_delayed'){
+    html+=`<div class="note red">Delivery delayed — BM asked to inform client. If delayed further, update the date below and click "Further delayed".</div>
+      <div class="field"><label>New delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
   } else {
-    html+=`<div class="note ${o.status==='deliv_delayed'?'red':'green'}">${o.status==='deliv_delayed'?'Delivery delayed — BM asked to inform client. Update the date when Operations gives a new one.':'Delivery confirmed on time.'}</div>`;
+    html+=`<div class="note green">Delivery confirmed on time.</div>`;
   }
   html+=`</div>`;
 
@@ -1248,7 +1251,7 @@ function editInstallServiceSection(o){
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">&#128465; Delete</button>`;
   if(o.status==="pending")return del+`<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
-  if(o.status==="deliv_delayed")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markOnTime">Now on time</button>`;
+  if(o.status==="deliv_delayed")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn danger" id="markDelayed">Further delayed</button><button class="btn green" id="markOnTime">Now on time</button>`;
   if(o.status==="deliv_ontime")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
   if(o.status==="created")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="callCustomer" disabled>Schedule from sub-jobs above</button>`;
   if(o.status==="completed")return del+`<button class="btn gray" id="dClose">Close</button>${o.service&&o.service.rectification_raised?`<span class="chip c-assigned" style="flex:1;justify-content:center;cursor:default">↩ Rectified</span>`:`<button class="btn amber" id="raiseRect">↩ Raise Rectification</button>`}`;
@@ -1285,7 +1288,7 @@ function wireDrawer(o){
 
   // delivery outcomes
   if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Delivery on time — create service next");openOrder(o.pi);};
-  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:"Delivery delayed — BM asked to inform client. New date: "+fmtDate(nd),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});await loadOrders();toast("Marked delivery delayed");openOrder(o.pi);};
+  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;const wasDelayed=o.status==="deliv_delayed";o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:(wasDelayed?"Delivery further delayed":"Delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:"Just now",by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});await loadOrders();toast(wasDelayed?"Delivery date updated":"Marked delivery delayed");openOrder(o.pi);};
 
   // service creation
   function renderSkuRows(grp){
