@@ -196,11 +196,17 @@ const AUDIT_SKU="SVC-AUDIT-001";
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
-const SLOTS={
-  s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15},
-  sf1:{label:"9 AM – 12 PM",start:9},sf2:{label:"12 PM – 3 PM",start:12},sf3:{label:"3 PM – 6 PM",start:15},
-  sw1:{label:"9 AM – 12 PM",start:9},sw2:{label:"12 PM – 3 PM",start:12},sw3:{label:"3 PM – 6 PM",start:15}
-};
+const SLOTS=(function(){
+  const defFL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
+  const defWP=[{id:"sw1",label:"9 AM – 12 PM"},{id:"sw2",label:"12 PM – 3 PM"},{id:"sw3",label:"3 PM – 6 PM"}];
+  let fl=defFL,wp=defWP;
+  try{const sf=localStorage.getItem('md_audit_slots_fl');const sw=localStorage.getItem('md_audit_slots_wp');if(sf)fl=JSON.parse(sf);if(sw)wp=JSON.parse(sw);}catch(e){}
+  const st=[9,12,15];
+  const m={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+  fl.forEach((s,i)=>{m[s.id]={label:s.label,start:st[i]||9};});
+  wp.forEach((s,i)=>{m[s.id]={label:s.label,start:st[i]||9};});
+  return m;
+})();
 
 // auditor-side statuses
 const STATUS={
@@ -479,6 +485,7 @@ function renderJCHeader(){
        <div class="full"><label>Site address</label><input value="${o.addr}" disabled></div>
        <div><label>Auditor</label><input value="${ME.name}" disabled></div>
        <div><label>Date</label><input value="${fmtDate(o.date)}" disabled></div>
+       <div><label>Time slot</label><input value="${slotLabel(o.slot)}" disabled></div>
      </div>
    </div>
    <div class="note">Add a room for every space audited. Pick the room type — calculation fields match Flooring or Wallpaper.</div>
@@ -610,6 +617,7 @@ function reviewAndSign(o){
         <div class="k">Address</div><div class="v">${o.addr}</div>
         <div class="k">Auditor</div><div class="v">${ME.name}</div>
         <div class="k">Date</div><div class="v">${fmtDate(o.date)}</div>
+        <div class="k">Time slot</div><div class="v">${slotLabel(o.slot)}</div>
         <div class="k">Rooms</div><div class="v">${jcRooms.length}</div>
       </div>
     </div>

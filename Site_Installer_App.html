@@ -197,7 +197,17 @@ const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'floo
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
-const SLOTS={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+const SLOTS=(function(){
+  const defFL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
+  const defWP=[{id:"sw1",label:"9 AM – 12 PM"},{id:"sw2",label:"12 PM – 3 PM"},{id:"sw3",label:"3 PM – 6 PM"}];
+  let fl=defFL,wp=defWP;
+  try{const sf=localStorage.getItem('md_install_slots_fl');const sw=localStorage.getItem('md_install_slots_wp');if(sf)fl=JSON.parse(sf);if(sw)wp=JSON.parse(sw);}catch(e){}
+  const st=[9,12,15];
+  const m={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+  fl.forEach((s,i)=>{m[s.id]={label:s.label,start:st[i]||9};});
+  wp.forEach((s,i)=>{m[s.id]={label:s.label,start:st[i]||9};});
+  return m;
+})();
 const STATUS={
   scheduled:{l:"Scheduled",c:"b-scheduled"},
   callpending:{l:"Call Pending",c:"b-callpending"},
@@ -274,6 +284,11 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs()
 const $=s=>document.querySelector(s);
 function fmtDate(ds){if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
 const slotLabel=id=>(SLOTS[id]||{}).label||"—";
+function slotsLabel(j){
+  if(j.type==='flooring')return 'Full day';
+  if(j.slots&&j.slots.length){const lbls=j.slots.map(s=>slotLabel(s)).filter(l=>l&&l!=='—');if(lbls.length)return lbls.join(' · ');}
+  return slotLabel(j.slot)||'—';
+}
 function badge(st){const s=STATUS[st]||{l:st,c:"b-scheduled"};return `<span class="badge ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
@@ -301,7 +316,7 @@ function listView(){
   // Past-date jobs that are still active — only shown as alert on today's view to avoid duplication
   const overdue=selDay===todayStr?JOBS.filter(j=>j.date&&j.date<todayStr&&!['completed','reschedule'].includes(j.status)):[];
   const card=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}">
-    <div class="time">${slotLabel(j.slot)}</div>
+    <div class="time">${slotsLabel(j)}</div>
     <div class="nm">${j.name}</div>
     <div class="ad">${j.addr}</div>
     <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
@@ -339,7 +354,7 @@ let curKey=null;
 function openDetail(key){
   curKey=key;const idx=key.indexOf('|');const pi=key.slice(0,idx);const sjId=key.slice(idx+1);const j=JOBS.find(x=>x.pi===pi&&x.sjId===sjId);if(!j)return;
   $("#detName").textContent=j.name;
-  $("#detSub").textContent=fmtDate(j.date)+" · "+slotLabel(j.slot);
+  $("#detSub").textContent=fmtDate(j.date)+" · "+slotsLabel(j);
   $("#detBody").innerHTML=detailBody(j);
   $("#detailScreen").classList.remove("hide");
   wireDetail(j);
@@ -392,6 +407,8 @@ function detailBody(j){
         <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
         <div class="k">Your role</div><div class="v">${j.isPrimary?'<span style="font-weight:800;color:#7a5800;background:#fff4d6;border-radius:6px;padding:2px 9px">&#9733; Primary installer</span>':'<span style="color:var(--muted)">Additional installer</span>'}</div>
         <div class="k">Your BM</div><div class="v">${j.bm}</div>
+        <div class="k">Date</div><div class="v">${fmtDate(j.date)}</div>
+        <div class="k">Time</div><div class="v">${slotsLabel(j)}</div>
       </div>
       ${j.auditBy==='material_depot'?`<button class="bigbtn ghost" id="viewAudit" style="margin-top:14px">View site audit report</button>`:''}
     </div>`;
@@ -643,6 +660,7 @@ function finishCard(j){
         <div class="k">Address</div><div class="v">${j.addr}</div>
         <div class="k">Installer</div><div class="v">${ME.name}</div>
         <div class="k">Date</div><div class="v">${fmtDate(j.date)}</div>
+        <div class="k">Time</div><div class="v">${slotsLabel(j)}</div>
         <div class="k">Rooms</div><div class="v">${jcRooms.length}</div>
       </div>
     </div>
