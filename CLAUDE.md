@@ -122,18 +122,27 @@ Deleted orders are loaded **on demand** in both SM dashboards when the "Deleted 
 | 4-6 | 2 slots | 6 hours |
 | 7+ | 3 slots | 9 hours (full day) |
 
-## Auditor App SLOTS (Site_Auditor_App.html)
-The auditor app has its own `SLOTS` constant (used for `autoFlip` timing):
+## Field App SLOTS (Site_Auditor_App.html and Site_Installer_App.html)
+Both field apps build their `SLOTS` lookup dynamically at startup (as of 2026-06-22):
 ```js
-const SLOTS = {
-  s1:{label:"9 AM – 12 PM",start:9}, s2:{label:"12 PM – 3 PM",start:12}, s3:{label:"3 PM – 6 PM",start:15},
-  sf1:{label:"9 AM – 12 PM",start:9}, sf2:{label:"12 PM – 3 PM",start:12}, sf3:{label:"3 PM – 6 PM",start:15},
-  sw1:{label:"9 AM – 12 PM",start:9}, sw2:{label:"12 PM – 3 PM",start:12}, sw3:{label:"3 PM – 6 PM",start:15}
-};
+const SLOTS=(function(){
+  const defFL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
+  const defWP=[{id:"sw1",label:"9 AM – 12 PM"},{id:"sw2",label:"12 PM – 3 PM"},{id:"sw3",label:"3 PM – 6 PM"}];
+  let fl=defFL,wp=defWP;
+  try{const sf=localStorage.getItem('md_XXX_slots_fl');const sw=localStorage.getItem('md_XXX_slots_wp');if(sf)fl=JSON.parse(sf);if(sw)wp=JSON.parse(sw);}catch(e){}
+  const st=[9,12,15];
+  const m={s1:{label:"9 AM – 12 PM",start:9},s2:{label:"12 PM – 3 PM",start:12},s3:{label:"3 PM – 6 PM",start:15}};
+  fl.forEach((s,i)=>{m[s.id]={label:s.label,start:st[i]||9};});
+  wp.forEach((s,i)=>{m[s.id]={label:s.label,start:st[i]||9};});
+  return m;
+})();
 ```
-- Old `s1/s2/s3` retained for backward compat
-- New `sf1/sf2/sf3` and `sw1/sw2/sw3` added when SM slot system was updated
+- Auditor app reads `md_audit_slots_fl` / `md_audit_slots_wp`; installer app reads `md_install_slots_fl` / `md_install_slots_wp`
+- If the SM device and field worker device share the same browser, live-configured labels are used; otherwise hardcoded defaults apply
+- `s1/s2/s3` retained for backward compat; `sf1/sf2/sf3` and `sw1/sw2/sw3` are the current standard IDs
+- `start` hour is inferred from array position (index 0→9, 1→12, 2→15); custom slots beyond 3 default to `start:9`
 - `autoFlip()` has a null guard: `const slotInfo=SLOTS[o.slot];if(!slotInfo)return;`
+- **Installer app only**: `slotsLabel(j)` helper returns `'Full day'` for flooring, joined labels for wallpaper multi-slot jobs (e.g. `'9 AM – 12 PM · 12 PM – 3 PM'`), or `slotLabel(j.slot)` fallback. Used in list card, detail subtitle, detail panel, and job card summary.
 
 ## Architecture Patterns
 
@@ -338,6 +347,8 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 20. **SM_Audit slotsForOrder fallback**: When `o.auditTicked` is null (not fetched in poll), `slotsForOrder(o)` falls back to `o.service.flooring/wallpaper` to determine FL vs WP slots correctly. Do NOT revert this fallback.
 
 21. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
+
+23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object — any custom slot IDs (timestamp-based, e.g. `sf1687234567890`) added by the SM would then show as "—". The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed, so multi-slot wallpaper jobs show all windows. If you add new time-display locations in either field app, use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
 ## Kylas Sheet Integration
 
