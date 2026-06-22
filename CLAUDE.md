@@ -175,9 +175,12 @@ const SLOTS=(function(){
 5. **Ratings screen** (`signAndComplete(o)`): 3 mandatory questions (Q1 overall, Q2 auditor, Q3 cleanliness) + optional comments. All 3 required before proceeding.
 6. **Signature screen** (`showAuditSignature(o, ratings)`): sign canvas + client name. "Generate PDF & complete".
 
-#### Critical: autosave race condition fix
-`clearTimeout(_autosaveTimer); _autosaveTimer=null;` at the top of `finishAudit` onclick.
-The autosave debounce (3s) was overwriting completed `audit_ticked` with draft data (no sign/photos). This is now fixed for all future completions.
+#### Critical: autosave race condition fix (sequence counter — 2026-06-22)
+`clearTimeout` alone is insufficient: it only stops the timer from firing, but cannot cancel an async callback that has already started executing. Once the 3s timer fires, the in-flight `sbPatch` (draft, no photos) can still land after the completion write.
+
+**Fix**: `_autosaveSeq` counter (declared alongside `_autosaveTimer`). Each `autosave()` call captures `const mySeq=++_autosaveSeq`. The async callback checks `if(_autosaveSeq!==mySeq)return` before every DB write. All completion handlers do `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` — incrementing the counter poisons any in-flight save at its next check point.
+
+**Do not revert to `clearTimeout` alone** — it was tried and caused recurring photo/signature loss in completed job cards.
 
 ### Site Installer App (`Site_Installer_App.html`)
 - 4 screens: list view, detail screen, audit report, installation card
@@ -193,8 +196,8 @@ Primary installer flow:
 
 Additional installer: marks own assignment complete via `markAdditionalComplete(j)` — no ratings/signature.
 
-#### Critical: autosave race condition fix
-`clearTimeout(_autosaveTimer); _autosaveTimer=null;` at top of `reallyDone` onclick AND `markAdditionalComplete`.
+#### Critical: autosave race condition fix (sequence counter — 2026-06-22)
+Same fix as auditor app. `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` at top of `reallyDone` onclick AND `markAdditionalComplete`. Installer autosave is even more dangerous because it does a read-modify-write (`sbGet` → mutate subjobs → `sbPatch`): the sequence check is placed both after the `sbGet` response and again before the `sbPatch`, so a stale read cannot overwrite a completed job card.
 
 ### Admin Console (`Admin.html`)
 - Nav views: Overview, Users, Role Viewer, **Job Overview**, Performance, **📉 Analytics**
@@ -306,7 +309,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 1. **Job key format in installer app**: composite key is `pi + '|' + sjId` — parsed with `key.indexOf('|')`, NOT `split('_')`
 
-2. **Autosave draft excludes photos**: `collectRooms().map(({photos, ...rest}) => rest)` — photos stripped from draft saves; full photos only saved on final completion. `clearTimeout(_autosaveTimer)` MUST be called at start of every completion handler.
+2. **Autosave draft excludes photos**: `collectRooms().map(({photos, ...rest}) => rest)` — photos stripped from draft saves; full photos only saved on final completion. Every completion handler MUST do `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` — the `_autosaveSeq++` is critical; `clearTimeout` alone does not stop an already-executing async autosave callback.
 
 3. **audit_ticked never in poll**: SM_Audit_Dashboard and Site_Auditor_App use explicit `select=` without `audit_ticked`. It is fetched on-demand for job card screen and PDF. `o.auditTicked` is always `null` in the SM poll mapRow.
 
