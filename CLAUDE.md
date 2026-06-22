@@ -152,14 +152,14 @@ const SLOTS=(function(){
 - **Poll query**: `audit_orders?select=id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log,created_by_email&status=neq.deleted`
 - `auditTicked` in mapRow is always `null` (not fetched in poll); `slotsForOrder(o)` falls back to `service`
 - `CAPS[auditorId][date]` now saved to localStorage key `md_audit_caps`
-- **📋 Kylas Sheet import**: "Kylas Sheet" button in Orders view header opens `kylasOverlay`. Fetches `KYLAS_SHEET_ID` Google Sheet via `gviz/tq?tqx=out:json` (no API key needed — sheet must be public). Deduplicates by PO number against `ORDERS[].po`. "Use this" pre-fills the Add Order form and shows a blue `ao-kylas-note` banner. Sheet columns: 0=PO, 4=Client name, 5=Phone, 6=BM, 13=Booking date.
+- **📋 Pending POs import**: "Pending POs" button in Orders view header opens `kylasOverlay`. Fetches `POS_API?type=site_audit&page_size=100`. Deduplicates by `po_number` against `ORDERS[].po`. "Use this" pre-fills all Add Order fields (PI, PO, name, phone, address, BM) and shows `ao-kylas-note` banner.
 
 ### SM Install Dashboard (`SM_Install_Dashboard.html`)
 - Nav views: Orders, **Need Action**, Call Operations today, Today's installs, To reschedule, Follow-ups, **📅 Schedule**, Slots & timings, Installers, Deleted Orders, Rectifications
 - **Schedule tab**: Same 10-day format. Uses `sjsForDay(ds)` which scans `sj.assignments[].date` (standard) or `sj.assignments[].dates[]` (custom) or legacy `sj.date`.
 - **Poll query**: `install_orders?select=*&status=neq.deleted`
 - `loadDeletedOrders()` called on-demand; `loadOrders` + `loadDeletedOrders` both called after delete/restore actions
-- **📋 Kylas Sheet import**: identical implementation to SM Audit Dashboard — same `KYLAS_SHEET_ID`, same overlay (`kylasOverlay`/`kylasBody`), same dedup logic against `ORDERS[].po`, same `ao-kylas-note` banner. Deduplicates against `install_orders.po`.
+- **📋 Pending POs import**: identical structure to SM Audit Dashboard — same overlay (`kylasOverlay`/`kylasBody`), same dedup logic. Uses `type=installation`. Also pre-fills `ao-delivery` (delivery date) and SKU rows (`variant_handle` → code, product_name contains 'wallpaper' → type).
 
 ### Site Auditor App (`Site_Auditor_App.html`)
 - 3 screens: list view, detail screen, job card screen
@@ -350,26 +350,27 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object — any custom slot IDs (timestamp-based, e.g. `sf1687234567890`) added by the SM would then show as "—". The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed, so multi-slot wallpaper jobs show all windows. If you add new time-display locations in either field app, use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
-## Kylas Sheet Integration
+## Pending POs Import (replaces Kylas Sheet as of 2026-06-22)
 
-**Sheet ID**: `1nDN5t7d25rMvuDa_j2VRpIvObXtLzPGXTfR19Hmd3Ho`  
-**Constant**: `KYLAS_SHEET_ID` in both `SM_Audit_Dashboard.html` and `SM_Install_Dashboard.html`  
-**Endpoint**: `https://docs.google.com/spreadsheets/d/{ID}/gviz/tq?tqx=out:json` — no API key, sheet must be public  
-**Parse**: Strip `google.visualization.Query.setResponse(` prefix and `);` suffix, then JSON.parse. Rows are `table.rows[].c[]` with `v` (raw) and `f` (formatted) per cell.
+**Constant**: `POS_API='https://api-dev2.materialdepot.in/apiV1/site-audit-installation-pos/'` in both SM dashboards  
+**SM Audit** fetches `?type=site_audit&page_size=100`; **SM Install** fetches `?type=installation&page_size=100`  
+**Search**: `?search=<term>` — server-side filter by PO number, customer contact, or lead ID. Debounced 400ms via `debouncePOSearch()`.
 
-### Kylas Sheet Column Map (0-indexed)
-| Index | Column | Mapped to |
+### API → Form field mapping
+| API field | Form field | Notes |
 |---|---|---|
-| 0 | PO number | `ao-po` / dedup key |
-| 4 | Client name | `ao-name` |
-| 5 | Contact number | `ao-phone` (strip non-digits) |
-| 6 | BM | `ao-bm` |
-| 9 | Service category | display only |
-| 13 | Booking date | display only |
-| 18 | Status | display only |
+| `estimate_lead_id` | `ao-pi` | ENQ... format — fully auto-filled now |
+| `po_number` | `ao-po` | |
+| `customer.name` | `ao-name` | |
+| `customer.contact` | `ao-phone` | integer → String |
+| `bm.name` | `ao-bm` | |
+| `shipping_address.address` | `ao-addr` | fully auto-filled now |
+| `delivery_date` | `ao-delivery` | install only |
+| `skus[].variant_handle` | `ao-sku-code` rows | install only; type from product_name contains 'wallpaper' |
 
-**Deduplication**: `existingPOs = new Set(ORDERS.flatMap(o => o.po || []))` — if `po` is already in any audit order, row shows "Imported".  
-**Not in sheet**: PI Number and Site Address — SM must fill these manually. A blue `ao-kylas-note` banner reminds them when the form is pre-filled.
+**Deduplication**: `existingPOs = new Set(ORDERS.flatMap(o => o.po || []))` — checks `r.po_number`. Imported rows shown collapsed under "already imported" `<details>`.  
+**Card display**: customer name+phone, PI+PO+BM+date+po_status chip, address snippet + 📍 map link, SKU product names (first 2).  
+**po_status colours**: `dispatch_pending`/`pickup_attempted` → amber; `delivered` → green; `cancelled` → red.
 
 ## Deployment Workflow
 ```bash
