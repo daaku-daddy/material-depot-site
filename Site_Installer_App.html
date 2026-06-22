@@ -600,24 +600,29 @@ function addRoom(restore){
 function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
 function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,qty:r.qty||'',height:r.height||'',width:r.width||'',photos:r.photos||[],comments:r.comments}));}
 let _autosaveTimer=null;
+let _autosaveSeq=0;
 function autosave(){
   if(!jcJob)return;
   const key='md_install_'+jcJob.pi+'_'+jcJob.sjId;
   try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}
   showSaveStatus('saving');
   clearTimeout(_autosaveTimer);
+  const mySeq=++_autosaveSeq;
   _autosaveTimer=setTimeout(async()=>{
+    if(_autosaveSeq!==mySeq)return;
     if(!jcJob||!jcJob.id||!jcJob.sjId){showSaveStatus('local');return;}
     try{
       const parentRows=await sbGet('install_orders?id=eq.'+jcJob.id+'&select=subjobs');
+      if(_autosaveSeq!==mySeq)return;
       if(Array.isArray(parentRows)&&parentRows[0]){
         const subjobs=parentRows[0].subjobs||[];
         const sj=subjobs.find(s=>s.id===jcJob.sjId);
         const draftRooms=collectRooms().map(({photos,...rest})=>rest);
         if(sj)sj.jobcard={draft:true,rooms:draftRooms};
+        if(_autosaveSeq!==mySeq)return;
         await sbPatch('install_orders',jcJob.id,{subjobs});
       }
-      showSaveStatus('saved');
+      if(_autosaveSeq===mySeq)showSaveStatus('saved');
     }catch(e){showSaveStatus('local');}
   },3000);
 }
@@ -684,7 +689,7 @@ function finishCard(j){
 }
 
 async function markAdditionalComplete(j){
-  clearTimeout(_autosaveTimer);_autosaveTimer=null;
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
   j.jobcard={rooms:collectRooms()};
   const prev=j.status;j.status="completed";
   const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
@@ -823,7 +828,7 @@ function showInstallSignature(j,ratings){
   $("#backToPreviewFromSign").onclick=()=>signAndFinish(j);
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
-    clearTimeout(_autosaveTimer);_autosaveTimer=null;
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
     const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});

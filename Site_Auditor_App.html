@@ -563,18 +563,22 @@ function addRoom(restore){
 function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((c,i)=>{const rn=c.querySelector('.rn');if(rn)rn.textContent='Room / Space '+(i+1);});}
 function collectRooms(){return jcRooms.map(r=>({type:r.type,name:r.name,sku:r.sku,photos:r.photos||[],calc:Object.assign({},r.calc),notes:r.notes,sketchStrokes:r._sketch?r._sketch.strokes:[]}));}
 let _autosaveTimer=null;
+let _autosaveSeq=0;
 function autosave(){
   if(!jcOrder)return;
   const key='md_audit_'+jcOrder.pi;
   try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}
   showSaveStatus('saving');
   clearTimeout(_autosaveTimer);
+  const mySeq=++_autosaveSeq;
   _autosaveTimer=setTimeout(async()=>{
+    if(_autosaveSeq!==mySeq)return;
     if(!jcOrder||!jcOrder.id){showSaveStatus('local');return;}
     try{
       const draftRooms=collectRooms().map(({photos,...rest})=>rest);
+      if(_autosaveSeq!==mySeq)return;
       await sbPatch('audit_orders',jcOrder.id,{audit_ticked:{draft:true,rooms:draftRooms}});
-      showSaveStatus('saved');
+      if(_autosaveSeq===mySeq)showSaveStatus('saved');
     }catch(e){showSaveStatus('local');}
   },3000);
 }
@@ -752,7 +756,7 @@ function showAuditSignature(o,ratings){
   $("#backToPreview").onclick=()=>signAndComplete(o);
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
-    clearTimeout(_autosaveTimer);_autosaveTimer=null;
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
     const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
     jcSign={img:jcSignPad.export(),name:$("#signName").value,ratings};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
