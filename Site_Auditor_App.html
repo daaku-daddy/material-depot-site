@@ -188,6 +188,8 @@ function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'nu
 
 const SESSION=getSession();
 if(!SESSION||!['site_auditor','auditor_installer'].includes(SESSION.role)){window.location.href='Login.html';}
+history.replaceState(null,'',location.href);
+window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',zone:''};
 document.getElementById('meName').textContent=ME.name;
 

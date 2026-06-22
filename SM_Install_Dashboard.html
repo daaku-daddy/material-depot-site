@@ -459,6 +459,8 @@ function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'nu
 
 const SESSION=getSession();
 if(!SESSION||!['service_mgr','admin'].includes(SESSION.role)){window.location.href='Login.html';}
+history.replaceState(null,'',location.href);
+window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 (function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
 

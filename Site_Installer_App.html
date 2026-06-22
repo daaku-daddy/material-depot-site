@@ -189,6 +189,8 @@ function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'nu
 
 const SESSION=getSession();
 if(!SESSION||!['installer','auditor_installer'].includes(SESSION.role)){window.location.href='Login.html';}
+history.replaceState(null,'',location.href);
+window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'flooring',zone:''};
 // fetch own profile to get installer_type
 (async()=>{try{const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(ME.email)+'&select=installer_type&limit=1');if(Array.isArray(rows)&&rows[0]&&rows[0].installer_type)ME.type=rows[0].installer_type;}catch(e){}})();
