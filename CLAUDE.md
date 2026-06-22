@@ -353,6 +353,13 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object — any custom slot IDs (timestamp-based, e.g. `sf1687234567890`) added by the SM would then show as "—". The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed, so multi-slot wallpaper jobs show all windows. If you add new time-display locations in either field app, use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
+24. **Swipe-back navigation blocked on all authenticated pages**: All four pages (SM_Audit_Dashboard, SM_Install_Dashboard, Site_Auditor_App, Site_Installer_App) run these two lines immediately after the session guard:
+    ```js
+    history.replaceState(null,'',location.href);
+    window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
+    ```
+    `replaceState` removes Login.html from the browser history stack. The `popstate` listener catches any back navigation attempt (two-finger swipe, browser back button) and immediately re-pushes the current page, keeping the user on the dashboard. Sign-out still works because it uses `window.location.href='Login.html'` directly. Do not remove these lines — without them, swiping back on a Mac touchpad navigates to the login page.
+
 ## Pending POs Import (replaces Kylas Sheet as of 2026-06-22)
 
 **Constant**: `POS_API='https://api-dev2.materialdepot.in/apiV1/site-audit-installation-pos/'` in both SM dashboards  
