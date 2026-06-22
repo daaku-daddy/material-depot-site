@@ -1,4 +1,10 @@
 {
+  "rewrites": [
+    {
+      "source": "/api/pos",
+      "destination": "https://api-dev2.materialdepot.in/apiV1/site-audit-installation-pos/"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*\\.html)",
