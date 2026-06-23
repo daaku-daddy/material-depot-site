@@ -602,6 +602,7 @@ function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forE
 function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,qty:r.qty||'',height:r.height||'',width:r.width||'',photos:r.photos||[],comments:r.comments}));}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
+let _completionWrite=null;
 function autosave(){
   if(!jcJob)return;
   const key='md_install_'+jcJob.pi+'_'+jcJob.sjId;
@@ -622,8 +623,10 @@ function autosave(){
         if(sj)sj.jobcard={draft:true,rooms:draftRooms};
         if(_autosaveSeq!==mySeq)return;
         await sbPatch('install_orders',jcJob.id,{subjobs});
+        // If completion fired while this draft was in-flight, re-issue completion now
+        if(_completionWrite){try{await sbPatch('install_orders',jcJob.id,_completionWrite);}catch(e){}}
+        else if(_autosaveSeq===mySeq)showSaveStatus('saved');
       }
-      if(_autosaveSeq===mySeq)showSaveStatus('saved');
     }catch(e){showSaveStatus('local');}
   },3000);
 }
@@ -725,6 +728,7 @@ async function markAdditionalComplete(j){
 function _starRowInst(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
 
 function showPassToClientInst(j){
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
   document.querySelector(".footer").classList.add("hide");
   $("#jcBody").innerHTML=`
     <div class="panel" style="text-align:center;padding:32px 16px;margin-top:12px">
@@ -848,7 +852,9 @@ function showInstallSignature(j,ratings){
           sj.jobcard=j.jobcard;
         }
         const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
-        await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:j.parentLog});
+        const completionPatch={subjobs,status:parentStatus,log:j.parentLog};
+        _completionWrite=completionPatch;
+        await sbPatch('install_orders',j.id,completionPatch);
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
         // Write ratings to dedicated table for reporting/NPS
         try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){console.error('ratings write failed',e);}

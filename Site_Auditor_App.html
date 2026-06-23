@@ -565,6 +565,7 @@ function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((
 function collectRooms(){return jcRooms.map(r=>({type:r.type,name:r.name,sku:r.sku,photos:r.photos||[],calc:Object.assign({},r.calc),notes:r.notes,sketchStrokes:r._sketch?r._sketch.strokes:[]}));}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
+let _completionWrite=null;
 function autosave(){
   if(!jcOrder)return;
   const key='md_audit_'+jcOrder.pi;
@@ -579,7 +580,10 @@ function autosave(){
       const draftRooms=collectRooms().map(({photos,...rest})=>rest);
       if(_autosaveSeq!==mySeq)return;
       await sbPatch('audit_orders',jcOrder.id,{audit_ticked:{draft:true,rooms:draftRooms}});
-      if(_autosaveSeq===mySeq)showSaveStatus('saved');
+      // If the completion write fired while this draft was in-flight, the draft
+      // may have landed after and overwritten it. Re-issue the completion write now.
+      if(_completionWrite){try{await sbPatch('audit_orders',jcOrder.id,_completionWrite);}catch(e){}}
+      else if(_autosaveSeq===mySeq)showSaveStatus('saved');
     }catch(e){showSaveStatus('local');}
   },3000);
 }
@@ -638,6 +642,7 @@ function reviewAndSign(o){
 function _starRow(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
 
 function showPassToClientAudit(o){
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
   $("#jcFooter").classList.add("hide");
   $("#jcBody").innerHTML=`
     <div class="card" style="text-align:center;padding:32px 16px;margin-top:12px">
@@ -765,7 +770,9 @@ function showAuditSignature(o,ratings){
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto"});
     if(o.id){try{
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photos:r.photos||[],sketchStrokes:r.sketchStrokes||[]}))};
-      await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});
+      const completionPatch={status:'completed',log:o.log,audit_ticked:ticked};
+      _completionWrite=completionPatch;
+      await sbPatch('audit_orders',o.id,completionPatch);
       try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
       // Write ratings to dedicated table for reporting/NPS
       try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){console.error('ratings write failed',e);}
