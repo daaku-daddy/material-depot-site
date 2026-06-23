@@ -376,9 +376,8 @@ function wireDetail(o){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
   const adv=async(st,msg,logOverride)=>{
     const prev=o.status;o.status=st;
-    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     const logMsg=logOverride||{callpending:"Pre-visit call started",onway:"Auditor on the way · customer confirmed",reschedule:"Customer declined → sent to SM to reschedule",atsite:"Auditor arrived at site",completed:"Site audit completed"}[st]||st;
-    o.log=o.log||[];o.log.push({t:logMsg,d:"Today "+now,by:"auto"});
+    o.log=o.log||[];o.log.push({t:logMsg,d:new Date().toISOString(),by:"auto"});
     const dbStatus=st==='scheduled'?'assigned':st;
     if(o.id){try{await sbPatch('audit_orders',o.id,{status:dbStatus,log:o.log});}catch(e){o.status=prev;toast("Network error — try again");return;}}
     await loadJobs();toast(msg);openDetail(o.pi);
@@ -763,8 +762,7 @@ function showAuditSignature(o,ratings){
     jcSign={img:jcSignPad.export(),name:$("#signName").value,ratings};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
-    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:"Today "+now,by:"auto"});
+    o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto"});
     if(o.id){try{
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photos:r.photos||[],sketchStrokes:r.sketchStrokes||[]}))};
       await sbPatch('audit_orders',o.id,{status:'completed',log:o.log,audit_ticked:ticked});

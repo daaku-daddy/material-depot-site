@@ -712,7 +712,8 @@ function jdRoomCard(r,i){
   const photoHtml=photos.length?`<div class="jc-photos">${photos.slice(0,4).map(p=>`<img src="${p}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open(this.src)">`).join('')}</div>`:'';
   return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU: ${r.sku||'NA'}</div>${meas?`<div class="jc-kvs">${meas}</div>`:''}${photoHtml}${r.notes?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Notes: ${r.notes}</div>`:''}</div>`;
 }
-function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>`<div class="jd-tl"><div class="jd-tl-t">${l.t}</div><div class="jd-tl-d">${l.d}${l.by==='auto'?' · auto':l.by==='manual'?' · manual':''}</div></div>`).join('');}
+function fmtLog(d){if(!d)return '';const dt=new Date(d);if(isNaN(dt.getTime()))return d;const ms=Date.now()-dt.getTime();const m=Math.round(ms/60000);if(m<1)return 'Just now';if(m<60)return m+'m ago';const h=Math.round(ms/3600000);const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});if(h<24)return h+'h ago · '+ts;const days=Math.round(ms/86400000);if(days===1)return 'Yesterday · '+ts;if(days<7)return days+'d ago · '+ts;return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' · '+ts;}
+function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>`<div class="jd-tl"><div class="jd-tl-t">${l.t}</div><div class="jd-tl-d">${fmtLog(l.d)}${l.by==='auto'?' · auto':l.by==='manual'?' · manual':''}</div></div>`).join('');}
 async function openJobDetail(pi,type){
   const m=document.getElementById('modal');m.className='modal wide';
   showModal('<div class="loading-row" style="padding:40px 0"><span class="spinner"></span></div>');
@@ -759,7 +760,7 @@ async function openJobDetail(pi,type){
           const photoHtml=photos.length?`<div class="jc-photos">${photos.slice(0,4).map(p=>`<img src="${p}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open(this.src)">`).join('')}</div>`:'';
           return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'}${r.sku?` · SKU: ${r.sku}`:''}${r.qty?` · ${r.qty}`:''}</div>${photoHtml}${r.comments?`<div style="font-size:12px;color:var(--muted);margin-top:4px">${r.comments}</div>`:''}</div>`;
         }).join('');
-        const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${jc.sign.name||'—'}</b>${jc.sign.ratings?` · ⭐ ${jc.sign.ratings.q1}/10 · 👤 ${jc.sign.ratings.q2}/10`:''}</div>`:'';
+        const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${jc.sign.name||'—'}</b>${jc.sign.ratings?` · ⭐ ${jc.sign.ratings.q1}/10 · 👤 ${jc.sign.ratings.q2}/10 · 🧹 ${jc.sign.ratings.q3||'—'}/10`:''}</div>`:'';
         return `<div class="jd-section">
           <div class="jd-sec-head">${typeLabel} · ${jobChip(sj.status)}</div>
           <div class="jd-row"><span class="jd-label">Installer(s)</span><span>${names}</span></div>

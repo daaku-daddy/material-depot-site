@@ -422,7 +422,6 @@ function wireDetail(j){
     if(_advBusy)return;_advBusy=true;
     document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=true);
     const prev=j.status;j.status=st;
-    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     const logMsg=logOverride||{callpending:"Pre-install call started",onway:"Installer on the way · customer confirmed",reschedule:"Customer declined → sent to office to reschedule",atsite:"Installer arrived at site",completed:"Installation completed"}[st]||st;
     if(j.id&&j.sjId){
       try{
@@ -443,7 +442,7 @@ function wireDetail(j){
             // else: non-primary — their assignment is updated above but sj.status unchanged
           }else{sj.status=dbSt;}
           const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
-          freshLog.push({t:logMsg,d:"Today "+now,by:"auto"});
+          freshLog.push({t:logMsg,d:new Date().toISOString(),by:"auto"});
           const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
           await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
         }
@@ -694,7 +693,6 @@ async function markAdditionalComplete(j){
   clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
   j.jobcard={rooms:collectRooms()};
   const prev=j.status;j.status="completed";
-  const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
   toast("Saving...");
   try{
     const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
@@ -711,7 +709,7 @@ async function markAdditionalComplete(j){
         }else{sj.status='completed';sj.jobcard=j.jobcard;}
       }
       const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
-      freshLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation done (additional installer: "+ME.name+")",d:"Today "+now,by:"auto"});
+      freshLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation done (additional installer: "+ME.name+")",d:new Date().toISOString(),by:"auto"});
       const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
       await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
       try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
@@ -833,8 +831,7 @@ function showInstallSignature(j,ratings){
     clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
-    const now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-    j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:"Today "+now,by:"auto"});
+    j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto"});
     toast("Saving...");
     try{
       const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
