@@ -84,9 +84,9 @@ function wirePinBoxes(boxes,onChange){
 function emailScreen(){
   $("#card").innerHTML=`
     <h1>Sign in</h1>
-    <p class="sub">Enter your Material Depot email to continue.</p>
-    <label>Work email</label>
-    <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@materialdepot.com" value="${state.email}">
+    <p class="sub">Enter your email address to continue.</p>
+    <label>Email</label>
+    <input id="email" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" value="${state.email}">
     <div class="err" id="err"></div>
     <button class="btn" id="send">Continue</button>`;
   const ei=$("#email");
@@ -99,7 +99,6 @@ async function trySend(){
   const err=$("#err");err.classList.remove("show");
   const email=(state.email||"").toLowerCase();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent="Enter a valid email address.";err.classList.add("show");return;}
-  if(!email.endsWith("@materialdepot.com")){err.textContent="Please use your @materialdepot.com work email.";err.classList.add("show");return;}
   const btn=$("#send");btn.disabled=true;btn.textContent="Checking…";
   try{
     const res=await fetch(`${SB_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=*`,
