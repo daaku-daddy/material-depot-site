@@ -580,7 +580,8 @@ function orderCategoriesAudit(o){
   return '<span style="color:var(--muted)">—</span>';
 }
 
-let activeView="orders",filterStatus="all",searchQ="",currentPI=null,calSelDay=dstr(today);
+let activeView="orders",filterStatus="all",filterDate="",searchQ="",currentPI=null,calSelDay=dstr(today);
+function setDateFilter(d){filterDate=d;render();}
 
 /* ============== NAV COUNTS ============== */
 function counts(){
@@ -629,6 +630,7 @@ function ordersView(){
       if(filterStatus==="live")return ["scheduled","assigned","onway","atsite"].includes(o.status);
       if(o.status!==filterStatus)return false;
     }
+    if(filterDate&&o.date!==filterDate)return false;
     if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
     return true;
   }).map(o=>{
@@ -649,6 +651,10 @@ function ordersView(){
     <div class="actions"><button class="btn ghost sm" onclick="openKylasSheet()">&#128203; Pending POs</button><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
+    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+      <input type="date" id="dateFilter" value="${filterDate}" title="Filter by audit date" style="border:1.5px solid ${filterDate?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${filterDate?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
+      ${filterDate?`<button onclick="setDateFilter('')" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear date</button>`:''}
+    </div>
     <div class="filt">${fbtns}</div></div>
   <div class="tablecard"><table>
     <thead><tr><th>PI / PO</th><th>SKUs in cart</th><th>Categories</th><th>Customer</th><th>Address</th><th>Audit date</th><th>Auditor allocated</th><th>Status</th></tr></thead>
@@ -1178,6 +1184,7 @@ function deletedView(){
 function wire(){
   document.querySelectorAll("#main tbody tr[data-pi]").forEach(tr=>tr.onclick=e=>{if(e.target.closest(".maplink"))return;openOrder(tr.dataset.pi);});
   if($("#q"))$("#q").oninput=e=>{searchQ=e.target.value;const tc=$("#main .tablecard");if(tc){const tmp=document.createElement("div");tmp.innerHTML=ordersView();tc.outerHTML=tmp.querySelector(".tablecard").outerHTML;}wire();const q=$("#q");if(q){q.focus();q.setSelectionRange(searchQ.length,searchQ.length);}};
+  if($("#dateFilter"))$("#dateFilter").onchange=e=>{filterDate=e.target.value;render();};
   document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
   document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{filterStatus=s.dataset.stat;render();});
   document.querySelectorAll("[data-rebook]").forEach(b=>b.onclick=e=>{e.stopPropagation();openOrder(b.dataset.rebook);});
@@ -1204,7 +1211,7 @@ function wire(){
 }
 
 document.querySelectorAll("#rail a").forEach(a=>a.onclick=async()=>{
-  activeView=a.dataset.view;filterStatus="all";
+  activeView=a.dataset.view;filterStatus="all";filterDate="";
   if(activeView==="deleted"&&!DELETED.length){await loadDeletedOrders();}
   render();
 });

@@ -615,7 +615,8 @@ function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'
 function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'));}
 
 /* ---- JOBS OVERVIEW ---- */
-let jobsFilter='all';
+let jobsFilter='all',jobsDateFilter='';
+function setJobDateFilter(d){jobsDateFilter=d;drawJobs(document.getElementById('main'));}
 
 async function renderJobs(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
@@ -638,11 +639,16 @@ async function renderJobs(m){
   if(Array.isArray(installRes)){
     installRes.forEach(r=>{
       const emails=[...new Set((r.subjobs||[]).filter(sj=>sj.installer_email).map(sj=>sj.installer_email))];
+      const installDates=[...new Set((r.subjobs||[]).flatMap(sj=>{
+        const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{date:sj.date,mode:'standard',dates:[]}]:[]);
+        return asgns.flatMap(a=>a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]));
+      }))];
       realJobs.push({
         id:r.pi||'—', type:'install',
         customer:r.customer_name||'—', addr:r.addr||'—',
         assignee:emails.length?emails.map(e=>nameMap[e]||e.split('@')[0]).join(', '):null,
         status:r.status||'pending', date:r.delivery_date||null,
+        installDates,
       });
     });
   }
@@ -661,6 +667,10 @@ function drawJobs(m){
     if(jobsFilter==='install')return j.type==='install';
     if(JOB_STATUS[jobsFilter])return j.status===jobsFilter;
     return true;
+  }).filter(j=>{
+    if(!jobsDateFilter)return true;
+    if(j.type==='audit')return j.date===jobsDateFilter;
+    return (j.installDates||[]).includes(jobsDateFilter);
   });
 
   m.innerHTML=`
@@ -680,7 +690,11 @@ function drawJobs(m){
               ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':JOB_STATUS[f]?.l||f}
             </button>`).join('')}
         </div>
-        <span style="font-size:12px;color:var(--muted);margin-left:auto;align-self:center">Tap any row for full details &amp; job card</span>
+        <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
+          <input type="date" value="${jobsDateFilter}" title="Filter by scheduled date" onchange="setJobDateFilter(this.value)" style="border:1.5px solid ${jobsDateFilter?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${jobsDateFilter?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
+          ${jobsDateFilter?`<button onclick="setJobDateFilter('')" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear date</button>`:''}
+          <span style="font-size:12px;color:var(--muted)">Tap any row for details</span>
+        </div>
       </div>
       <table>
         <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th><th>Location</th><th>Assigned To</th><th>Status</th><th>Date</th></tr></thead>

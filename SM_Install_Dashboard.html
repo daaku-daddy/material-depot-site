@@ -596,7 +596,9 @@ function wpSlotLoad(id,date){
   return n;
 }
 
-let activeView="orders",filterStatus="all",searchQ="",currentPI=null,sortDelivery="asc",calSelDay=dstr(today);
+let activeView="orders",filterStatus="all",filterDate="",searchQ="",currentPI=null,sortDelivery="asc",calSelDay=dstr(today);
+function setDateFilter(d){filterDate=d;render();}
+function installOrderHasDate(o,ds){return(o.subjobs||[]).some(sj=>{const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{date:sj.date,mode:'standard',dates:[]}]:[]);return asgns.some(a=>(a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[])).includes(ds));});}
 
 /* ============== COUNTS ============== */
 function needActionCount(){
@@ -681,6 +683,7 @@ function ordersView(){
       if(filterStatus==="live")return ["scheduled","assigned","partial","onway","atsite"].includes(o.status);
       if(o.status!==filterStatus)return false;
     }
+    if(filterDate&&!installOrderHasDate(o,filterDate))return false;
     if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
     return true;
   }).sort((a,b)=>{
@@ -709,6 +712,10 @@ function ordersView(){
   ${stats}${banner}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <button class="btn gray sm" id="toggleSort" style="white-space:nowrap;flex:0 0 auto">Delivery date ${sortDelivery==="asc"?"↑":"↓"}</button>
+    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+      <input type="date" id="dateFilter" value="${filterDate}" title="Filter by install date" style="border:1.5px solid ${filterDate?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${filterDate?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
+      ${filterDate?`<button onclick="setDateFilter('')" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear date</button>`:''}
+    </div>
     <div class="filt">${fbtns}</div></div>
   <div class="tablecard"><table>
     <thead><tr><th>PI / PO</th><th>SKUs (audit match)</th><th>Categories</th><th>Customer</th><th>Address</th><th>Delivery date</th><th>Install sub-jobs</th><th>Status</th></tr></thead>
@@ -1449,6 +1456,7 @@ function wire(){
   document.querySelectorAll("[data-open]").forEach(b=>b.onclick=e=>{e.stopPropagation();openOrder(b.dataset.open);});
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{activeView=b.dataset.goto;render();});
   if($("#q"))$("#q").oninput=e=>{searchQ=e.target.value;const tc=$("#main .tablecard");if(tc){const tmp=document.createElement("div");tmp.innerHTML=ordersView();tc.outerHTML=tmp.querySelector(".tablecard").outerHTML;}wire();const q=$("#q");if(q){q.focus();q.setSelectionRange(searchQ.length,searchQ.length);}};
+  if($("#dateFilter"))$("#dateFilter").onchange=e=>{filterDate=e.target.value;render();};
   document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
   if($("#toggleSort"))$("#toggleSort").onclick=()=>{sortDelivery=sortDelivery==="asc"?"desc":"asc";render();};
   document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{const k=s.dataset.stat;if(k==="opsdue"){activeView="calls";render();return;}filterStatus=k;render();});
@@ -1467,7 +1475,7 @@ function wire(){
 }
 
 document.querySelectorAll("#rail a").forEach(a=>a.onclick=async()=>{
-  activeView=a.dataset.view;filterStatus="all";
+  activeView=a.dataset.view;filterStatus="all";filterDate="";
   if(activeView==="deleted"&&!DELETED.length){await loadDeletedOrders();}
   render();
 });
