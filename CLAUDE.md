@@ -89,6 +89,7 @@ Role-based web app for Material Depot's field operations. Plain HTML/CSS/JS, no 
 - Role → file routing: `admin→Admin.html`, `service_mgr→SM_Audit_Dashboard.html`, `site_auditor→Site_Auditor_App.html`, `installer→Site_Installer_App.html`, `auditor_installer→Site_Auditor_App.html`
 - SM dashboards accept both `service_mgr` and `admin` — guard: `!['service_mgr','admin'].includes(SESSION.role)`
 - `auditor_installer` role: accepted by both field apps; "⇄" switch button navigates between them
+- **Any valid email accepted** (as of 2026-06-23): Login.html and Admin "Add New User" form no longer restrict to `@materialdepot.com`. Access is still gated by whether the email exists in `profiles`.
 
 ## Polling Intervals & Bandwidth Strategy
 All polls skip when `document.hidden` (page visibility API). Resume + immediate fetch on tab visible.
@@ -153,6 +154,7 @@ const SLOTS=(function(){
 - `auditTicked` in mapRow is always `null` (not fetched in poll); `slotsForOrder(o)` falls back to `service`
 - `CAPS[auditorId][date]` now saved to localStorage key `md_audit_caps`
 - **📋 Pending POs import**: "Pending POs" button in Orders view header opens `kylasOverlay`. Fetches `POS_API?type=site_audit&page_size=100`. Deduplicates by `po_number` against `ORDERS[].po`. "Use this" pre-fills all Add Order fields (PI, PO, name, phone, address, BM) and shows `ao-kylas-note` banner.
+- **Orders view state**: `filterStatus`, `filterDate` (YYYY-MM-DD or ""), `searchQ`. `setDateFilter(d)` sets `filterDate` and re-renders. Date picker in toolbar; resets to "" on nav switch. Filter: `if(filterDate && o.date !== filterDate) return false`.
 
 ### SM Install Dashboard (`SM_Install_Dashboard.html`)
 - Nav views: Orders, **Need Action**, Call Operations today, Today's installs, To reschedule, Follow-ups, **📅 Schedule**, Slots & timings, Installers, Deleted Orders, Rectifications
@@ -160,6 +162,7 @@ const SLOTS=(function(){
 - **Poll query**: `install_orders?select=*&status=neq.deleted`
 - `loadDeletedOrders()` called on-demand; `loadOrders` + `loadDeletedOrders` both called after delete/restore actions
 - **📋 Pending POs import**: identical structure to SM Audit Dashboard — same overlay (`kylasOverlay`/`kylasBody`), same dedup logic. Uses `type=installation`. Also pre-fills `ao-delivery` (delivery date) and SKU rows (`variant_handle` → code, product_name contains 'wallpaper' → type).
+- **Orders view state**: `filterStatus`, `filterDate` (YYYY-MM-DD or ""), `searchQ`. `setDateFilter(d)` sets `filterDate` and re-renders. `installOrderHasDate(o, ds)` checks any subjob's assignments (standard `date`, custom `dates[]`, legacy `sj.date`). Date picker in toolbar; resets to "" on nav switch.
 
 ### Site Auditor App (`Site_Auditor_App.html`)
 - 3 screens: list view, detail screen, job card screen
@@ -175,12 +178,14 @@ const SLOTS=(function(){
 5. **Ratings screen** (`signAndComplete(o)`): 3 mandatory questions (Q1 overall, Q2 auditor, Q3 cleanliness) + optional comments. All 3 required before proceeding.
 6. **Signature screen** (`showAuditSignature(o, ratings)`): sign canvas + client name. "Generate PDF & complete".
 
-#### Critical: autosave race condition fix (sequence counter — 2026-06-22)
-`clearTimeout` alone is insufficient: it only stops the timer from firing, but cannot cancel an async callback that has already started executing. Once the 3s timer fires, the in-flight `sbPatch` (draft, no photos) can still land after the completion write.
+#### Critical: autosave race condition fix (2026-06-23 — two-layer defence)
+The seq counter alone is insufficient. The seq check runs before `await sbPatch(draft)`, but once the fetch is in-flight it cannot be cancelled. If the completion write resolves first and THEN the draft fetch resolves, the draft silently overwrites photos, sign, and ratings. Confirmed on ENQ2026062175756 (June 23): completion log entry at 07:14:21Z but DB still had `draft:true, photos:[]`.
 
-**Fix**: `_autosaveSeq` counter (declared alongside `_autosaveTimer`). Each `autosave()` call captures `const mySeq=++_autosaveSeq`. The async callback checks `if(_autosaveSeq!==mySeq)return` before every DB write. All completion handlers do `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` — incrementing the counter poisons any in-flight save at its next check point.
+**Layer 1 — early cancel**: `showPassToClientAudit(o)` immediately does `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` when the auditor hands the phone to the client. This prevents the 3s timer from ever firing during T&C/ratings/signature in the common case.
 
-**Do not revert to `clearTimeout` alone** — it was tried and caused recurring photo/signature loss in completed job cards.
+**Layer 2 — `_completionWrite` re-issue**: `let _completionWrite=null` declared at module level. In `finishAudit`, BEFORE the completion `sbPatch`, set `_completionWrite = completionPatch`. In autosave, AFTER `await sbPatch(draft)` resolves, check `if(_completionWrite)` — if set, immediately re-issue `sbPatch(jcOrder.id, _completionWrite)`. This repairs any overwrite regardless of network ordering.
+
+**Do not remove either layer.** `clearTimeout` alone is broken. Seq counter alone is broken. Both layers are required.
 
 ### Site Installer App (`Site_Installer_App.html`)
 - 4 screens: list view, detail screen, audit report, installation card
@@ -196,12 +201,13 @@ Primary installer flow:
 
 Additional installer: marks own assignment complete via `markAdditionalComplete(j)` — no ratings/signature.
 
-#### Critical: autosave race condition fix (sequence counter — 2026-06-22)
-Same fix as auditor app. `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` at top of `reallyDone` onclick AND `markAdditionalComplete`. Installer autosave is even more dangerous because it does a read-modify-write (`sbGet` → mutate subjobs → `sbPatch`): the sequence check is placed both after the `sbGet` response and again before the `sbPatch`, so a stale read cannot overwrite a completed job card.
+#### Critical: autosave race condition fix (2026-06-23 — same two-layer defence)
+Same fix as auditor app. `showPassToClientInst(j)` does the early cancel. `_completionWrite` is set before `sbPatch` in `reallyDone`, storing `{subjobs, status:parentStatus, log:j.parentLog}`. Autosave re-issues after draft write. `markAdditionalComplete` also does early cancel. Installer autosave is more dangerous (read-modify-write: `sbGet` → mutate → `sbPatch`) — seq checks placed after `sbGet` and before `sbPatch`, plus `_completionWrite` catches the post-write race.
 
 ### Admin Console (`Admin.html`)
 - Nav views: Overview, Users, Role Viewer, **Job Overview**, Performance, **📉 Analytics**
-- **Job Overview** (merged Jobs + Job Cards): clickable table rows open a wide detail modal (`openJobDetail(pi, type)`). Modal fetches full order data on demand (including `audit_ticked`/`subjobs`). Shows rooms, measurements, photos (click to open full size), ratings, signature. Download Job Card PDF button in modal. `genAuditPDF` and `genInstallPDF` now include Q3 in client feedback table.
+- **Job Overview** (merged Jobs + Job Cards): clickable table rows open a wide detail modal (`openJobDetail(pi, type)`). Modal fetches full order data on demand (including `audit_ticked`/`subjobs`). Shows rooms, measurements, photos (click to open full size), ratings (Q1+Q2+Q3 for both audit and install), signature. Download Job Card PDF button in modal. `genAuditPDF` and `genInstallPDF` now include Q3 in client feedback table.
+- **Date filter**: `jobsDateFilter` (YYYY-MM-DD or "") + `setJobDateFilter(d)`. For audit jobs filters by `j.date`; for install jobs filters by `j.installDates[]` (all unique assignment dates collected at load from `sj.assignments[].date`, `sj.assignments[].dates[]`, legacy `sj.date`). Date picker in toolbar alongside type/status filter pills.
 - **Analytics tab** (`renderAnalytics`, `drawAnalytics`): period filter (7/30/90/All days). Fetches lightweight queries — no photos.
   - Audit metrics: SM Slot Booking %, Reschedule Rate, Visit Success %, Job Card %, Signature %, NPS, Q1 rating, Q2 rating, Q3 cleanliness rating
   - Install metrics: External Audit %, SM Follow-Up %, Delivery Delay %, Visit Success %, Job Card %, Signature %, NPS, Q1 rating, Q2 rating, Q3 cleanliness rating
@@ -309,7 +315,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 1. **Job key format in installer app**: composite key is `pi + '|' + sjId` — parsed with `key.indexOf('|')`, NOT `split('_')`
 
-2. **Autosave draft excludes photos**: `collectRooms().map(({photos, ...rest}) => rest)` — photos stripped from draft saves; full photos only saved on final completion. Every completion handler MUST do `clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;` — the `_autosaveSeq++` is critical; `clearTimeout` alone does not stop an already-executing async autosave callback.
+2. **Autosave draft excludes photos**: `collectRooms().map(({photos, ...rest}) => rest)` — photos stripped from draft saves; full photos only saved on final completion. The completion race fix uses TWO layers: (a) `showPassToClient*` cancels the timer early (`clearTimeout+seq++`) before the client flow; (b) `_completionWrite` module var stores the completion patch before `sbPatch` — autosave checks it after its own draft write and re-issues completion if set. Both `_autosaveSeq` AND `_completionWrite` are required. Do NOT remove either.
 
 3. **audit_ticked never in poll**: SM_Audit_Dashboard and Site_Auditor_App use explicit `select=` without `audit_ticked`. It is fetched on-demand for job card screen and PDF. `o.auditTicked` is always `null` in the SM poll mapRow.
 
@@ -352,6 +358,12 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 21. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object — any custom slot IDs (timestamp-based, e.g. `sf1687234567890`) added by the SM would then show as "—". The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed, so multi-slot wallpaper jobs show all windows. If you add new time-display locations in either field app, use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
+
+25. **Activity log timestamps are ISO strings** (as of 2026-06-23): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function that formats dynamically: "Just now", "Xm ago", "Xh ago · HH:MM", "Yesterday · HH:MM", "D Mon · HH:MM". Legacy entries with "Just now" or "Today HH:MM" strings pass through `fmtLog` unchanged (not parseable as ISO → returned as-is).
+
+26. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format (previously required `@materialdepot.com`). Admin "Add New User" form validates only that the email is a valid format. Access is still gated by `profiles` table membership.
+
+27. **Date filter in orders views**: SM Audit uses `filterDate` (string YYYY-MM-DD or "") matched against `o.date`. SM Install uses `filterDate` matched via `installOrderHasDate(o, ds)` which checks all subjob assignment dates. Admin Job Overview uses `jobsDateFilter` with `j.installDates[]` for install jobs. All date filters combine with status filters and search. Reset to "" on nav view switch.
 
 24. **Swipe-back navigation blocked on all authenticated pages**: All four pages (SM_Audit_Dashboard, SM_Install_Dashboard, Site_Auditor_App, Site_Installer_App) run these two lines immediately after the session guard:
     ```js
