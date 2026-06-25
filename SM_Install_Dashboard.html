@@ -534,11 +534,11 @@ const mapInstallRow=r=>({
 async function loadOrders(){
   try{
     const rows=await sbGet('install_orders?select=*&status=neq.deleted&order=created_at.desc');
-    if(!Array.isArray(rows)){return;}
+    if(!Array.isArray(rows)){render();return;}
     ORDERS=rows.map(mapInstallRow);
     const drawerOpen=document.querySelector("#drawer")&&document.querySelector("#drawer").classList.contains("show");
     if(!drawerOpen)render();else counts();
-  }catch(e){console.error('loadOrders',e);}
+  }catch(e){console.error('loadOrders',e);if(!$("#main").innerHTML.trim())render();}
 }
 async function loadDeletedOrders(){
   try{
