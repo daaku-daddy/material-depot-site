@@ -359,9 +359,21 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object — any custom slot IDs (timestamp-based, e.g. `sf1687234567890`) added by the SM would then show as "—". The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed, so multi-slot wallpaper jobs show all windows. If you add new time-display locations in either field app, use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
-25. **Activity log timestamps are ISO strings** (as of 2026-06-23): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function that formats dynamically: "Just now", "Xm ago", "Xh ago · HH:MM", "Yesterday · HH:MM", "D Mon · HH:MM". Legacy entries with "Just now" or "Today HH:MM" strings pass through `fmtLog` unchanged (not parseable as ISO → returned as-is).
+25. **Activity log timestamps are ISO strings** (as of 2026-06-23): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function (updated 2026-06-25) that always shows **absolute** timestamps — never relative "X ago" or "Just now":
+    - Valid ISO today → `"Today · 10:30 AM"`
+    - Valid ISO yesterday → `"Yesterday · 10:30 AM"`
+    - Valid ISO older → `"23 Jun 2026 · 10:30 AM"`
+    - Legacy `"Today HH:MM"` string → `"HH:MM (date unknown)"` (time extracted, date lost)
+    - Legacy `"Just now"` or null/empty → `"—"` (time not recoverable)
+    Field apps do not display activity logs and do not have `fmtLog`.
 
-26. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format (previously required `@materialdepot.com`). Admin "Add New User" form validates only that the email is a valid format. Access is still gated by `profiles` table membership.
+26. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format (previously required `@materialdepot.com`). Admin "Add New User" and both SM dashboard "Add Staff Member" forms validate only that the email is a valid format. Access is still gated by `profiles` table membership. **Do not add back any domain restriction.**
+
+28. **Login.html Supabase error vs. user-not-found** (fixed 2026-06-26): `trySend()` now checks `!Array.isArray(rows)` and `rows.length===0` as separate conditions. When Supabase returns an error object (project paused, network failure, 5xx), it is NOT an array → shows "Network error — please try again." Previously, both cases showed "This email isn't approved" which made users think their account didn't exist during any Supabase downtime.
+
+29. **SM dashboards always render on load failure** (fixed 2026-06-25): `loadOrders()` in both SM dashboards now calls `render()` in ALL paths — success, non-array Supabase response, and exception. Previously, a Supabase error caused `loadOrders()` to return silently without ever calling `render()`, leaving the main area completely blank. `if(!Array.isArray(rows)){render();return;}` and `catch(e){...if(!$("#main").innerHTML.trim())render();}` guard the failure paths.
+
+30. **Auditor app unscheduled section** (added 2026-06-26): `listView()` in `Site_Auditor_App.html` now shows an amber "Awaiting schedule — no date set yet" section above the day-picker for any orders where `o.date` is null and status is not `completed`/`reschedule`. Previously these orders were completely invisible to the auditor since only `o.date===selDay` orders appeared. Mirrors the same pattern already in `Site_Installer_App.html`.
 
 27. **Date filter in orders views**: SM Audit uses `filterDate` (string YYYY-MM-DD or "") matched against `o.date`. SM Install uses `filterDate` matched via `installOrderHasDate(o, ds)` which checks all subjob assignment dates. Admin Job Overview uses `jobsDateFilter` with `j.installDates[]` for install jobs. All date filters combine with status filters and search. Reset to "" on nav view switch.
 
@@ -374,7 +386,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 ## Pending POs Import (replaces Kylas Sheet as of 2026-06-22)
 
-**Constant**: `POS_API='https://api-dev2.materialdepot.in/apiV1/site-audit-installation-pos/'` in both SM dashboards  
+**Constant**: `POS_API='/api/pos'` in both SM dashboards (Vercel rewrite proxies to `https://api-dev2.materialdepot.in/apiV1/site-audit-installation-pos/` — avoids CORS)  
 **SM Audit** fetches `?type=site_audit&page_size=100`; **SM Install** fetches `?type=installation&page_size=100`  
 **Search**: `?search=<term>` — server-side filter by PO number, customer contact, or lead ID. Debounced 400ms via `debouncePOSearch()`.
 
