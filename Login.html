@@ -104,7 +104,11 @@ async function trySend(){
     const res=await fetch(`${SB_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=*`,
       {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
     const rows=await res.json();
-    if(!Array.isArray(rows)||rows.length===0){
+    if(!Array.isArray(rows)){
+      err.textContent="Network error — please try again.";err.classList.add("show");
+      btn.disabled=false;btn.textContent="Continue";return;
+    }
+    if(rows.length===0){
       err.textContent="This email isn't approved for access yet. Ask an Admin to add you.";err.classList.add("show");
       btn.disabled=false;btn.textContent="Continue";return;
     }

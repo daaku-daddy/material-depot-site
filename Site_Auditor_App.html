@@ -291,6 +291,7 @@ function listView(){
   const list=ORDERS.filter(o=>o.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const todo=list.filter(o=>o.status!=="completed");
   const done=list.filter(o=>o.status==="completed");
+  const unscheduled=ORDERS.filter(o=>!o.date&&!['completed','reschedule'].includes(o.status));
   const card=o=>{
     const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}</span>`).join("");
     return `<div class="ocard" data-pi="${o.pi}">
@@ -302,7 +303,19 @@ function listView(){
         <div class="r"><span class="ic">&#128230;</span><span>${skus||'NA'}</span></div>
       </div></div>`;
   };
+  const unschCard=o=>{
+    const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}</span>`).join("");
+    return `<div class="ocard" data-pi="${o.pi}" style="border-color:#f4c20d">
+      <div class="top"><div><div class="nm">${o.name}</div><div class="pi">${o.pi} · BM ${o.bm}</div></div>
+        <div class="slot"><div class="w" style="color:#9a6200">Awaiting date from office</div>${chip(o.status)}</div></div>
+      <div class="meta">
+        <div class="r"><span class="ic">&#128241;</span>${o.phone}</div>
+        <div class="r"><span class="ic">&#128205;</span><a class="maplink" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${o.addr}</a></div>
+        <div class="r"><span class="ic">&#128230;</span><span>${skus||'NA'}</span></div>
+      </div></div>`;
+  };
   return `<div class="daystrip">${strip}</div>
+    ${unscheduled.length?`<div class="sechead" style="color:#9a6200">Awaiting schedule — no date set yet</div>${unscheduled.map(unschCard).join("")}`:''}
     <div class="sechead">${selDay===todayStr?'Today':'Jobs'} — ${fmtDate(selDay)}</div>
     ${todo.map(card).join("")||`<div class="empty">No pending audits for this day.</div>`}
     ${done.length?`<div class="sechead">Completed</div>${done.map(card).join("")}`:""}`;

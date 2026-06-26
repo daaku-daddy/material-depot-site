@@ -425,7 +425,7 @@
     <div class="mhead"><h3>Add Staff Member</h3><button class="mclose" onclick="closeAddStaff()">×</button></div>
     <div class="mbody">
       <div class="mfield"><label>Full Name *</label><input id="as-name" placeholder="Full name"></div>
-      <div class="mfield"><label>Email * <span style="font-size:10px;color:var(--muted)">(must end in @materialdepot.com)</span></label><input id="as-email" placeholder="name@materialdepot.com" type="email"></div>
+      <div class="mfield"><label>Email *</label><input id="as-email" placeholder="name@example.com" type="email"></div>
       <div class="mfield"><label>Role *</label>
         <select id="as-role" style="width:100%;padding:10px 12px;border:2px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
           <option value="installer_flooring">Flooring Installer</option>
@@ -1757,7 +1757,7 @@ async function submitAddStaff(){
   const roleVal=document.getElementById('as-role').value;
   const err=document.getElementById('as-err');err.classList.remove('show');
   if(!name){err.textContent='Name is required.';err.classList.add('show');return;}
-  if(!email||!email.endsWith('@materialdepot.com')){err.textContent='Email must end in @materialdepot.com';err.classList.add('show');return;}
+  if(!email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent='Enter a valid email address.';err.classList.add('show');return;}
   const role=roleVal==='site_auditor'?'site_auditor':roleVal.startsWith('auditor_installer')?'auditor_installer':'installer';
   const installer_type=roleVal==='installer_flooring'||roleVal==='auditor_installer_flooring'?'flooring':roleVal==='installer_wallpaper'||roleVal==='auditor_installer_wallpaper'?'wallpaper':null;
   document.getElementById('as-submit').disabled=true;
