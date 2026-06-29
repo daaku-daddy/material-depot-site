@@ -237,6 +237,8 @@
   .followup-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .hide{display:none!important;}
   @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
+#connBanner{position:sticky;top:56px;z-index:39;background:#7a1515;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;display:none;align-items:center;justify-content:center;gap:12px;}
+#connBanner.show{display:flex;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -254,6 +256,7 @@
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer" id="smAvatar">SM</div>
   </div>
 </header>
+<div id="connBanner"><span>&#9888; Cannot connect to server — retrying automatically</span><button onclick="loadOrders()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;padding:3px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Retry now</button></div>
 
 <div class="layout">
   <nav class="rail" id="rail">
@@ -429,7 +432,7 @@ const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const POS_API='/api/pos';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
-async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
+async function sbGet(q){const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ctrl.signal});return r.json();}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}
 async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
 async function sbDel(t,id){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
@@ -496,6 +499,8 @@ const FLOW=["pending","created","scheduled","assigned","completed"];
 function mapUrl(addr){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);}
 
 let ORDERS=[],DELETED=[];
+let _connErr=false,_retryTid=null;
+function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner');if(b)b.classList.toggle('show',v);}
 
 /* ============== SUPABASE LOAD ============== */
 async function loadAuditors(){
@@ -529,11 +534,12 @@ const mapAuditRow=r=>({
 async function loadOrders(){
   try{
     const rows=await sbGet('audit_orders?select='+AUDIT_COLS+'&status=neq.deleted&order=created_at.desc');
-    if(!Array.isArray(rows)){render();return;}
+    if(!Array.isArray(rows)){_setConnErr(true);if(!_retryTid)_retryTid=setTimeout(()=>{_retryTid=null;loadOrders();},8000);render();return;}
+    _setConnErr(false);if(_retryTid){clearTimeout(_retryTid);_retryTid=null;}
     ORDERS=rows.map(mapAuditRow);
     const drawerOpen=document.querySelector("#drawer")&&document.querySelector("#drawer").classList.contains("show");
     if(!drawerOpen)render();else counts();
-  }catch(e){console.error('loadOrders',e);if(!$("#main").innerHTML.trim())render();}
+  }catch(e){console.error('loadOrders',e);_setConnErr(true);if(!_retryTid)_retryTid=setTimeout(()=>{_retryTid=null;loadOrders();},8000);if(!$("#main").innerHTML.trim())render();}
 }
 async function loadDeletedOrders(){
   try{
@@ -1498,6 +1504,7 @@ async function submitAddStaff(){
 }
 document.getElementById('addStaffOverlay').addEventListener('click',e=>{if(e.target.id==='addStaffOverlay')closeAddStaff();});
 
+render();
 Promise.all([loadAuditors(),loadOrders()]).then(()=>{
   setInterval(()=>{if(!document.hidden)loadOrders();},30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});

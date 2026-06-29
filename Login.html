@@ -61,11 +61,13 @@ const $=s=>document.querySelector(s);
 let state={email:"",user:null};
 
 async function patchProfile(id,body){
+  const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),12000);
   const r=await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}`,{
     method:'PATCH',
     headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-    body:JSON.stringify(body)
+    body:JSON.stringify(body),signal:ctrl.signal
   });
+  clearTimeout(tid);
   return r.json();
 }
 
@@ -101,8 +103,10 @@ async function trySend(){
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent="Enter a valid email address.";err.classList.add("show");return;}
   const btn=$("#send");btn.disabled=true;btn.textContent="Checking…";
   try{
+    const _ctrl=new AbortController();const _tid=setTimeout(()=>_ctrl.abort(),12000);
     const res=await fetch(`${SB_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=*`,
-      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY},signal:_ctrl.signal});
+    clearTimeout(_tid);
     const rows=await res.json();
     if(!Array.isArray(rows)){
       err.textContent="Network error — please try again.";err.classList.add("show");
