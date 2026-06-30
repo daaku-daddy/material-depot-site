@@ -289,6 +289,7 @@ document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==
 
 let currentView='overview';
 function navigate(view){
+  if(currentView!==view)jobsSearch='';
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   renderView(view);
@@ -615,7 +616,7 @@ function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'
 function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'));}
 
 /* ---- JOBS OVERVIEW ---- */
-let jobsFilter='all',jobsDateFilter='';
+let jobsFilter='all',jobsDateFilter='',jobsSearch='';
 function setJobDateFilter(d){jobsDateFilter=d;drawJobs(document.getElementById('main'));}
 
 async function renderJobs(m){
@@ -671,6 +672,10 @@ function drawJobs(m){
     if(!jobsDateFilter)return true;
     if(j.type==='audit')return j.date===jobsDateFilter;
     return (j.installDates||[]).includes(jobsDateFilter);
+  }).filter(j=>{
+    if(!jobsSearch)return true;
+    const q=jobsSearch.toLowerCase();
+    return j.id.toLowerCase().includes(q)||j.customer.toLowerCase().includes(q);
   });
 
   m.innerHTML=`
@@ -684,6 +689,10 @@ function drawJobs(m){
     ${!realJobs.length?'<div class="card"><div class="empty"><div class="e-ico">📋</div><div class="e-msg">No jobs yet — orders will appear here once Service Managers start adding them.</div></div></div>':`
     <div class="card">
       <div class="toolbar">
+        <div class="search-wrap" style="max-width:280px;min-width:180px;flex-shrink:0">
+          <span class="search-ico">🔍</span>
+          <input id="jobsSearchInput" type="text" placeholder="Search Enquiry ID or customer…" value="${jobsSearch}" oninput="jobsSearch=this.value;drawJobs(document.getElementById('main'))">
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${['all','audit','install','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
             <button class="filt-btn${jobsFilter===f?' active':''}" onclick="setJobFilter('${f}')">
@@ -693,7 +702,6 @@ function drawJobs(m){
         <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
           <input type="date" value="${jobsDateFilter}" title="Filter by scheduled date" onchange="setJobDateFilter(this.value)" style="border:1.5px solid ${jobsDateFilter?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${jobsDateFilter?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
           ${jobsDateFilter?`<button onclick="setJobDateFilter('')" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear date</button>`:''}
-          <span style="font-size:12px;color:var(--muted)">Tap any row for details</span>
         </div>
       </div>
       <table>
@@ -713,8 +721,10 @@ function drawJobs(m){
         </tbody>
       </table>
     </div>`}`;
+  if(jobsSearch){const si=document.getElementById('jobsSearchInput');if(si){si.focus();si.setSelectionRange(jobsSearch.length,jobsSearch.length);}}
 }
 function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));}
+function setJobSearch(v){jobsSearch=v;drawJobs(document.getElementById('main'));}
 
 /* ---- JOB DETAIL MODAL ---- */
 const AUDIT_FL_FIELDS=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
