@@ -63,7 +63,7 @@ Role-based web app for Material Depot's field operations. Plain HTML/CSS/JS, no 
     "type": "flooring",
     "assignments": [{
       "installer_id": "uuid", "installer_email": "email", "installer_name": "Name",
-      "mode": "standard|custom", "date": "YYYY-MM-DD", "slots": ["sf1","sf2"],
+      "mode": "standard|custom", "date": "YYYY-MM-DD", "slots": ["HH:MM"],
       "dates": ["YYYY-MM-DD"], "status": "assigned|onway|atsite|completed|reschedule", "primary": true
     }],
     "status": "created|assigned|onway|atsite|completed|reschedule|partial",
@@ -154,8 +154,8 @@ const SLOTS=(function(){
 - If the SM device and field worker device share the same browser, live-configured labels are used; otherwise hardcoded defaults apply
 - `s1/s2/s3` retained for backward compat; `sf1/sf2/sf3` and `sw1/sw2/sw3` are the current standard IDs
 - `start` hour is inferred from array position (index 0→9, 1→12, 2→15); custom slots beyond 3 default to `start:9`
-- `autoFlip()` has a null guard: `const slotInfo=SLOTS[o.slot];if(!slotInfo)return;`
-- **Installer app only**: `slotsLabel(j)` helper returns `'Full day'` for flooring, joined labels for wallpaper multi-slot jobs (e.g. `'9 AM – 12 PM · 12 PM – 3 PM'`), or `slotLabel(j.slot)` fallback. Used in list card, detail subtitle, detail panel, and job card summary.
+- `autoFlip()` now handles both legacy slot IDs and `"HH:MM"` format (see note 6)
+- **Installer app only**: `slotsLabel(j)` reads `j.slots[0]` via `slotLabel()` — returns e.g. `"10:30 AM"` for new bookings, joined labels for legacy multi-slot wallpaper (e.g. `'9 AM – 12 PM · 12 PM – 3 PM'`), or `slotLabel(j.slot)` fallback. **No longer hardcodes `'Full day'` for flooring.** Used in list card, detail subtitle, detail panel, and job card summary.
 
 ## Architecture Patterns
 
@@ -363,61 +363,13 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 19. **opsCallDue covers deliv_delayed**: `opsCallDue(o)` checks `['pending','deliv_delayed'].includes(o.status)`.
 
-22. **Repeated delivery date updates**: A `deliv_delayed` order can be delayed again any number of times. The drawer shows a date picker pre-filled with the current delivery date and a "Further delayed" button. The `#markDelayed` handler checks `wasDelayed = o.status === "deliv_delayed"` before updating status, and logs "Delivery further delayed. New date: …" vs "Delivery delayed — BM asked to inform client. New date: …" accordingly. `delivery_date` in the DB is overwritten each time.
+20. **Repeated delivery date updates**: A `deliv_delayed` order can be delayed again any number of times. The drawer shows a date picker pre-filled with the current delivery date and a "Further delayed" button. The `#markDelayed` handler checks `wasDelayed = o.status === "deliv_delayed"` before updating status, and logs "Delivery further delayed. New date: …" vs "Delivery delayed — BM asked to inform client. New date: …" accordingly. `delivery_date` in the DB is overwritten each time.
 
-20. **SM_Audit slotsForOrder fallback**: When `o.auditTicked` is null (not fetched in poll), `slotsForOrder(o)` falls back to `o.service.flooring/wallpaper` to determine FL vs WP slots correctly. Do NOT revert this fallback.
+21. **SM_Audit slotsForOrder fallback**: When `o.auditTicked` is null (not fetched in poll), `slotsForOrder(o)` falls back to `o.service.flooring/wallpaper` to determine FL vs WP slots correctly. Do NOT revert this fallback.
 
-21. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
+22. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object. The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed — with the new HH:MM format, `slotsLabel` reads `j.slots[0]` and returns e.g. `"10:30 AM"`. The installer app no longer hardcodes `'Full day'` for flooring; it reads the start time from `slots[]`. If you add new time-display locations: use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
-
-25. **Activity log format** (finalised 2026-07-01): Log entries are `{t, d, by, who}` objects stored in the `log` (audit/install orders) array.
-    - `t`: action description string
-    - `d`: `new Date().toISOString()` at the time of the action
-    - `by`: `"manual"` (SM action) or `"auto"` (field worker action)
-    - `who`: actor's display name — `SESSION.name` in SM dashboards, `ME.name` in field apps. Legacy entries without `who` render gracefully (actor span omitted).
-    
-    **Writing log entries:**
-    - SM dashboards: all `o.log.push(...)` calls include `who:SESSION.name`
-    - Auditor app: `o.log.push(...)` includes `who:ME.name`
-    - Installer app: `j.parentLog.push(...)` includes `who:ME.name`
-    
-    **Display (SM Audit, SM Install, Admin Job Overview):**
-    - Title line: `[Name in navy bold] · [action text]` — actor shown first per requirement
-    - Sub-line: `[D Mon YYYY · HH:MM] · SM` or `· installer/auditor`
-    - `fmtLog(d)` always returns `"D Mon YYYY · HH:MM"` — **no "Today"/"Yesterday" labels** (removed 2026-07-01, do not re-add)
-    - Old entries without `who` show action text only with no actor prefix
-    
-    **Do NOT** add "Today"/"Yesterday" branches to `fmtLog` — this was the recurring bug that caused entries to show wrong relative labels across day boundaries.
-
-26. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format (previously required `@materialdepot.com`). Admin "Add New User" and both SM dashboard "Add Staff Member" forms validate only that the email is a valid format. Access is still gated by `profiles` table membership. **Do not add back any domain restriction.**
-
-28. **Login.html Supabase error vs. user-not-found** (fixed 2026-06-26): `trySend()` now checks `!Array.isArray(rows)` and `rows.length===0` as separate conditions. When Supabase returns an error object (project paused, network failure, 5xx), it is NOT an array → shows "Network error — please try again." Previously, both cases showed "This email isn't approved" which made users think their account didn't exist during any Supabase downtime.
-
-29. **SM dashboards always render on load failure** (fixed 2026-06-25): `loadOrders()` in both SM dashboards now calls `render()` in ALL paths — success, non-array Supabase response, and exception. Previously, a Supabase error caused `loadOrders()` to return silently without ever calling `render()`, leaving the main area completely blank. `if(!Array.isArray(rows)){render();return;}` and `catch(e){...if(!$("#main").innerHTML.trim())render();}` guard the failure paths.
-
-33. **Fetch timeout + connection banner + fast retry** (fixed 2026-06-29): Root cause of recurring "downtime": `sbGet` had no timeout, so a slow/paused Supabase caused `fetch` to hang indefinitely — blocking the entire page load with a blank white screen.
-    - **`sbGet` timeout**: Uses `AbortController` with a 12-second timeout in all files (SM dashboards + Login). If the request hangs, it throws after 12s and the catch block handles it.
-    - **Connection error banner**: Both SM dashboards have `_connErr`, `_retryTid`, and `_setConnErr(v)` module-level vars. When `loadOrders` fails (any path), `_setConnErr(true)` shows a red sticky banner ("⚠ Cannot connect to server — retrying automatically") with a "Retry now" button. Clears automatically on next successful load.
-    - **Fast retry**: On failure, an 8-second `_retryTid` timer fires `loadOrders()` again — much faster than waiting the full 30/60s poll interval. Timer is cleared on success.
-    - **Early render**: Both SM dashboards call `render()` once synchronously before `Promise.all([load...,loadOrders()])` so users see the UI shell immediately instead of a blank page while data is fetching.
-    - Banner HTML: `<div id="connBanner">` placed between `</header>` and `<div class="layout">`. CSS: `position:sticky; top:56px; z-index:39`.
-    - **Do NOT remove `_setConnErr` calls or the `_retryTid` guard** — the guard prevents stacking multiple retry timers during consecutive failures.
-
-30. **Auditor app unscheduled section** (added 2026-06-26): `listView()` in `Site_Auditor_App.html` now shows an amber "Awaiting schedule — no date set yet" section above the day-picker for any orders where `o.date` is null and status is not `completed`/`reschedule`. Previously these orders were completely invisible to the auditor since only `o.date===selDay` orders appeared. Mirrors the same pattern already in `Site_Installer_App.html`.
-
-27. **Date filter in orders views**: SM Audit uses `filterDate` (string YYYY-MM-DD or "") matched against `o.date`. SM Install uses `filterDate` matched via `installOrderHasDate(o, ds)` which checks all subjob assignment dates. Admin Job Overview uses `jobsDateFilter` with `j.installDates[]` for install jobs. All date filters combine with status filters and search. Reset to "" on nav view switch.
-
-32. **Search by Enquiry ID / customer** (added 2026-06-30):
-    - **Admin Job Overview**: `jobsSearch` (string, default `""`) filters `realJobs` by `j.id` (PI) or `j.customer` (case-insensitive includes). Search input `#jobsSearchInput` is the first item in the `.toolbar`. `drawJobs()` restores focus + cursor after re-render when `jobsSearch` is non-empty. `navigate()` resets `jobsSearch=''` on view switch. Helper `setJobSearch(v)` exists for inline use.
-    - **SM Audit Dashboard**: `searchQ` already filters by PI, customer name, phone, BM, and SKU in `ordersView()`. Search input `#q` in toolbar. No change needed.
-    - **SM Install Dashboard**: Same as SM Audit — `searchQ` filters by PI, customer, phone, BM, SKU. No change needed.
-
-34. **Exact time slot system + 2-hour auditor buffer** (2026-07-01): Slot booking changed from fixed 3-hour windows to exact time selection.
-    - **SM Audit booking UI**: `<input type="time" id="bookTime">` in both `created/call_na` and `reschedule` status sections. `updateBookBtn()` in `wire()` syncs `draft.date` + `draft.slot` and gates the "Book slot" button.
-    - **2-hour buffer per auditor**: `auditorConflictOrder(aid, date, slotTime)` scans ORDERS for the same auditor+date with an HH:MM slot within 120 min of the new time. Returns the conflicting order or null. In the auditor assignment list: `const cx = auditorConflictOrder(...)` → `full = ... || !!cx`. Shows "time conflict — has X:XX AM booking" on the card. **Buffer is strictly per-auditor** — Auditor B is never blocked by Auditor A's bookings.
-    - **SM Install booking UI**: slot chip rows replaced with `<input type="time" data-time="idx">` for standard wallpaper (shows "Xh job"), standard flooring (shows "Start time"), and custom wallpaper. Custom flooring stays "Full day". Handler: `[data-time]` oninput sets `assigns[idx].slots = [inp.value]`.
-    - **Legacy orders**: all existing orders with `slot: "sf1"` etc. still display correctly; conflict check skips non-HH:MM values.
 
 24. **Swipe-back navigation blocked on all authenticated pages**: All four pages (SM_Audit_Dashboard, SM_Install_Dashboard, Site_Auditor_App, Site_Installer_App) run these two lines immediately after the session guard:
     ```js
@@ -425,6 +377,35 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
     window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
     ```
     `replaceState` removes Login.html from the browser history stack. The `popstate` listener catches any back navigation attempt (two-finger swipe, browser back button) and immediately re-pushes the current page, keeping the user on the dashboard. Sign-out still works because it uses `window.location.href='Login.html'` directly. Do not remove these lines — without them, swiping back on a Mac touchpad navigates to the login page.
+
+25. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format. Admin "Add New User" and both SM "Add Staff Member" forms validate format only. Access gated by `profiles` table. **Do not add back any domain restriction.**
+
+26. **Login.html Supabase error vs. user-not-found** (fixed 2026-06-26): `trySend()` checks `!Array.isArray(rows)` and `rows.length===0` as separate conditions. Non-array → "Network error — please try again." Empty array → "This email isn't approved for access yet." Previously both showed the not-approved message, hiding real downtime from users.
+
+27. **SM dashboards always render on load failure** (fixed 2026-06-25): `loadOrders()` calls `render()` in ALL paths — success, non-array response, and exception. `if(!Array.isArray(rows)){render();return;}` and `catch(e){if(!$("#main").innerHTML.trim())render();}`.
+
+28. **Fetch timeout + connection banner + fast retry** (fixed 2026-06-29): `sbGet` uses `AbortController` with 12s timeout. SM dashboards have `_connErr`/`_retryTid`/`_setConnErr(v)` vars. On failure: red sticky banner (`#connBanner`, between `</header>` and `<div class="layout">`), 8s fast retry via `_retryTid`. Early `render()` before `Promise.all(...)`. **Do NOT remove `_setConnErr` or `_retryTid` guard** — prevents stacking timers on consecutive failures.
+
+29. **Auditor app unscheduled section** (added 2026-06-26): `listView()` in `Site_Auditor_App.html` shows an amber "Awaiting schedule — no date set yet" section for `o.date===null` orders that aren't completed/reschedule. Mirrors `Site_Installer_App.html`.
+
+30. **Date filter in orders views**: SM Audit: `filterDate` vs `o.date`. SM Install: `filterDate` via `installOrderHasDate(o, ds)` (checks all subjob assignment dates). Admin Job Overview: `jobsDateFilter` vs `j.installDates[]`. All reset on nav switch.
+
+31. **Search by Enquiry ID / customer** (added 2026-06-30):
+    - **Admin Job Overview**: `jobsSearch` filters `realJobs` by `j.id` (PI) or `j.customer`. Input `#jobsSearchInput` first in toolbar. Focus/cursor restored after re-render. `navigate()` resets `jobsSearch=''`.
+    - **SM dashboards**: `searchQ` already searches PI, customer, phone, BM, SKU in `ordersView()` — no change needed.
+
+32. **Exact time slot system + 2-hour auditor buffer** (2026-07-01): `o.slot` stores `"HH:MM"` for new bookings.
+    - **SM Audit**: `<input type="time" id="bookTime">`. `updateBookBtn()` syncs `draft.date`+`draft.slot`. `auditorConflictOrder(aid, date, slotTime)` blocks auditor if same auditor has HH:MM booking within 120 min on same date. Per-auditor only — Auditor B never blocked by Auditor A.
+    - **SM Install**: `<input type="time" data-time="idx">` for standard wallpaper, standard flooring, custom wallpaper. `[data-time]` oninput sets `assigns[idx].slots=["HH:MM"]`. Custom flooring stays "Full day".
+    - **Field apps**: `slotLabel` (function, not arrow) handles both HH:MM and legacy IDs. `autoFlip` parses HH:MM as `startH=h+m/60`. Legacy `sf1`/`sw1` orders unaffected.
+
+33. **Activity log format + actor attribution** (finalised 2026-07-01): Log entries are `{t, d, by, who}` objects.
+    - `t`: action text. `d`: ISO timestamp. `by`: `"manual"` or `"auto"`. `who`: actor name.
+    - SM dashboards: every `o.log.push(...)` includes `who:SESSION.name`.
+    - Auditor app: `o.log.push(...)` includes `who:ME.name`. Installer app: `j.parentLog.push(...)` includes `who:ME.name`.
+    - **Display**: title line = `[Name in navy bold] · [action text]`. Sub-line = `[D Mon YYYY · HH:MM] · SM/installer/auditor`.
+    - `fmtLog(d)` always returns `"D Mon YYYY · HH:MM"` — **NO "Today"/"Yesterday" labels ever**. Do not re-add those branches — was the recurring date-display bug.
+    - Old entries without `who` render gracefully (actor prefix omitted).
 
 ## Pending POs Import (replaces Kylas Sheet as of 2026-06-22)
 
