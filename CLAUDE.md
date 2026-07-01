@@ -371,12 +371,24 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object. The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed — with the new HH:MM format, `slotsLabel` reads `j.slots[0]` and returns e.g. `"10:30 AM"`. The installer app no longer hardcodes `'Full day'` for flooring; it reads the start time from `slots[]`. If you add new time-display locations: use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
-25. **Activity log timestamps are ISO strings** (as of 2026-06-23, fmtLog finalised 2026-07-01): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function that **always shows the full absolute date** — no "Today" or "Yesterday" labels ever:
-    - Valid ISO string → `"26 Jun 2026 · 12:47 pm"`
-    - Legacy `"Today HH:MM"` string → `"HH:MM (date unknown)"` (time extracted, date lost)
-    - Legacy `"Just now"` or null/empty → `"—"` (time not recoverable)
-    **Do NOT add "Today" or "Yesterday" branches back** — this causes confusion when viewing historical jobs across day boundaries.
-    Field apps do not display activity logs and do not have `fmtLog`.
+25. **Activity log format** (finalised 2026-07-01): Log entries are `{t, d, by, who}` objects stored in the `log` (audit/install orders) array.
+    - `t`: action description string
+    - `d`: `new Date().toISOString()` at the time of the action
+    - `by`: `"manual"` (SM action) or `"auto"` (field worker action)
+    - `who`: actor's display name — `SESSION.name` in SM dashboards, `ME.name` in field apps. Legacy entries without `who` render gracefully (actor span omitted).
+    
+    **Writing log entries:**
+    - SM dashboards: all `o.log.push(...)` calls include `who:SESSION.name`
+    - Auditor app: `o.log.push(...)` includes `who:ME.name`
+    - Installer app: `j.parentLog.push(...)` includes `who:ME.name`
+    
+    **Display (SM Audit, SM Install, Admin Job Overview):**
+    - Title line: `[Name in navy bold] · [action text]` — actor shown first per requirement
+    - Sub-line: `[D Mon YYYY · HH:MM] · SM` or `· installer/auditor`
+    - `fmtLog(d)` always returns `"D Mon YYYY · HH:MM"` — **no "Today"/"Yesterday" labels** (removed 2026-07-01, do not re-add)
+    - Old entries without `who` show action text only with no actor prefix
+    
+    **Do NOT** add "Today"/"Yesterday" branches to `fmtLog` — this was the recurring bug that caused entries to show wrong relative labels across day boundaries.
 
 26. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format (previously required `@materialdepot.com`). Admin "Add New User" and both SM dashboard "Add Staff Member" forms validate only that the email is a valid format. Access is still gated by `profiles` table membership. **Do not add back any domain restriction.**
 
