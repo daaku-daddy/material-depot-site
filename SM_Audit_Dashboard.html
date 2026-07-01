@@ -928,7 +928,7 @@ function drawerBody(o){
   }
 
   if(o.service&&o.service.rectification_raised)html+=`<div class="note" style="border-color:var(--amber);background:var(--amberbg);color:var(--amber)">↩ Rectification raised — new order <b>${o.service.rectification_pi||''}</b> (${o.service.rectification_type==='install'?'Re-installation':'Re-audit'}). See the Rectifications tab.</div>`;
-  html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='auto'?' · auto from auditor':l.by==='manual'?' · manual':''}</div></div>`).join("")}</div></div>`;
+  html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='auto'?' · auditor':l.by==='manual'?' · SM':''}</div></div>`).join("")}</div></div>`;
   return html;
 }
 
@@ -1031,7 +1031,7 @@ function wireDrawer(o){
     // clear forward data
     if(tIdx<FLOW.indexOf("assigned"))o.auditor=null;
     if(tIdx<FLOW.indexOf("scheduled")){o.slot=null;o.date=null;}
-    o.log.push({t:"Moved back to "+STATUS[target].l+" by SM",d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Moved back to "+STATUS[target].l+" by SM",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id){
       const patch={status:o.status,log:o.log};
       if(tIdx<FLOW.indexOf("assigned")){patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;}
@@ -1045,7 +1045,7 @@ function wireDrawer(o){
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
     o.status=st;
-    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,log:o.log});
     await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
   });
@@ -1084,7 +1084,7 @@ function wireDrawer(o){
     o.service={flooring:fl,wallpaper:wp};o.status="created";
     const summary=(fl.length?("Flooring: "+fl.map(r=>r.sku+(r.name?" · "+r.name:"")).join(", ")):"")+
                   (wp.length?(" | Wallpaper: "+wp.map(r=>r.sku+(r.name?" · "+r.name:"")).join(", ")):"");
-    o.log.push({t:"Service created — "+(summary||"NA (no SKU fixed)"),d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Service created — "+(summary||"NA (no SKU fixed)"),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,service:o.service,log:o.log});
     await loadOrders();toast("Service created");openOrder(o.pi);
   };
@@ -1092,7 +1092,7 @@ function wireDrawer(o){
   if($("#saveService"))$("#saveService").onclick=async()=>{
     const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name);
     o.service={flooring:fl,wallpaper:wp};
-    o.log.push({t:"Service details updated",d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Service details updated",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{service:o.service,log:o.log});
     await loadOrders();toast("Service details saved");openOrder(o.pi);
   };
@@ -1107,7 +1107,7 @@ function wireDrawer(o){
     o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
     const remark=wasResched?($("#reschedRemark")||{}).value||'':'';
     const logLabel=wasResched?"Slot rebooked":"Slot booked";
-    o.log.push({t:logLabel+": "+fmtDate(o.date)+" · "+slotLabel(o.slot)+(remark.trim()?" — "+remark.trim():""),d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:logLabel+": "+fmtDate(o.date)+" · "+slotLabel(o.slot)+(remark.trim()?" — "+remark.trim():""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,slot:o.slot,date:o.date,log:o.log});
     await loadOrders();toast((wasResched?"Slot rebooked":"Slot booked")+" — "+fmtDate(o.date));openOrder(o.pi);};
 
@@ -1127,7 +1127,7 @@ function wireDrawer(o){
       draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
   }
   if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
-    o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
     await loadOrders();toast("Assigned "+a.name+" · customer notified");openOrder(o.pi);};
 

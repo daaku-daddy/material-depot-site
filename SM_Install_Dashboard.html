@@ -1092,7 +1092,7 @@ function drawerBody(o){
 
   if(o.service&&o.service.rectification_raised)html+=`<div class="note amber">↩ Rectification raised — new order <b>${o.service.rectification_pi||''}</b> (${o.service.rectification_type==='audit'?'Re-audit':'Re-installation'}). See the Rectifications tab.</div>`;
   // timeline
-  html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='auto'?' · auto from installer':l.by==='manual'?' · manual':''}</div></div>`).join("")}</div></div>`;
+  html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='auto'?' · installer':l.by==='manual'?' · SM':''}</div></div>`).join("")}</div></div>`;
   return html;
 }
 
@@ -1201,7 +1201,7 @@ function renderAssignSection(o,sj,container){
       sj.status='assigned';
       syncParent(o);
       const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';
-      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', '),d:new Date().toISOString(),by:'manual'});
+      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', '),d:new Date().toISOString(),by:'manual',who:SESSION.name});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       await loadOrders();toast(wasResched?'Rescheduled':'Assignments saved');openOrder(o.pi);
     };
@@ -1292,7 +1292,7 @@ function wireDrawer(o){
   // audit type selection
   const setAuditBy=async(val)=>{
     o.auditBy=val;o.service=o.service||{};o.service.audit_by=val;
-    o.log.push({t:"Site audit type: "+(val==='material_depot'?'Material Depot':'Customer self-audit'),d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Site audit type: "+(val==='material_depot'?'Material Depot':'Customer self-audit'),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{service:o.service,log:o.log});
     await loadOrders();toast("Audit type saved");openOrder(o.pi);
   };
@@ -1300,11 +1300,11 @@ function wireDrawer(o){
   if($("#auditByCust"))$("#auditByCust").onclick=()=>setAuditBy("customer");
 
   // manual status
-  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);});
+  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);});
 
   // delivery outcomes
-  if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:new Date().toISOString(),by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Delivery on time — create service next");openOrder(o.pi);};
-  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;const wasDelayed=o.status==="deliv_delayed";o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:(wasDelayed?"Delivery further delayed":"Delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:new Date().toISOString(),by:"manual"});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});await loadOrders();toast(wasDelayed?"Delivery date updated":"Marked delivery delayed");openOrder(o.pi);};
+  if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Delivery on time — create service next");openOrder(o.pi);};
+  if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;const wasDelayed=o.status==="deliv_delayed";o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:(wasDelayed?"Delivery further delayed":"Delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});await loadOrders();toast(wasDelayed?"Delivery date updated":"Marked delivery delayed");openOrder(o.pi);};
 
   // service creation
   function renderSkuRows(grp){
@@ -1341,7 +1341,7 @@ function wireDrawer(o){
     if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
     if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
     o.status="created";
-    o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Service created — "+o.subjobs.length+" sub-job(s)");openOrder(o.pi);
   };
@@ -1362,7 +1362,7 @@ function wireDrawer(o){
       else if(!wp.length&&wpSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_wp');
     }
     syncParent(o);
-    o.log.push({t:"Service details updated",d:new Date().toISOString(),by:"manual"});
+    o.log.push({t:"Service details updated",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Service details saved");openOrder(o.pi);
   };
@@ -1734,11 +1734,11 @@ async function submitRect(){
   if(!newPi){err.textContent='Enter a PI number for the new order.';err.classList.add('show');return;}
   const o=_rectOrder;const btn=document.getElementById('rect-submit');btn.disabled=true;
   try{
-    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:{rectification_of:o.pi,issue},log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual'}],created_by_email:SESSION.email};
+    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:{rectification_of:o.pi,issue},log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual',who:SESSION.name}],created_by_email:SESSION.email};
     if(svcType==='install')await sbPost('install_orders',{...base,matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
     else await sbPost('audit_orders',{...base,audit_ticked:[]});
     const updSvc={...(o.service||{}),rectification_raised:true,rectification_pi:newPi,rectification_type:svcType};
-    const updLog=[...o.log,{t:'Rectification raised — '+(svcType==='install'?'re-installation':'re-audit')+' · new order '+newPi,d:new Date().toISOString(),by:'manual'}];
+    const updLog=[...o.log,{t:'Rectification raised — '+(svcType==='install'?'re-installation':'re-audit')+' · new order '+newPi,d:new Date().toISOString(),by:'manual',who:SESSION.name}];
     await sbPatch('install_orders',o.id,{service:updSvc,log:updLog});
     closeRect();await loadOrders();toast('Rectification raised — '+newPi);
   }catch(e){err.textContent='Failed: '+e.message;err.classList.add('show');}

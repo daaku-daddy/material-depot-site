@@ -834,7 +834,7 @@ function showInstallSignature(j,ratings){
     clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
-    j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto"});
+    j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
     toast("Saving...");
     try{
       const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');

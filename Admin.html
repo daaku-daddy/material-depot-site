@@ -737,7 +737,7 @@ function jdRoomCard(r,i){
   return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU: ${r.sku||'NA'}</div>${meas?`<div class="jc-kvs">${meas}</div>`:''}${photoHtml}${r.notes?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Notes: ${r.notes}</div>`:''}</div>`;
 }
 function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime())){const m=String(d).match(/\d{1,2}:\d{2}\s*(?:[AP]M)?/i);return m?m[0]+' (date unknown)':'—';}const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+ts;}
-function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>`<div class="jd-tl"><div class="jd-tl-t">${l.t}</div><div class="jd-tl-d">${fmtLog(l.d)}${l.by==='auto'?' · auto':l.by==='manual'?' · manual':''}</div></div>`).join('');}
+function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>`<div class="jd-tl"><div class="jd-tl-t">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="jd-tl-d">${fmtLog(l.d)}${l.by==='auto'?' · installer/auditor':l.by==='manual'?' · SM':''}</div></div>`).join('');}
 async function openJobDetail(pi,type){
   const m=document.getElementById('modal');m.className='modal wide';
   showModal('<div class="loading-row" style="padding:40px 0"><span class="spinner"></span></div>');
