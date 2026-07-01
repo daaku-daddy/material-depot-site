@@ -371,12 +371,11 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object. The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed — with the new HH:MM format, `slotsLabel` reads `j.slots[0]` and returns e.g. `"10:30 AM"`. The installer app no longer hardcodes `'Full day'` for flooring; it reads the start time from `slots[]`. If you add new time-display locations: use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
-25. **Activity log timestamps are ISO strings** (as of 2026-06-23): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function (updated 2026-06-25) that always shows **absolute** timestamps — never relative "X ago" or "Just now":
-    - Valid ISO today → `"Today · 10:30 AM"`
-    - Valid ISO yesterday → `"Yesterday · 10:30 AM"`
-    - Valid ISO older → `"23 Jun 2026 · 10:30 AM"`
+25. **Activity log timestamps are ISO strings** (as of 2026-06-23, fmtLog finalised 2026-07-01): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function that **always shows the full absolute date** — no "Today" or "Yesterday" labels ever:
+    - Valid ISO string → `"26 Jun 2026 · 12:47 pm"`
     - Legacy `"Today HH:MM"` string → `"HH:MM (date unknown)"` (time extracted, date lost)
     - Legacy `"Just now"` or null/empty → `"—"` (time not recoverable)
+    **Do NOT add "Today" or "Yesterday" branches back** — this causes confusion when viewing historical jobs across day boundaries.
     Field apps do not display activity logs and do not have `fmtLog`.
 
 26. **Email restriction removed** (as of 2026-06-23): Login.html accepts any valid email format (previously required `@materialdepot.com`). Admin "Add New User" and both SM dashboard "Add Staff Member" forms validate only that the email is a valid format. Access is still gated by `profiles` table membership. **Do not add back any domain restriction.**
