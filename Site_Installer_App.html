@@ -285,9 +285,8 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs()
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
 function fmtDate(ds){if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
-const slotLabel=id=>(SLOTS[id]||{}).label||"—";
+function slotLabel(id){if(!id)return "—";if(SLOTS[id])return SLOTS[id].label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
 function slotsLabel(j){
-  if(j.type==='flooring')return 'Full day';
   if(j.slots&&j.slots.length){const lbls=j.slots.map(s=>slotLabel(s)).filter(l=>l&&l!=='—');if(lbls.length)return lbls.join(' · ');}
   return slotLabel(j.slot)||'—';
 }
@@ -296,7 +295,7 @@ function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");cl
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function imgFmt(d){if(/webp/i.test(d.slice(0,20)))return 'WEBP';return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
 function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,maxDim/Math.max(im.width,im.height));const cw=Math.round(im.width*s),ch=Math.round(im.height*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
-function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)&&SLOTS[o.slot]){const start=new Date(today);start.setHours(SLOTS[o.slot].start,0,0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
+function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)){let startH;if(SLOTS[o.slot]){startH=SLOTS[o.slot].start;}else if(o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)){const[h,m]=o.slot.split(':').map(Number);startH=h+m/60;}else return;const start=new Date(today);start.setHours(Math.floor(startH),Math.round((startH%1)*60),0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
 
 /* ============== LIST ============== */
 let selDay=dstr(today);

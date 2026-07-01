@@ -551,7 +551,7 @@ async function loadDeletedOrders(){
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});};
-const slotLabel=id=>([...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id)||{}).label||"—";
+function slotLabel(id){if(!id)return "—";const found=[...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id);if(found)return found.label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
 const auditorById=id=>AUDITORS.find(a=>a.id===id);
 function getAuditorName(o){if(!o.auditor)return null;const a=auditorById(o.auditor);return a?a.name:(o.auditorName||'?');}
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
@@ -563,6 +563,11 @@ function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()
 const BOOKED=["scheduled","assigned","onway","atsite","completed"];
 function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===slotId&&BOOKED.includes(o.status)).length;}
 function auditorLoad(aid,date){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
+function auditorConflictOrder(aid,date,slotTime){
+  if(!slotTime||!/^\d{1,2}:\d{2}$/.test(slotTime))return null;
+  const[h,m]=slotTime.split(':').map(Number);const newMin=h*60+m;
+  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&Math.abs(o.slot.split(':').reduce((a,v,i)=>a+(i===0?Number(v)*60:Number(v)),0)-newMin)<120)||null;
+}
 function orderCategoriesAudit(o){
   const at=o.auditTicked;
   if(Array.isArray(at)&&at.length){
@@ -872,28 +877,28 @@ function drawerBody(o){
         ${fu?`<button class="btn gray sm" id="clearFollowUp">Clear</button>`:''}
       </div>
     </div>`;
-    html+=`<div class="sec"><h3>Acknowledgement call &amp; slot</h3>
-      <div class="note">Call the customer to confirm a date &amp; slot. Free slots reflect auditor availability per window.</div>
+    html+=`<div class="sec"><h3>Acknowledgement call &amp; time</h3>
+      <div class="note">Call the customer to confirm a date and exact visit time. The same auditor cannot be assigned again within 2 hours of this time on the same day.</div>
       ${o.status==="call_na"?`<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Marked "Call not picked". Retry, then book when reached.</div>`:""}
       <div class="field"><label>Audit date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
-      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div></div>`;
+      <div class="field"><label>Visit time</label><input type="time" id="bookTime" value="09:00" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div></div>`;
   } else if(o.status==="scheduled"){
     html+=`<div class="sec"><h3>Assign auditor <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— a day before</span></h3>
       <div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
-      <div class="note">Only auditors under their daily cap on ${fmtDate(o.date)} are selectable. Assigning SMSes the auditor's details to the customer.</div>
+      <div class="note">Auditors with a booking within 2 hours of ${slotLabel(o.slot)} on ${fmtDate(o.date)} are blocked. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div></div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
     html+=`<div class="sec"><h3>Assignment</h3><div class="kv">
       <div class="k">Auditor</div><div class="v">${getAuditorName(o)} (${aPhone})</div>
-      <div class="k">Slot</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
+      <div class="k">Time</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
       <div class="k">Live status</div><div class="v">${chip(o.status)}</div></div>
       <div class="note">Auditor's live steps appear here automatically. Customer was notified of the auditor by SMS.</div></div>`;
   } else if(o.status==="reschedule"){
     html+=`<div class="sec"><h3>Reschedule</h3>
       <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Customer declined the auditor's pre-visit call. Call to rebook.</div>
       <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
-      <div class="field"><label>Slot</label><div class="slotgrid" id="slotGrid"></div></div>
+      <div class="field"><label>Visit time</label><input type="time" id="bookTime" value="${o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00'}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
       <div class="field"><label>Remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:72px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div></div>`;
   } else if(o.status==="completed"){
     const ticked=o.auditTicked;
@@ -1092,19 +1097,11 @@ function wireDrawer(o){
     await loadOrders();toast("Service details saved");openOrder(o.pi);
   };
 
-  // ---- slot booking ----
-  function renderSlots(){
-    const grid=$("#slotGrid");if(!grid)return;const date=$("#bookDate").value;draft.date=date;
-    const winCap=auditorsAvailable(date);
-    const slots=slotsForOrder(o);
-    grid.innerHTML=slots.map(s=>{
-      const used=slotUsage(date,s.id);const free=winCap-used;const full=free<=0;
-      return `<div class="slot ${draft.slot===s.id?'on':''} ${full?'full':''}" data-slot="${s.id}">
-        <div class="w">${s.label}</div><div class="cap">${full?'Full':free+' of '+winCap+' free'}</div></div>`;
-    }).join("");
-    grid.querySelectorAll(".slot:not(.full)").forEach(el=>el.onclick=()=>{draft.slot=el.dataset.slot;renderSlots();const b=$("#bookSlot");if(b)b.disabled=!draft.slot;});
-  }
-  if($("#bookDate")){$("#bookDate").onchange=()=>{draft.slot=null;renderSlots();const b=$("#bookSlot");if(b)b.disabled=true;};renderSlots();}
+  // ---- time booking ----
+  function updateBookBtn(){draft.date=($("#bookDate")||{}).value||'';draft.slot=($("#bookTime")||{}).value||'';const b=$("#bookSlot");if(b)b.disabled=!draft.date||!draft.slot;}
+  if($("#bookDate"))$("#bookDate").onchange=updateBookBtn;
+  if($("#bookTime"))$("#bookTime").oninput=updateBookBtn;
+  if($("#bookDate")||$("#bookTime"))updateBookBtn();
   if($("#bookSlot"))$("#bookSlot").onclick=async()=>{
     const wasResched=o.status==="reschedule";
     o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
@@ -1118,11 +1115,13 @@ function wireDrawer(o){
   if($("#auditorList")){
     const list=$("#auditorList");
     list.innerHTML=AUDITORS.map(a=>{
-      const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date);const full=cap<1||load>=cap;
+      const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date);
+      const cx=auditorConflictOrder(a.id,o.date,o.slot);
+      const full=cap<1||load>=cap||!!cx;
       return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
         <div class="av">${initials(a.name)}</div>
-        <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}</div></div>
-        <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${load}/${cap}${full?' · full':''}</div></div>`;
+        <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}${cx?` <span style="color:var(--amber)">· has ${slotLabel(cx.slot)} booking</span>`:''}</div></div>
+        <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${cx?'time conflict':load+'/'+cap+(full?' · full':'')}</div></div>`;
     }).join("");
     list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
       draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});

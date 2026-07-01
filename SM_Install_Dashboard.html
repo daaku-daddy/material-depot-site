@@ -557,7 +557,7 @@ async function loadDeletedOrders(){
 const $=s=>document.querySelector(s);
 function fmtDateRaw(d){return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return fmtDateRaw(d);};
-const slotLabel=id=>([...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id)||{}).label||"—";
+function slotLabel(id){if(!id)return "—";const found=[...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id);if(found)return found.label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
 const installerById=id=>INSTALLERS.find(a=>a.id===id);
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
 function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
@@ -1116,7 +1116,7 @@ function renderAssignSection(o,sj,container){
       <div class="assign-mode-btn ${customMode?'on':''}" data-mode="custom">Custom / Multi-day</div>
     </div>`;
     if(customMode)html+=`<div class="note amber" style="margin-bottom:10px">Custom mode: no capacity limits enforced. You control all dates and slots.</div>`;
-    if(sj.type==='wallpaper'&&!customMode)html+=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">${rolls} rolls → ${slotsN} slot${slotsN>1?'s':''} (${slotsN*3}h). Select which time windows apply.</div>`;
+    if(sj.type==='wallpaper'&&!customMode)html+=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">${rolls} rolls → ${slotsN*3} hours of work. Set the installer's start time.</div>`;
 
     assigns.forEach((a,idx)=>{
       const inst=a.installer_id?installerById(a.installer_id):null;
@@ -1141,13 +1141,13 @@ function renderAssignSection(o,sj,container){
               <div><label class="lbl-sm">To</label><input type="date" data-to="${idx}" class="inp-sm" min="${minDate}" value="${(a.dates&&a.dates[a.dates.length-1])||a.date||''}"></div>
             </div>
             ${sj.type==='wallpaper'
-              ?`<div><label class="lbl-sm">Slot windows per day</label><div class="slot-chip-row">${SLOTS_WP.map(s=>`<div class="slot-chip ${(a.slots||[]).includes(s.id)?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
+              ?`<div><label class="lbl-sm">Start time per day</label><input type="time" data-time="${idx}" class="inp-sm" value="${(a.slots&&a.slots.length&&/^\d{1,2}:\d{2}$/.test(a.slots[0]))?a.slots[0]:'09:00'}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>`
               :`<div style="font-size:11.5px;color:var(--green)">Full day (8 AM – 5 PM) per selected date</div>`}
           `:`
             <div><label class="lbl-sm">Date</label><input type="date" data-date="${idx}" class="inp-sm" min="${minDate}" value="${a.date||''}"></div>
             ${sj.type==='wallpaper'
-              ?`<div><label class="lbl-sm">Time slots (${slotsN} needed for ${rolls} rolls)</label><div class="slot-chip-row">${SLOTS_WP.map(s=>`<div class="slot-chip ${((a.slots&&a.slots.length?a.slots:autoWpSlots(slotsN)).includes(s.id))?'on':''}" data-slot="${s.id}" data-idx="${idx}">${s.label}</div>`).join('')}</div></div>`
-              :`<div style="font-size:11.5px;color:var(--green)">Full day · 8 AM – 5 PM</div>`}
+              ?`<div><label class="lbl-sm">Start time (${slotsN*3}h job)</label><input type="time" data-time="${idx}" class="inp-sm" value="${(a.slots&&a.slots.length&&/^\d{1,2}:\d{2}$/.test(a.slots[0]))?a.slots[0]:'09:00'}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>`
+              :`<div><label class="lbl-sm">Start time</label><input type="time" data-time="${idx}" class="inp-sm" value="${(a.slots&&a.slots.length&&/^\d{1,2}:\d{2}$/.test(a.slots[0]))?a.slots[0]:a.slot&&/^\d{1,2}:\d{2}$/.test(a.slot)?a.slot:'09:00'}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>`}
           `}
         </div>
       </div>`;
@@ -1177,11 +1177,8 @@ function renderAssignSection(o,sj,container){
       const idx=Number(inp.dataset.to);const from=(assigns[idx].dates&&assigns[idx].dates[0])||inp.value;
       assigns[idx].dates=dateRange(from,inp.value);
     });
-    container.querySelectorAll('[data-slot]').forEach(chip=>chip.onclick=()=>{
-      const idx=Number(chip.dataset.idx);const sid=chip.dataset.slot;
-      const slots=assigns[idx].slots||[];const pos=slots.indexOf(sid);
-      if(pos>=0)slots.splice(pos,1);else slots.push(sid);
-      assigns[idx].slots=slots;draw();
+    container.querySelectorAll('[data-time]').forEach(inp=>inp.oninput=()=>{
+      assigns[Number(inp.dataset.time)].slots=[inp.value];
     });
     container.querySelector('#addAssign_'+sj.id).onclick=()=>{
       assigns.push({installer_id:'',installer_email:'',installer_name:'',mode:customMode?'custom':'standard',date:'',slots:sj.type==='wallpaper'?autoWpSlots(slotsForWp(totalRolls(sj))):[],dates:[],primary:false});draw();
@@ -1193,7 +1190,7 @@ function renderAssignSection(o,sj,container){
       const missingDate=valid.find(a=>a.mode==='standard'&&!a.date);
       const missingCustomDate=valid.find(a=>a.mode==='custom'&&(!a.dates||!a.dates.length));
       if(missingDate||missingCustomDate){toast("Please set a date for each installer before saving");return;}
-      if(sj.type==='wallpaper'){const missingSlots=valid.find(a=>!a.slots||!a.slots.length);if(missingSlots){toast("Please select time slots for each wallpaper installer");return;}}
+      if(sj.type==='wallpaper'){const missingSlots=valid.find(a=>!a.slots||!a.slots.length||!a.slots[0]);if(missingSlots){toast("Please set a start time for each wallpaper installer");return;}}
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';

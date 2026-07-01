@@ -257,7 +257,7 @@ const fieldsFor=t=>t==='wallpaper'?WALL_FIELDS:FLOOR_FIELDS;
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
 const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});};
-const slotLabel=id=>(SLOTS[id]||{}).label||"—";
+function slotLabel(id){if(!id)return "—";if(SLOTS[id])return SLOTS[id].label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
 function chip(st){const s=STATUS[st]||{l:st,c:'c-scheduled'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
@@ -269,10 +269,12 @@ function autoFlip(){
   const now=new Date();
   ORDERS.forEach(o=>{
     if(o.status==="scheduled"&&o.date===dstr(today)){
-      const slotInfo=SLOTS[o.slot];
-      if(!slotInfo)return;
-      const start=new Date(today);start.setHours(slotInfo.start,0,0,0);
-      if(now>=new Date(start.getTime()-3*3600*1000)) o.status="callpending";
+      let startH;
+      if(SLOTS[o.slot]){startH=SLOTS[o.slot].start;}
+      else if(o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)){const[h,m]=o.slot.split(':').map(Number);startH=h+m/60;}
+      else return;
+      const start=new Date(today);start.setHours(Math.floor(startH),Math.round((startH%1)*60),0,0);
+      if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";
     }
   });
 }
