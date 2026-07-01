@@ -103,25 +103,37 @@ All polls skip when `document.hidden` (page visibility API). Resume + immediate 
 
 Deleted orders are loaded **on demand** in both SM dashboards when the "Deleted Orders" tab is clicked (`loadDeletedOrders()`). They are NOT included in the poll.
 
-## Slot System (both SM dashboards)
-`SLOTS_FL` and `SLOTS_WP` are now **persisted to localStorage** (no longer lost on reload).
+## Slot System → Exact Time (updated 2026-07-01)
+`o.slot` now stores `"HH:MM"` (24h) for new bookings. Legacy `sf1`/`sw1` IDs on existing orders still display correctly.
+
+`SLOTS_FL` and `SLOTS_WP` arrays are still persisted to localStorage (used for backward-compat display and the "Slots & timings" config view).
 
 | File | localStorage keys |
 |---|---|
 | SM_Audit_Dashboard | `md_audit_slots_fl`, `md_audit_slots_wp`, `md_audit_caps` |
 | SM_Install_Dashboard | `md_install_slots_fl`, `md_install_slots_wp` |
 
-- `SLOTS_FL`: flooring audit/install windows. IDs prefixed `sf` (`sf1`, `sf2`, `sf3`)
-- `SLOTS_WP`: wallpaper audit/install windows. IDs prefixed `sw` (`sw1`, `sw2`, `sw3`)
-- `slotLabel(id)` searches `[...SLOTS_FL, ...SLOTS_WP]`
-- Install: `autoWpSlots(n)` = `SLOTS_WP.slice(0,n).map(s=>s.id)`
-- `slotsForOrder(o)` in SM_Audit falls back to `service.flooring/wallpaper` when `auditTicked` is null
+### slotLabel(id) — all 4 files (function, not arrow)
+- Legacy ID (`sf1`, `sw1`…): looks up `SLOTS_FL`/`SLOTS_WP` label
+- `"HH:MM"` string: renders as `"10:30 AM"` (12h format)
+- null/undefined: returns `"—"`
 
-| Rolls | Slots needed | Duration |
-|---|---|---|
-| 1-3 | 1 slot | 3 hours |
-| 4-6 | 2 slots | 6 hours |
-| 7+ | 3 slots | 9 hours (full day) |
+### SM Audit — booking
+- `<input type="time" id="bookTime">` replaces old slot grid. `updateBookBtn()` syncs `draft.date`+`draft.slot` and enables "Book slot" button.
+- **2-hour auditor buffer**: `auditorConflictOrder(aid, date, slotTime)` blocks assignment if the same auditor has a HH:MM booking within 120 min on that date. Buffer is **per-auditor** — other auditors are unaffected. Shows "has X:XX AM booking" in the auditor card.
+- Legacy slot IDs bypass the conflict check (only HH:MM slots are compared).
+
+### SM Install — booking
+- Slot chip rows replaced with `<input type="time" data-time="idx">` for standard wallpaper, standard flooring, and custom wallpaper.
+- Time stored as `assignment.slots = ["HH:MM"]`. Custom flooring stays "Full day" (no time input).
+- `[data-time]` oninput: `assigns[idx].slots=[inp.value]`.
+- Wallpaper rolls → duration in hours still follows: 1-3 rolls → 3h, 4-6 → 6h, 7+ → 9h.
+
+### Field apps — autoFlip (both)
+Parses HH:MM: `startH = h + m/60`. Legacy slot IDs still use `SLOTS[id].start`. "callpending" flip still 3h before start.
+
+### Installer App — slotsLabel
+No longer hardcodes `'Full day'` for flooring — reads `slots[]` so start time set by SM displays correctly.
 
 ## Field App SLOTS (Site_Auditor_App.html and Site_Installer_App.html)
 Both field apps build their `SLOTS` lookup dynamically at startup (as of 2026-06-22):
