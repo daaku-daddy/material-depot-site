@@ -335,7 +335,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 5. **Slot persistence**: SLOTS_FL, SLOTS_WP, CAPS are now saved to localStorage on every change (add/delete/save). Read on page init. Keys: `md_audit_slots_fl`, `md_audit_slots_wp`, `md_audit_caps`, `md_install_slots_fl`, `md_install_slots_wp`.
 
-6. **Auditor app slot IDs**: The auditor app `SLOTS` constant must include `sf1/sf2/sf3/sw1/sw2/sw3` (new format) plus legacy `s1/s2/s3`. `autoFlip()` null-guards `SLOTS[o.slot]` before accessing `.start`.
+6. **Slot format is now HH:MM** (updated 2026-07-01): `o.slot` stores `"HH:MM"` (24h) for new bookings (e.g. `"10:30"`). Legacy IDs (`sf1`, `sw1`) on existing orders still display correctly. `slotLabel(id)` in all 4 files handles both formats — it is a function, not an arrow, and must remain a function. `autoFlip()` in both field apps parses HH:MM (`startH = h + m/60`) in addition to legacy SLOTS lookup. Do NOT revert `slotLabel` to a one-liner arrow or remove the HH:MM branch from `autoFlip`.
 
 7. **Client flow is 3 mandatory steps**: T&C (checkbox required) → 3 ratings Q1+Q2+Q3 all required → signature. The field worker never sees these screens — they hand the phone to the client at the "Proceed to client" screen.
 
@@ -369,7 +369,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 21. **SM Install PDF installer name**: `genInstallPDFSM` resolves the installer name via `sj.assignments` (new multi-installer format) first, falling back to legacy `sj.installer` UUID lookup and `sj.installer_email`. Never use `sj.installer` alone — it is not set in the current format.
 
-23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object — any custom slot IDs (timestamp-based, e.g. `sf1687234567890`) added by the SM would then show as "—". The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed, so multi-slot wallpaper jobs show all windows. If you add new time-display locations in either field app, use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
+23. **Field app slot labels are dynamic, not hardcoded**: Both field apps build `SLOTS` at startup by reading from the SM dashboard's localStorage keys. Do NOT revert to a static `const SLOTS = {...}` object. The installer app uses `slotsLabel(j)` (not `slotLabel(j.slot)`) everywhere time is displayed — with the new HH:MM format, `slotsLabel` reads `j.slots[0]` and returns e.g. `"10:30 AM"`. The installer app no longer hardcodes `'Full day'` for flooring; it reads the start time from `slots[]`. If you add new time-display locations: use `slotsLabel(j)` in the installer app and `slotLabel(o.slot)` in the auditor app.
 
 25. **Activity log timestamps are ISO strings** (as of 2026-06-23): All log entries store `d: new Date().toISOString()`. The SM dashboards and Admin have a `fmtLog(d)` function (updated 2026-06-25) that always shows **absolute** timestamps — never relative "X ago" or "Just now":
     - Valid ISO today → `"Today · 10:30 AM"`
@@ -385,7 +385,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 29. **SM dashboards always render on load failure** (fixed 2026-06-25): `loadOrders()` in both SM dashboards now calls `render()` in ALL paths — success, non-array Supabase response, and exception. Previously, a Supabase error caused `loadOrders()` to return silently without ever calling `render()`, leaving the main area completely blank. `if(!Array.isArray(rows)){render();return;}` and `catch(e){...if(!$("#main").innerHTML.trim())render();}` guard the failure paths.
 
-31. **Fetch timeout + connection banner + fast retry** (fixed 2026-06-29): Root cause of recurring "downtime": `sbGet` had no timeout, so a slow/paused Supabase caused `fetch` to hang indefinitely — blocking the entire page load with a blank white screen.
+33. **Fetch timeout + connection banner + fast retry** (fixed 2026-06-29): Root cause of recurring "downtime": `sbGet` had no timeout, so a slow/paused Supabase caused `fetch` to hang indefinitely — blocking the entire page load with a blank white screen.
     - **`sbGet` timeout**: Uses `AbortController` with a 12-second timeout in all files (SM dashboards + Login). If the request hangs, it throws after 12s and the catch block handles it.
     - **Connection error banner**: Both SM dashboards have `_connErr`, `_retryTid`, and `_setConnErr(v)` module-level vars. When `loadOrders` fails (any path), `_setConnErr(true)` shows a red sticky banner ("⚠ Cannot connect to server — retrying automatically") with a "Retry now" button. Clears automatically on next successful load.
     - **Fast retry**: On failure, an 8-second `_retryTid` timer fires `loadOrders()` again — much faster than waiting the full 30/60s poll interval. Timer is cleared on success.
@@ -397,10 +397,16 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
 27. **Date filter in orders views**: SM Audit uses `filterDate` (string YYYY-MM-DD or "") matched against `o.date`. SM Install uses `filterDate` matched via `installOrderHasDate(o, ds)` which checks all subjob assignment dates. Admin Job Overview uses `jobsDateFilter` with `j.installDates[]` for install jobs. All date filters combine with status filters and search. Reset to "" on nav view switch.
 
-31. **Search by Enquiry ID / customer** (added 2026-06-30):
+32. **Search by Enquiry ID / customer** (added 2026-06-30):
     - **Admin Job Overview**: `jobsSearch` (string, default `""`) filters `realJobs` by `j.id` (PI) or `j.customer` (case-insensitive includes). Search input `#jobsSearchInput` is the first item in the `.toolbar`. `drawJobs()` restores focus + cursor after re-render when `jobsSearch` is non-empty. `navigate()` resets `jobsSearch=''` on view switch. Helper `setJobSearch(v)` exists for inline use.
     - **SM Audit Dashboard**: `searchQ` already filters by PI, customer name, phone, BM, and SKU in `ordersView()`. Search input `#q` in toolbar. No change needed.
     - **SM Install Dashboard**: Same as SM Audit — `searchQ` filters by PI, customer, phone, BM, SKU. No change needed.
+
+34. **Exact time slot system + 2-hour auditor buffer** (2026-07-01): Slot booking changed from fixed 3-hour windows to exact time selection.
+    - **SM Audit booking UI**: `<input type="time" id="bookTime">` in both `created/call_na` and `reschedule` status sections. `updateBookBtn()` in `wire()` syncs `draft.date` + `draft.slot` and gates the "Book slot" button.
+    - **2-hour buffer per auditor**: `auditorConflictOrder(aid, date, slotTime)` scans ORDERS for the same auditor+date with an HH:MM slot within 120 min of the new time. Returns the conflicting order or null. In the auditor assignment list: `const cx = auditorConflictOrder(...)` → `full = ... || !!cx`. Shows "time conflict — has X:XX AM booking" on the card. **Buffer is strictly per-auditor** — Auditor B is never blocked by Auditor A's bookings.
+    - **SM Install booking UI**: slot chip rows replaced with `<input type="time" data-time="idx">` for standard wallpaper (shows "Xh job"), standard flooring (shows "Start time"), and custom wallpaper. Custom flooring stays "Full day". Handler: `[data-time]` oninput sets `assigns[idx].slots = [inp.value]`.
+    - **Legacy orders**: all existing orders with `slot: "sf1"` etc. still display correctly; conflict check skips non-HH:MM values.
 
 24. **Swipe-back navigation blocked on all authenticated pages**: All four pages (SM_Audit_Dashboard, SM_Install_Dashboard, Site_Auditor_App, Site_Installer_App) run these two lines immediately after the session guard:
     ```js
