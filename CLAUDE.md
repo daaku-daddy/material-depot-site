@@ -123,11 +123,13 @@ Deleted orders are loaded **on demand** in both SM dashboards when the "Deleted 
 - **2-hour auditor buffer**: `auditorConflictOrder(aid, date, slotTime)` blocks assignment if the same auditor has a HH:MM booking within 120 min on that date. Buffer is **per-auditor** — other auditors are unaffected. Shows "has X:XX AM booking" in the auditor card.
 - Legacy slot IDs bypass the conflict check (only HH:MM slots are compared).
 
-### SM Install — booking
-- Slot chip rows replaced with `<input type="time" data-time="idx">` for standard wallpaper, standard flooring, and custom wallpaper.
-- Time stored as `assignment.slots = ["HH:MM"]`. Custom flooring stays "Full day" (no time input).
-- `[data-time]` oninput: `assigns[idx].slots=[inp.value]`.
-- Wallpaper rolls → duration in hours still follows: 1-3 rolls → 3h, 4-6 → 6h, 7+ → 9h.
+### SM Install — booking (2-step flow as of 2026-07-01)
+`renderAssignSection(o, sj, container)` uses a **2-step UX in standard mode**:
+- **Step 1 — Book a slot**: date + start time → "Book slot" saves `sj.date`, `sj.slot`, `sj.status='scheduled'` to DB. `container._editingSlot` tracks edit state across re-renders. Auto-opens in edit mode when `sj.status==='reschedule'` or no date set.
+- **Step 2 — Assign installer**: picker(s) with no date fields — slot already set from Step 1. "Save assignment" stamps `sj.date`/`sj.slot` onto each assignment and sets `sj.status='assigned'`.
+- **Edit**: "Edit" button in Step 1 summary sets `container._editingSlot=true` and re-draws.
+- **Custom / Multi-day mode**: keeps the old combined form (date per installer — 2-step doesn't apply).
+- `[data-time]` oninput still used in custom mode. Standard mode time is captured at `bookSlot` click from `#stepTime_{sjId}` input.
 
 ### Field apps — autoFlip (both)
 Parses HH:MM: `startH = h + m/60`. Legacy slot IDs still use `SLOTS[id].start`. "callpending" flip still 3h before start.

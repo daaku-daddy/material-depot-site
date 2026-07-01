@@ -250,6 +250,15 @@
   .dr-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .lbl-sm{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;}
   .inp-sm{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;}
+  .step-block{border:1.5px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:10px;}
+  .step-hd{display:flex;align-items:center;gap:10px;padding:10px 13px;background:#f9fafc;border-bottom:1px solid var(--line);}
+  .step-hd.done{background:#f0faf4;border-bottom-color:#c8e6d4;}
+  .step-num-badge{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0;}
+  .step-hd.done .step-num-badge{background:var(--green);}
+  .step-title{font-weight:700;font-size:13px;color:var(--navy);}
+  .step-hd.done .step-title{color:var(--green);}
+  .step-bd{padding:12px 13px;display:flex;flex-direction:column;gap:10px;}
+  .step-done-row{display:flex;align-items:center;gap:4px;padding:10px 13px;background:#f0faf4;}
   .hide{display:none!important;}
   @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
 #connBanner{position:sticky;top:56px;z-index:39;background:#7a1515;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;display:none;align-items:center;justify-content:center;gap:12px;}
@@ -1102,40 +1111,45 @@ function renderAssignSection(o,sj,container){
   let assigns=(sj.assignments&&sj.assignments.length)
     ?sj.assignments.map(a=>({...a}))
     :sj.installer_email
-      ?[{installer_id:sj.installer||'',installer_email:sj.installer_email,installer_name:(installerById(sj.installer)||{name:'?'}).name,mode:'standard',date:sj.date||'',slots:sj.slot?[sj.slot]:autoWpSlots(slotsForWp(totalRolls(sj))),dates:[],primary:true}]
+      ?[{installer_id:sj.installer||'',installer_email:sj.installer_email,installer_name:(installerById(sj.installer)||{name:'?'}).name,mode:'standard',date:sj.date||'',slots:sj.slot?[sj.slot]:[],dates:[],primary:true}]
       :[];
-  // ensure exactly one primary — first is primary if none set
   if(assigns.length&&!assigns.some(a=>a.primary))assigns[0].primary=true;
   let customMode=assigns.length>0&&assigns[0].mode==='custom';
+  // Start in slot-edit mode when rescheduling or no slot booked yet
+  if(container._editingSlot===undefined)container._editingSlot=sj.status==='reschedule'||!sj.date;
 
   function draw(){
     const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
-    if(sj.type==='wallpaper'&&!customMode){assigns.forEach(a=>{if(!a.slots||!a.slots.length)a.slots=autoWpSlots(slotsN);});}
+    // Derive current slot values from sj or first assignment
+    const curDate=sj.date||(assigns[0]&&assigns[0].date)||'';
+    const rawSlot=sj.slot||(assigns[0]&&assigns[0].slots&&assigns[0].slots[0])||'';
+    const curTime=/^\d{1,2}:\d{2}$/.test(rawSlot)?rawSlot:'09:00';
+
     let html=`<div class="assign-mode-toggle">
       <div class="assign-mode-btn ${!customMode?'on':''}" data-mode="standard">Standard</div>
       <div class="assign-mode-btn ${customMode?'on':''}" data-mode="custom">Custom / Multi-day</div>
     </div>`;
-    if(customMode)html+=`<div class="note amber" style="margin-bottom:10px">Custom mode: no capacity limits enforced. You control all dates and slots.</div>`;
-    if(sj.type==='wallpaper'&&!customMode)html+=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">${rolls} rolls → ${slotsN*3} hours of work. Set the installer's start time.</div>`;
 
-    assigns.forEach((a,idx)=>{
-      const inst=a.installer_id?installerById(a.installer_id):null;
-      const isPrimary=!!a.primary;
-      html+=`<div class="acard">
-        <div class="acard-head">
-          <div class="acard-num">${idx+1}</div>
-          <div style="flex:1"><div style="font-weight:700;font-size:13px">${inst?inst.name:'Select installer'}</div><div style="font-size:11px;color:var(--muted)">${sj.type} installer</div></div>
-          ${isPrimary?`<span style="font-size:10px;font-weight:800;background:#fff4d6;color:#7a5800;border-radius:6px;padding:3px 8px">&#9733; Primary</span>`:`<button class="btn ghost sm" data-makeprimary="${idx}" style="font-size:11px;padding:4px 9px">Make primary</button>`}
-          ${assigns.length>1?`<button class="btn danger sm" data-remove="${idx}">Remove</button>`:''}
-        </div>
-        <div class="acard-body">
-          <div><label class="lbl-sm">Installer</label>
-            <select data-instpick="${idx}" class="inp-sm">
-              <option value="">— pick installer —</option>
-              ${pool.map(p=>`<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}</option>`).join('')}
-            </select>
+    if(customMode){
+      // Custom mode: combined form (date per installer), unchanged behaviour
+      html+=`<div class="note amber" style="margin-bottom:10px">Custom mode: no capacity limits enforced. You control all dates and slots.</div>`;
+      assigns.forEach((a,idx)=>{
+        const inst=a.installer_id?installerById(a.installer_id):null;
+        const isPrimary=!!a.primary;
+        html+=`<div class="acard">
+          <div class="acard-head">
+            <div class="acard-num">${idx+1}</div>
+            <div style="flex:1"><div style="font-weight:700;font-size:13px">${inst?inst.name:'Select installer'}</div><div style="font-size:11px;color:var(--muted)">${sj.type} installer</div></div>
+            ${isPrimary?`<span style="font-size:10px;font-weight:800;background:#fff4d6;color:#7a5800;border-radius:6px;padding:3px 8px">&#9733; Primary</span>`:`<button class="btn ghost sm" data-makeprimary="${idx}" style="font-size:11px;padding:4px 9px">Make primary</button>`}
+            ${assigns.length>1?`<button class="btn danger sm" data-remove="${idx}">Remove</button>`:''}
           </div>
-          ${customMode?`
+          <div class="acard-body">
+            <div><label class="lbl-sm">Installer</label>
+              <select data-instpick="${idx}" class="inp-sm">
+                <option value="">— pick installer —</option>
+                ${pool.map(p=>`<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}</option>`).join('')}
+              </select>
+            </div>
             <div class="dr-row">
               <div><label class="lbl-sm">From</label><input type="date" data-from="${idx}" class="inp-sm" min="${minDate}" value="${(a.dates&&a.dates[0])||a.date||''}"></div>
               <div><label class="lbl-sm">To</label><input type="date" data-to="${idx}" class="inp-sm" min="${minDate}" value="${(a.dates&&a.dates[a.dates.length-1])||a.date||''}"></div>
@@ -1143,32 +1157,111 @@ function renderAssignSection(o,sj,container){
             ${sj.type==='wallpaper'
               ?`<div><label class="lbl-sm">Start time per day</label><input type="time" data-time="${idx}" class="inp-sm" value="${(a.slots&&a.slots.length&&/^\d{1,2}:\d{2}$/.test(a.slots[0]))?a.slots[0]:'09:00'}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>`
               :`<div style="font-size:11.5px;color:var(--green)">Full day (8 AM – 5 PM) per selected date</div>`}
-          `:`
-            <div><label class="lbl-sm">Date</label><input type="date" data-date="${idx}" class="inp-sm" min="${minDate}" value="${a.date||''}"></div>
-            ${sj.type==='wallpaper'
-              ?`<div><label class="lbl-sm">Start time (${slotsN*3}h job)</label><input type="time" data-time="${idx}" class="inp-sm" value="${(a.slots&&a.slots.length&&/^\d{1,2}:\d{2}$/.test(a.slots[0]))?a.slots[0]:'09:00'}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>`
-              :`<div><label class="lbl-sm">Start time</label><input type="time" data-time="${idx}" class="inp-sm" value="${(a.slots&&a.slots.length&&/^\d{1,2}:\d{2}$/.test(a.slots[0]))?a.slots[0]:a.slot&&/^\d{1,2}:\d{2}$/.test(a.slot)?a.slot:'09:00'}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>`}
-          `}
-        </div>
-      </div>`;
-    });
+          </div>
+        </div>`;
+      });
+      html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">&#65291; Add another installer</div>`;
+      if(sj.status==='reschedule')html+=`<div style="margin-top:10px"><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:64px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:4px"></textarea></div>`;
+      html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">${sj.status==='reschedule'?'Save reschedule':'Save assignments'}</button>`;
 
-    html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">＋ Add another installer</div>`;
-    if(sj.status==='reschedule')html+=`<div style="margin-top:10px"><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:64px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:4px"></textarea></div>`;
-    html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">${sj.status==='reschedule'?'Save reschedule':'Save assignments'}</button>`;
+    } else {
+      // Standard mode: 2-step flow
+      const slotDone=!!curDate&&!container._editingSlot;
+
+      // Step 1: Book a slot
+      html+=`<div class="step-block">
+        <div class="step-hd ${slotDone?'done':''}">
+          <div class="step-num-badge">${slotDone?'&#10003;':'1'}</div>
+          <div class="step-title">${slotDone?'Slot booked':'Step 1 — Book a slot'}</div>
+          ${slotDone?`<button class="btn ghost sm" id="editSlot_${sj.id}" style="margin-left:auto;font-size:11px;padding:4px 9px">Edit</button>`:''}
+        </div>`;
+      if(slotDone){
+        html+=`<div class="step-done-row">
+          <span style="font-weight:700;font-size:13.5px;color:var(--navy)">${fmtDate(curDate)}</span>
+          <span style="color:var(--muted);font-size:12.5px;margin-left:6px">&middot; ${slotLabel(curTime)}</span>
+        </div>`;
+      } else {
+        html+=`<div class="step-bd">`;
+        if(sj.type==='wallpaper')html+=`<div style="font-size:11.5px;color:var(--muted)">${rolls} rolls &rarr; ${slotsN*3}h of work. Choose date &amp; start time.</div>`;
+        html+=`<div class="dr-row">
+          <div><label class="lbl-sm">Date</label><input type="date" id="stepDate_${sj.id}" class="inp-sm" min="${minDate}" value="${curDate}"></div>
+          <div><label class="lbl-sm">Start time</label><input type="time" id="stepTime_${sj.id}" class="inp-sm" value="${curTime}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>
+        </div>`;
+        if(sj.status==='reschedule')html+=`<div><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:56px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:2px"></textarea></div>`;
+        html+=`<button class="btn navy sm" id="bookSlot_${sj.id}" style="width:100%">${sj.status==='reschedule'?'Book new slot':'Book slot'}</button>`;
+        html+=`</div>`;
+      }
+      html+=`</div>`; // .step-block
+
+      // Step 2: Assign installer (only after slot is booked)
+      if(slotDone){
+        html+=`<div class="step-block">
+          <div class="step-hd">
+            <div class="step-num-badge">2</div>
+            <div class="step-title">Step 2 — Assign installer</div>
+          </div>
+          <div class="step-bd">`;
+        assigns.forEach((a,idx)=>{
+          const inst=a.installer_id?installerById(a.installer_id):null;
+          const isPrimary=!!a.primary;
+          html+=`<div class="acard" style="margin-bottom:0">
+            <div class="acard-head">
+              <div class="acard-num">${idx+1}</div>
+              <div style="flex:1"><div style="font-weight:700;font-size:13px">${inst?inst.name:'Select installer'}</div><div style="font-size:11px;color:var(--muted)">${sj.type} installer</div></div>
+              ${isPrimary?`<span style="font-size:10px;font-weight:800;background:#fff4d6;color:#7a5800;border-radius:6px;padding:3px 8px">&#9733; Primary</span>`:`<button class="btn ghost sm" data-makeprimary="${idx}" style="font-size:11px;padding:4px 9px">Make primary</button>`}
+              ${assigns.length>1?`<button class="btn danger sm" data-remove="${idx}">Remove</button>`:''}
+            </div>
+            <div class="acard-body">
+              <div><label class="lbl-sm">Installer</label>
+                <select data-instpick="${idx}" class="inp-sm">
+                  <option value="">&#8212; pick installer &#8212;</option>
+                  ${pool.map(p=>`<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+          </div>`;
+        });
+        html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">&#65291; Add another installer</div>`;
+        html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:4px;width:100%">Save assignment</button>`;
+        html+=`</div></div>`; // .step-bd .step-block
+      }
+    }
+
     container.innerHTML=html;
 
+    // Mode toggle
     container.querySelectorAll('.assign-mode-btn').forEach(btn=>btn.onclick=()=>{
       customMode=btn.dataset.mode==='custom';
-      assigns.forEach(a=>{a.mode=customMode?'custom':'standard';});draw();
+      assigns.forEach(a=>{a.mode=customMode?'custom':'standard';});
+      container._editingSlot=!customMode&&!sj.date;
+      draw();
     });
-    container.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{assigns.splice(Number(btn.dataset.remove),1);if(!assigns.some(a=>a.primary)&&assigns.length)assigns[0].primary=true;draw();});
-    container.querySelectorAll('[data-makeprimary]').forEach(btn=>btn.onclick=()=>{const idx=Number(btn.getAttribute('data-makeprimary'));assigns.forEach((a,i)=>a.primary=i===idx);draw();});
-    container.querySelectorAll('[data-instpick]').forEach(sel=>sel.onchange=()=>{
-      const idx=Number(sel.dataset.instpick);const inst=installerById(sel.value);
-      assigns[idx].installer_id=sel.value;assigns[idx].installer_email=inst?inst.email:'';assigns[idx].installer_name=inst?inst.name:'';draw();
-    });
-    container.querySelectorAll('[data-date]').forEach(inp=>inp.onchange=()=>{assigns[Number(inp.dataset.date)].date=inp.value;});
+
+    // Edit slot (standard mode)
+    const editSlotBtn=container.querySelector('#editSlot_'+sj.id);
+    if(editSlotBtn)editSlotBtn.onclick=()=>{container._editingSlot=true;draw();};
+
+    // Book slot (standard mode Step 1)
+    const bookBtn=container.querySelector('#bookSlot_'+sj.id);
+    if(bookBtn)bookBtn.onclick=async()=>{
+      const d=container.querySelector('#stepDate_'+sj.id).value;
+      const t=container.querySelector('#stepTime_'+sj.id).value||'09:00';
+      if(!d){toast("Please set a date for the slot");return;}
+      const wasResched=sj.status==='reschedule';
+      const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
+      const remark=remarkEl?(remarkEl.value||'').trim():'';
+      sj.date=d;sj.slot=t;
+      // Carry new date/time into existing assignments
+      if(sj.assignments&&sj.assignments.length)sj.assignments.forEach(a=>{a.date=d;a.slots=[t];});
+      sj.status='scheduled';
+      syncParent(o);
+      const logLabel=wasResched?sj.type+' slot rescheduled'+(remark?' — '+remark:''):sj.type+' slot booked';
+      o.log.push({t:logLabel+': '+fmtDate(d)+' · '+slotLabel(t),d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
+      await loadOrders();toast(wasResched?'Slot rescheduled':'Slot booked');openOrder(o.pi);
+    };
+
+    // Custom mode: date range inputs
     container.querySelectorAll('[data-from]').forEach(inp=>inp.onchange=()=>{
       const idx=Number(inp.dataset.from);const to=(assigns[idx].dates&&assigns[idx].dates[assigns[idx].dates.length-1])||inp.value;
       assigns[idx].dates=dateRange(inp.value,to);assigns[idx].date=inp.value;
@@ -1177,27 +1270,43 @@ function renderAssignSection(o,sj,container){
       const idx=Number(inp.dataset.to);const from=(assigns[idx].dates&&assigns[idx].dates[0])||inp.value;
       assigns[idx].dates=dateRange(from,inp.value);
     });
-    container.querySelectorAll('[data-time]').forEach(inp=>inp.oninput=()=>{
-      assigns[Number(inp.dataset.time)].slots=[inp.value];
+    container.querySelectorAll('[data-time]').forEach(inp=>inp.oninput=()=>{assigns[Number(inp.dataset.time)].slots=[inp.value];});
+
+    container.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{assigns.splice(Number(btn.dataset.remove),1);if(!assigns.some(a=>a.primary)&&assigns.length)assigns[0].primary=true;draw();});
+    container.querySelectorAll('[data-makeprimary]').forEach(btn=>btn.onclick=()=>{const idx=Number(btn.getAttribute('data-makeprimary'));assigns.forEach((a,i)=>a.primary=i===idx);draw();});
+    container.querySelectorAll('[data-instpick]').forEach(sel=>sel.onchange=()=>{
+      const idx=Number(sel.dataset.instpick);const inst=installerById(sel.value);
+      assigns[idx].installer_id=sel.value;assigns[idx].installer_email=inst?inst.email:'';assigns[idx].installer_name=inst?inst.name:'';draw();
     });
-    container.querySelector('#addAssign_'+sj.id).onclick=()=>{
-      assigns.push({installer_id:'',installer_email:'',installer_name:'',mode:customMode?'custom':'standard',date:'',slots:sj.type==='wallpaper'?autoWpSlots(slotsForWp(totalRolls(sj))):[],dates:[],primary:false});draw();
+
+    const addBtn=container.querySelector('#addAssign_'+sj.id);
+    if(addBtn)addBtn.onclick=()=>{
+      const curDate2=sj.date||(assigns[0]&&assigns[0].date)||'';
+      const rawSlot2=sj.slot||(assigns[0]&&assigns[0].slots&&assigns[0].slots[0])||'';
+      const curTime2=/^\d{1,2}:\d{2}$/.test(rawSlot2)?rawSlot2:'09:00';
+      assigns.push({installer_id:'',installer_email:'',installer_name:'',mode:customMode?'custom':'standard',date:customMode?'':curDate2,slots:customMode?[]:[curTime2],dates:[],primary:false});draw();
     };
-    container.querySelector('#saveAssign_'+sj.id).onclick=async()=>{
+
+    const saveBtn=container.querySelector('#saveAssign_'+sj.id);
+    if(saveBtn)saveBtn.onclick=async()=>{
       const valid=assigns.filter(a=>a.installer_id);
       if(!valid.length){toast("Select at least one installer");return;}
-      // Validate that dates are set
-      const missingDate=valid.find(a=>a.mode==='standard'&&!a.date);
-      const missingCustomDate=valid.find(a=>a.mode==='custom'&&(!a.dates||!a.dates.length));
-      if(missingDate||missingCustomDate){toast("Please set a date for each installer before saving");return;}
-      if(sj.type==='wallpaper'){const missingSlots=valid.find(a=>!a.slots||!a.slots.length||!a.slots[0]);if(missingSlots){toast("Please set a start time for each wallpaper installer");return;}}
+      if(customMode){
+        const missingDate=valid.find(a=>!a.dates||!a.dates.length);
+        if(missingDate){toast("Please set dates for each installer before saving");return;}
+        if(sj.type==='wallpaper'){const missingSlots=valid.find(a=>!a.slots||!a.slots.length||!a.slots[0]);if(missingSlots){toast("Please set a start time for each wallpaper installer");return;}}
+      } else {
+        // Standard mode: slot already booked — stamp date/time onto each assignment
+        const d=sj.date;const t=sj.slot&&/^\d{1,2}:\d{2}$/.test(sj.slot)?sj.slot:'09:00';
+        valid.forEach(a=>{a.date=d;a.slots=[t];a.mode='standard';});
+      }
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';
       sj.assignments=valid;
       sj.installer=valid[0].installer_id;sj.installer_email=valid[0].installer_email;
-      sj.date=valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null;
-      sj.slot=valid[0].slots&&valid[0].slots[0]||null;
+      sj.date=customMode?(valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null):sj.date;
+      sj.slot=customMode?(valid[0].slots&&valid[0].slots[0]||null):sj.slot;
       sj.status='assigned';
       syncParent(o);
       const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';
