@@ -575,15 +575,16 @@ function addRoom(restore){
     (room.photos||[]).forEach((ph,idx)=>{
       const wrap=el('div');wrap.style.cssText='position:relative;width:80px;height:80px;flex:0 0 auto;';
       const img=el('img');img.src=ph;img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:pointer;';
-      img.onclick=()=>cropModal.open(ph,url=>{room.photos[idx]=url;renderPhotoGrid();autosave();});
+      img.onclick=()=>{const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;display:flex;align-items:center;justify-content:center;cursor:pointer;';const pi=document.createElement('img');pi.src=ph;pi.style.cssText='max-width:94vw;max-height:94vh;border-radius:10px;display:block;object-fit:contain;';ov.appendChild(pi);ov.onclick=()=>document.body.removeChild(ov);document.body.appendChild(ov);};
       const rmb=el('button');rmb.textContent='×';rmb.style.cssText='position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1;padding:0;';
       rmb.onclick=e=>{e.stopPropagation();room.photos.splice(idx,1);renderPhotoGrid();autosave();};
       wrap.appendChild(img);wrap.appendChild(rmb);photoGrid.appendChild(wrap);
     });
   }
   renderPhotoGrid();
-  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{cropModal.open(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
-  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1500/im.width,1500/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);room.photos.push(cv2.toDataURL('image/jpeg',0.88));renderPhotoGrid();autosave();};im.onerror=()=>{room.photos.push(rd.result);renderPhotoGrid();autosave();};im.src=rd.result;};rd.readAsDataURL(f);};
+  const _resizeAndStore=(dataURL,push)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);push(cv2.toDataURL('image/jpeg',0.88));};im.onerror=()=>push(dataURL);im.src=dataURL;};
+  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
+  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const pbtns=el('div','photo-btns');
