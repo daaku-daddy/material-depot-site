@@ -182,8 +182,9 @@ const cropModal=(function(){
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
-async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
-async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});if(!r.ok){const j=await r.json();throw new Error(j.message||j.error||'DB error '+r.status);}}
+async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();

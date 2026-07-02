@@ -183,8 +183,9 @@ const cropModal=(function(){
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
-async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
-async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}
+async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
@@ -832,6 +833,7 @@ function showInstallSignature(j,ratings){
   $("#backToPreviewFromSign").onclick=()=>signAndFinish(j);
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
+    const btn=$("#reallyDone");btn.disabled=true;btn.textContent="Saving…";
     clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
     j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
@@ -859,7 +861,7 @@ function showInstallSignature(j,ratings){
         // Write ratings to dedicated table for reporting/NPS
         try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){console.error('ratings write failed',e);}
       }
-    }catch(e){j.status=prev;toast("Network error — couldn't save. Try again");return;}
+    }catch(e){j.status=prev;if(btn){btn.disabled=false;btn.textContent="Save & finish job";}toast("Network error — couldn't save. Try again");return;}
     await genPDF(j);
     await loadJobs();
     document.querySelector(".footer").classList.remove("hide");
