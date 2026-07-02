@@ -1648,6 +1648,7 @@ async function submitAddOrder(){
       customer_name:name, phone, addr,
       matched_audit:false,
       delivery_date:delivery||null,
+      original_delivery_date:delivery||null,
       custom_wp:customWp,
       status:'pending',
       log:[logEntry],
