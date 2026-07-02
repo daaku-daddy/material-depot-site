@@ -266,10 +266,10 @@ const SB_URL = 'https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 
-async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H});return r.json();}
-async function sbPost(t,b){const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});return r.json();}
-async function sbPatch(t,id,b){const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b)});return r.json();}
-async function sbDel(t,id){await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H});}
+async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
+async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
+async function sbDel(t,id){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H,signal:ac.signal});}finally{clearTimeout(tid);}}
 
 let SESSION = null;
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
@@ -1031,8 +1031,8 @@ let jcFilter='all';
 async function renderJobCards(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
   const [auditRes,installRes,usersRes]=await Promise.all([
-    sbGet('audit_orders?status=eq.completed&select=*&order=created_at.desc'),
-    sbGet('install_orders?select=*&order=created_at.desc'),
+    sbGet('audit_orders?status=eq.completed&select=id,pi,date,customer_name,auditor_email,auditor_name&order=created_at.desc'),
+    sbGet('install_orders?select=id,pi,customer_name,delivery_date,status,subjobs&order=created_at.desc'),
     sbGet('profiles?select=email,name'),
   ]);
   const auditOrders=Array.isArray(auditRes)?auditRes:[];
@@ -1040,8 +1040,7 @@ async function renderJobCards(m){
   const nameMap={};if(Array.isArray(usersRes))usersRes.forEach(u=>{nameMap[u.email]=u.name;});
   const cards=[];
   auditOrders.forEach(r=>{
-    if(r.audit_ticked&&r.audit_ticked.sign)
-      cards.push({type:'audit',date:r.date||'',pi:r.pi||'',name:r.customer_name||'',assigned:r.audit_ticked.auditor||nameMap[r.auditor_email]||'—',order:r,ticked:r.audit_ticked});
+    cards.push({type:'audit',date:r.date||'',pi:r.pi||'',name:r.customer_name||'',assigned:nameMap[r.auditor_email]||r.auditor_name||'—',order:r,ticked:null});
   });
   installOrders.forEach(r=>{
     (r.subjobs||[]).forEach(sj=>{
@@ -1067,17 +1066,30 @@ async function renderJobCards(m){
             <td><b>${c.name}</b></td>
             <td style="color:var(--muted)">${c.assigned}</td>
             <td style="color:var(--muted)">${c.date?new Date(c.date+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}):'—'}</td>
-            <td><button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="dlJobCard(${i})">Download PDF</button></td>
+            <td><button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="dlJobCard(${i},this)">Download PDF</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`}`;
 }
 function setJcFilter(f){jcFilter=f;renderJobCards(document.getElementById('main'));}
-function dlJobCard(i){
+async function dlJobCard(i,btn){
   const c=window._jcCards[i];if(!c)return;
-  if(c.type==='audit')genAuditPDF(c.order,c.ticked);
-  else genInstallPDF(c.order,c.sj,c.jobcard,c.assigned);
+  if(c.type==='audit'){
+    let ticked=c.ticked;
+    if(!ticked){
+      if(btn){btn.disabled=true;btn.textContent='Loading…';}
+      try{
+        const rows=await sbGet('audit_orders?id=eq.'+c.order.id+'&select=audit_ticked&limit=1');
+        ticked=(Array.isArray(rows)&&rows[0]&&rows[0].audit_ticked)?rows[0].audit_ticked:null;
+        if(ticked)c.ticked=ticked;
+      }finally{if(btn){btn.disabled=false;btn.textContent='Download PDF';}}
+    }
+    if(!ticked){alert('Job card data not available — try again.');return;}
+    genAuditPDF(c.order,ticked);
+  }else{
+    genInstallPDF(c.order,c.sj,c.jobcard,c.assigned);
+  }
 }
 
 /* ---- ANALYTICS V2 ---- */
