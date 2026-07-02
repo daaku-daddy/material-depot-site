@@ -577,7 +577,7 @@ function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()
 // Ops-call window: custom WP -> 3 days prior; else -> 1 day prior
 // Also fires for deliv_delayed so SM is reminded to re-confirm the new delivery date
 function opsCallDue(o){
-  if(!['pending','deliv_delayed'].includes(o.status))return false;
+  if(!['pending','deliv_delayed','call_na'].includes(o.status))return false;
   if(!o.deliveryDate)return false;
   const dd=new Date(o.deliveryDate+"T00:00");
   const daysToDelivery=Math.round((dd-today)/(86400000));
@@ -1040,8 +1040,9 @@ function drawerBody(o){
   html+=`<div class="sec"><h3>Delivery — confirm with Operations first</h3><div class="kv">
     <div class="k">Scheduled delivery</div><div class="v">${fmtDate(o.deliveryDate)} (${dleft<=0?'today/past':'in '+dleft+'d'})</div>
     <div class="k">Type</div><div class="v">${o.customWp?'Custom wallpaper — call 3 days prior':'Standard — call 1 day prior'}</div></div>`;
-  if(o.status==="pending"){
-    html+=`<div class="note ${opsCallDue(o)?'amber':''}">${opsCallDue(o)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
+  if(['pending','call_na'].includes(o.status)){
+    html+=`${o.status==='call_na'?'<div class="note red" style="margin-bottom:6px">Previous call was not answered — please retry before confirming delivery status.</div>':''}
+      <div class="note ${opsCallDue(o)?'amber':''}">${opsCallDue(o)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
       <div class="field"><label>If delayed — new delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
   } else if(o.status==='deliv_delayed'){
     html+=`<div class="note red">Delivery delayed — BM asked to inform client. If delayed further, update the date below and click "Further delayed".</div>
@@ -1064,8 +1065,8 @@ function drawerBody(o){
   }
 
   // ---- FOLLOW-UP DATE ----
-  if(o.service){
-    const fu=o.service.follow_up_date||'';
+  if(o.service||o.status==='call_na'){
+    const fu=(o.service&&o.service.follow_up_date)||'';
     const fuOver=fu&&fu<dstr(today);const fuToday=fu===dstr(today);
     html+=`<div class="sec"><h3>Follow-up date <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— optional</span></h3>
       <div class="note">Can't schedule yet? Set a follow-up date to remind yourself to come back and assign a slot when the client is ready.</div>
