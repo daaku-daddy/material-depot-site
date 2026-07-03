@@ -1410,7 +1410,27 @@ function wireDrawer(o){
   if($("#auditByCust"))$("#auditByCust").onclick=()=>setAuditBy("customer");
 
   // manual status
-  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{const st=b.dataset.setstatus;if(st===o.status)return;o.status=st;o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);});
+  document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
+    const st=b.dataset.setstatus;if(st===o.status)return;
+    // Cascade field-level statuses down to subjobs + assignments so every dashboard stays in sync
+    const FIELD_STATUSES=['callpending','onway','atsite','completed','reschedule'];
+    const RANK={scheduled:0,assigned:0,callpending:1,onway:2,atsite:3};
+    if(FIELD_STATUSES.includes(st)&&o.subjobs&&o.subjobs.length){
+      const newRank=RANK[st]??99;
+      o.subjobs.forEach(sj=>{
+        if(sj.status==='completed')return;
+        const curRank=RANK[sj.status]??-1;
+        if(st==='reschedule'||st==='completed'||curRank<newRank){
+          sj.status=st;
+          (sj.assignments||[]).forEach(a=>{a.status=st;});
+        }
+      });
+    }
+    o.status=st;
+    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs||null,log:o.log});
+    await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
+  });
 
   // delivery outcomes
   if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Delivery on time — create service next");openOrder(o.pi);};
