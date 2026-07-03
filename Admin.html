@@ -1114,11 +1114,14 @@ async function renderAnalytics(m){
     t.setDate(t.getDate()-6);
     analyticsFrom=_anDstr(t);
   }
-  const [installRes,auditRes,ratingsRes]=await Promise.all([
+  let [installRes,auditRes,ratingsRes]=await Promise.all([
     sbGet('install_orders?select=pi,status,subjobs,service,delivery_date,original_delivery_date,log,created_at&status=neq.deleted&order=created_at.desc'),
     sbGet('audit_orders?select=pi,status,date,slot,log,auditor_name,auditor_email,created_at&status=neq.deleted&order=created_at.desc'),
     sbGet('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email&order=created_at.desc'),
   ]);
+  // Fallback queries in case optional columns (original_delivery_date, q3_score) don't yet exist in DB
+  if(!Array.isArray(installRes)) installRes=await sbGet('install_orders?select=pi,status,subjobs,service,delivery_date,log,created_at&status=neq.deleted&order=created_at.desc');
+  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGet('ratings?select=order_type,pi,q1_score,q2_score,created_at,staff_name,staff_email&order=created_at.desc');
   window._anData={
     installs:Array.isArray(installRes)?installRes:[],
     audits:Array.isArray(auditRes)?auditRes:[],
@@ -1127,24 +1130,34 @@ async function renderAnalytics(m){
   drawAnalytics(m);
 }
 
-// Returns flat list of scheduling attempts (one per subjob×date) within [from,to]
+// Returns flat list of attempts (one per subjob) within [from,to].
+// Completed/partial: counted on actual completion date (from log). In-progress: counted on scheduled date.
 function _anInstallAttempts(installs,from,to){
   const out=[];
   for(const o of installs){
     for(const sj of (o.subjobs||[])){
+      const isCompleted=['completed','partial'].includes(sj.status);
       const dates=new Set();
-      if(sj.date) dates.add(sj.date);
-      for(const a of (sj.assignments||[])){
-        if(a.mode==='custom')(a.dates||[]).forEach(d=>dates.add(d));
-        else if(a.date) dates.add(a.date);
-      }
-      // Parse log for new-format slot booked/rescheduled entries (contain date text)
-      const pfx=(sj.type||'')+' slot ';
-      for(const l of (o.log||[])){
-        if(!l.t) continue;
-        const lt=l.t.toLowerCase();
-        if(lt.startsWith(pfx+'booked:')||lt.startsWith(pfx+'rescheduled:')){
-          const d=_anParseDateText(l.t);if(d)dates.add(d);
+      if(isCompleted){
+        // Use actual completion date from installer log entry
+        const complKey=(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' installation completed';
+        for(const l of (o.log||[])){
+          if(l.t&&l.d&&l.t.startsWith(complKey)){const cd=_anDateIST(l.d);if(cd)dates.add(cd);}
+        }
+        // Fall back to scheduled date if no completion log found
+        if(!dates.size){
+          if(sj.date) dates.add(sj.date);
+          for(const a of (sj.assignments||[])){
+            if(a.mode==='custom')(a.dates||[]).forEach(d=>dates.add(d));
+            else if(a.date) dates.add(a.date);
+          }
+        }
+      } else {
+        // Not yet completed: use scheduled date
+        if(sj.date) dates.add(sj.date);
+        for(const a of (sj.assignments||[])){
+          if(a.mode==='custom')(a.dates||[]).forEach(d=>dates.add(d));
+          else if(a.date) dates.add(a.date);
         }
       }
       for(const d of dates){
@@ -1259,8 +1272,14 @@ function drawAnalytics(m){
   const iAttempts=_anInstallAttempts(installs,from,to);
   const iTotal=iAttempts.length;
 
-  // Audit: orders scheduled in range
-  const aFiltered=audits.filter(o=>o.date&&o.date>=from&&o.date<=to);
+  // Audit: completed orders by actual completion date; pending/in-progress by scheduled date
+  const aFiltered=audits.filter(o=>{
+    if(o.status==='completed'){
+      const cl=(o.log||[]).find(l=>l.t&&l.d&&l.t.startsWith('Site audit completed'));
+      if(cl){const cd=_anDateIST(cl.d);return cd>=from&&cd<=to;}
+    }
+    return o.date&&o.date>=from&&o.date<=to;
+  });
   const aTotal=aFiltered.length;
 
   // Ratings (all-time — not filtered by date range)
@@ -1275,7 +1294,7 @@ function drawAnalytics(m){
   const iWithAudit=iAttempts.filter(a=>a.auditBy).length;
   const iExtAudit=iAttempts.filter(a=>a.auditBy==='customer').length;
   const iJobCard=iAttempts.filter(a=>iRatedPIs.has(a.pi)).length;
-  const avgA=(arr,k)=>arr.length?+(arr.reduce((s,r)=>s+(+r[k]||0),0)/arr.length).toFixed(1):null;
+  const avgA=(arr,k)=>{const vs=arr.filter(r=>r[k]!=null).map(r=>+r[k]);return vs.length?+(vs.reduce((s,v)=>s+v,0)/vs.length).toFixed(1):null;};
   const IR_q1=avgA(IR,'q1_score'),IR_q2=avgA(IR,'q2_score'),IR_q3=avgA(IR,'q3_score');
   const IR_prom=IR.filter(r=>r.q1_score>=9).length,IR_det=IR.filter(r=>r.q1_score<=7).length;
   const IR_nps=IR.length?Math.round((IR_prom-IR_det)/IR.length*100):null;

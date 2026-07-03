@@ -859,7 +859,9 @@ function showInstallSignature(j,ratings){
         await sbPatch('install_orders',j.id,completionPatch);
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
         // Write ratings to dedicated table for reporting/NPS
-        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){console.error('ratings write failed',e);}
+        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){
+          try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e2){console.error('ratings write failed',e2);}
+        }
       }
     }catch(e){j.status=prev;if(btn){btn.disabled=false;btn.textContent="Save & finish job";}toast("Network error — couldn't save. Try again");return;}
     await genPDF(j);

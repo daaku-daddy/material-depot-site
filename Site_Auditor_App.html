@@ -792,7 +792,9 @@ function showAuditSignature(o,ratings){
       await sbPatch('audit_orders',o.id,completionPatch);
       try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
       // Write ratings to dedicated table for reporting/NPS
-      try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){console.error('ratings write failed',e);}
+      try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){
+        try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e2){console.error('ratings write failed',e2);}
+      }
     }catch(e){toast("Saved locally — sync failed");}}
     btn.textContent="Building PDF…";
     let pdfUrl=null;
