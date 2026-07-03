@@ -1,7 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta http-equiv="refresh" content="0; url=/Login.html">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Material Depot</title>
+  <script>
+    (function(){
+      try{
+        var u=JSON.parse(localStorage.getItem('md_user')||'null');
+        var map={admin:'Admin.html',service_mgr:'SM_Audit_Dashboard.html',site_auditor:'Site_Auditor_App.html',installer:'Site_Installer_App.html',auditor_installer:'Site_Auditor_App.html'};
+        if(u&&u.role&&map[u.role]){window.location.replace('/'+map[u.role]);return;}
+      }catch(e){}
+      window.location.replace('/Login.html');
+    })();
+  </script>
 </head>
 <body></body>
 </html>

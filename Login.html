@@ -273,7 +273,14 @@ function successScreen(){
   $("#go").onclick=go;
 }
 
-emailScreen();
+// Already logged in? Skip straight to the correct dashboard.
+(function(){
+  try{
+    var u=JSON.parse(localStorage.getItem('md_user')||'null');
+    if(u&&u.role&&ROLE_FILES[u.role]){window.location.replace('/'+ROLE_FILES[u.role].file);return;}
+  }catch(e){}
+  emailScreen();
+})();
 </script>
 </body>
 </html>
