@@ -274,6 +274,7 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 
 async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbGetLong(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),45000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
 async function sbDel(t,id){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H,signal:ac.signal});}finally{clearTimeout(tid);}}
@@ -1132,14 +1133,27 @@ async function renderAnalytics(m){
     t.setDate(t.getDate()-6);
     analyticsFrom=_anDstr(t);
   }
-  let [installRes,auditRes,ratingsRes]=await Promise.all([
-    sbGet('install_orders?select=pi,status,subjobs,service,delivery_date,original_delivery_date,log,created_at&status=neq.deleted&order=created_at.desc'),
-    sbGet('audit_orders?select=pi,status,date,slot,log,auditor_name,auditor_email,created_at&status=neq.deleted&order=created_at.desc'),
-    sbGet('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email&order=created_at.desc'),
-  ]);
-  // Fallback queries in case optional columns (original_delivery_date, q3_score) don't yet exist in DB
-  if(!Array.isArray(installRes)) installRes=await sbGet('install_orders?select=pi,status,subjobs,service,delivery_date,log,created_at&status=neq.deleted&order=created_at.desc');
-  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGet('ratings?select=order_type,pi,q1_score,q2_score,created_at,staff_name,staff_email&order=created_at.desc');
+  // Use install_orders_slim (no photos in subjobs) to avoid MB-scale payload timeouts.
+  // original_delivery_date is not in the slim view — fetch it separately (tiny query).
+  let installRes,auditRes,ratingsRes;
+  try{
+    [installRes,auditRes,ratingsRes]=await Promise.all([
+      sbGetLong('install_orders_slim?select=pi,status,subjobs,service,delivery_date,log,created_at&status=neq.deleted&order=created_at.desc'),
+      sbGetLong('audit_orders?select=pi,status,date,slot,log,auditor_name,auditor_email,created_at&status=neq.deleted&order=created_at.desc'),
+      sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email&order=created_at.desc'),
+    ]);
+  }catch(e){
+    m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load analytics data — network timeout. Please try again.</div>`;
+    return;
+  }
+  // Fallback for q3_score column not yet in DB
+  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,created_at,staff_name,staff_email&order=created_at.desc').catch(()=>[]);
+  // Merge original_delivery_date from a lightweight separate query
+  const delivMeta=await sbGetLong('install_orders?select=pi,original_delivery_date&status=neq.deleted').catch(()=>[]);
+  if(Array.isArray(installRes)&&Array.isArray(delivMeta)){
+    const dm={};for(const r of delivMeta)dm[r.pi]=r.original_delivery_date||null;
+    for(const o of installRes)o.original_delivery_date=dm[o.pi]||null;
+  }
   window._anData={
     installs:Array.isArray(installRes)?installRes:[],
     audits:Array.isArray(auditRes)?auditRes:[],
@@ -1543,16 +1557,19 @@ async function renderLiveLocations(m){
   _liveLocTimer=setInterval(()=>{if(currentView==='live')_drawLiveLocations(m);},30000);
 }
 async function _drawLiveLocations(m){
-  const workers=await sbGet('profiles?select=name,email,role,last_lat,last_lng,last_loc_at,last_order_pi&last_lat=not.is.null&order=last_loc_at.desc');
-  if(!Array.isArray(workers)){
+  const todayStr=_anDstr(new Date());
+  // Fetch today's orders and all field worker profiles in parallel
+  const [aOrds,iOrds,allProfs]=await Promise.all([
+    sbGet('audit_orders?select=pi,addr,slot,auditor_email,status&date=eq.'+todayStr+'&status=not.in.(deleted)'),
+    sbGet('install_orders?select=pi,addr,subjobs,status&status=not.in.(deleted,pending,deliv_ontime,deliv_delayed)'),
+    sbGet('profiles?select=name,email,role,last_lat,last_lng,last_loc_at,last_order_pi&role=in.(site_auditor,installer,auditor_installer)')
+  ]);
+  if(!Array.isArray(allProfs)){
     m.innerHTML=`<div class="page-head"><h1>Live Locations</h1></div><div style="padding:24px;color:var(--amber);font-weight:600">⚠ Location columns not yet added to the database. Run the SQL from setup instructions to enable this feature.</div>`;
     return;
   }
-  const todayStr=_anDstr(new Date());
-  const [aOrds,iOrds]=await Promise.all([
-    sbGet('audit_orders?select=pi,addr,slot,auditor_email,status&date=eq.'+todayStr+'&status=not.in.(deleted)'),
-    sbGet('install_orders?select=pi,addr,subjobs,status&status=not.in.(deleted,pending,deliv_ontime,deliv_delayed)')
-  ]);
+  // Build profile lookup and today-order lookup
+  const profMap={};for(const p of allProfs)profMap[p.email]=p;
   const wOrds={};
   const addOrd=(email,e)=>{if(!email)return;if(!wOrds[email])wOrds[email]=[];wOrds[email].push(e);};
   const parseSlotH=s=>{if(!s)return 99;const r=s.match(/^(\d{1,2}):(\d{2})$/);return r?+r[1]+ +r[2]/60:99;};
@@ -1573,23 +1590,35 @@ async function _drawLiveLocations(m){
     }
   }
   for(const e of Object.keys(wOrds))wOrds[e].sort((a,b)=>a.slotH-b.slotH);
+  // All workers with orders today; sort: GPS first, then no-GPS; within GPS group by last_loc_at desc
+  const todayEmails=Object.keys(wOrds);
+  const workers=todayEmails.map(e=>profMap[e]).filter(Boolean);
+  workers.sort((a,b)=>{
+    const aHasLoc=!!a.last_lat,bHasLoc=!!b.last_lat;
+    if(aHasLoc!==bHasLoc)return aHasLoc?-1:1;
+    if(a.last_loc_at&&b.last_loc_at)return new Date(b.last_loc_at)-new Date(a.last_loc_at);
+    return 0;
+  });
   const workerCN=email=>{const ords=wOrds[email]||[];const inc=ords.filter(o=>!o.done);return{cur:inc[0]||null,nxt:inc[1]||null};};
   const ago=d=>{if(!d)return'—';const s=Math.round((Date.now()-new Date(d))/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';return Math.floor(s/3600)+'h ago';};
   const trA=a=>(a||'').length>45?a.slice(0,45)+'…':a||'—';
   const rows=workers.length?workers.map(w=>{
     const{cur,nxt}=workerCN(w.email);
+    const openCell=w.last_lat
+      ?`<a href="https://maps.google.com/?q=${w.last_lat},${w.last_lng}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:700;text-decoration:none">📍 Open</a>`
+      :`<span style="color:var(--muted);font-size:11px">No GPS</span>`;
     return`<tr>
       <td style="font-weight:700">${w.name||w.email}</td>
       <td style="color:var(--muted);font-size:12px">${trA(cur?cur.addr:'')}</td>
-      <td style="color:var(--muted)">${ago(w.last_loc_at)}</td>
+      <td style="color:${w.last_lat?'var(--muted)':'var(--red)'}">${w.last_lat?ago(w.last_loc_at):'Not sharing'}</td>
       <td>${cur?cur.pi:(w.last_order_pi||'—')}</td>
       <td style="color:var(--muted)">${cur?fmtSlot(cur.slot):'—'}</td>
       <td style="color:var(--muted)">${nxt?fmtSlot(nxt.slot):'—'}</td>
-      <td><a href="https://maps.google.com/?q=${w.last_lat},${w.last_lng}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:700;text-decoration:none">📍 Open</a></td>
+      <td>${openCell}</td>
     </tr>`;
-  }).join(''):`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:28px">No field workers are currently sharing their location.</td></tr>`;
+  }).join(''):`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:28px">No field workers have orders scheduled for today.</td></tr>`;
   m.innerHTML=`
-    <div class="page-head"><h1>Live Locations</h1><p style="color:var(--muted);font-size:13px">Field workers at site — auto-refreshes every 30 seconds.</p></div>
+    <div class="page-head"><h1>Live Locations</h1><p style="color:var(--muted);font-size:13px">All field workers with orders today — auto-refreshes every 30 seconds.</p></div>
     <div id="liveMapEl" style="height:380px;border-radius:14px;overflow:hidden;margin:0 0 20px;border:1px solid var(--line);background:#e8eaed"></div>
     <table style="width:100%;border-collapse:collapse">
       <thead><tr style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">
@@ -1601,19 +1630,20 @@ async function _drawLiveLocations(m){
     </table>`;
   const escH=s=>(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
   const mkIcon=name=>L.divIcon({className:'',html:`<div style="text-align:center;display:inline-block"><svg width="22" height="32" viewBox="0 0 24 36" style="display:block;margin:0 auto"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="#2E6CA8"/><circle cx="12" cy="12" r="5" fill="#fff"/></svg><div style="background:rgba(31,58,95,0.92);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;margin-top:2px;box-shadow:0 1px 4px rgba(0,0,0,0.25)">${name}</div></div>`,iconSize:[80,52],iconAnchor:[40,32]});
-  if(window.L&&workers.length){
+  const gpsWorkers=workers.filter(w=>w.last_lat&&w.last_lng);
+  if(window.L&&gpsWorkers.length){
     try{
-      const center=[workers[0].last_lat,workers[0].last_lng];
+      const center=[gpsWorkers[0].last_lat,gpsWorkers[0].last_lng];
       const lmap=L.map('liveMapEl',{zoomControl:true}).setView(center,13);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:18}).addTo(lmap);
-      workers.forEach(w=>{
+      gpsWorkers.forEach(w=>{
         const{cur}=workerCN(w.email);
         const nm=escH(w.name||w.email.split('@')[0]);
         L.marker([w.last_lat,w.last_lng],{icon:mkIcon(nm)})
           .bindPopup(`<b>${w.name||w.email}</b><br>${cur?'Order: '+cur.pi+'<br>':''}${cur&&cur.addr?cur.addr+'<br>':''}${ago(w.last_loc_at)}`)
           .addTo(lmap);
       });
-      if(workers.length>1){const grp=L.featureGroup(workers.map(w=>L.marker([w.last_lat,w.last_lng])));lmap.fitBounds(grp.getBounds().pad(0.3));}
+      if(gpsWorkers.length>1){const grp=L.featureGroup(gpsWorkers.map(w=>L.marker([w.last_lat,w.last_lng])));lmap.fitBounds(grp.getBounds().pad(0.3));}
     }catch(e){}
   }else if(window.L){
     try{const lmap=L.map('liveMapEl').setView([12.9716,77.5946],11);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(lmap);}catch(e){}
