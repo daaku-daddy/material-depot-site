@@ -569,11 +569,11 @@ function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()
 
 const BOOKED=["scheduled","assigned","onway","atsite","completed"];
 function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===slotId&&BOOKED.includes(o.status)).length;}
-function auditorLoad(aid,date){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
-function auditorConflictOrder(aid,date,slotTime){
+function auditorLoad(aid,date,excludeId){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
+function auditorConflictOrder(aid,date,slotTime,excludeId){
   if(!slotTime||!/^\d{1,2}:\d{2}$/.test(slotTime))return null;
   const[h,m]=slotTime.split(':').map(Number);const newMin=h*60+m;
-  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&Math.abs(o.slot.split(':').reduce((a,v,i)=>a+(i===0?Number(v)*60:Number(v)),0)-newMin)<120)||null;
+  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&Math.abs(o.slot.split(':').reduce((a,v,i)=>a+(i===0?Number(v)*60:Number(v)),0)-newMin)<120)||null;
 }
 function orderCategoriesAudit(o){
   const at=o.auditTicked;
@@ -1142,8 +1142,8 @@ function wireDrawer(o){
   if($("#auditorList")){
     const list=$("#auditorList");
     list.innerHTML=AUDITORS.map(a=>{
-      const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date);
-      const cx=auditorConflictOrder(a.id,o.date,o.slot);
+      const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
+      const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id);
       const full=cap<1||load>=cap;
       return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
         <div class="av">${initials(a.name)}</div>
