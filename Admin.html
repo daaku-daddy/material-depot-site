@@ -1135,19 +1135,20 @@ async function renderAnalytics(m){
   }
   // Use install_orders_slim (no photos in subjobs) to avoid MB-scale payload timeouts.
   // original_delivery_date is not in the slim view — fetch it separately (tiny query).
+  // log columns are excluded — pre-July arrival photos were stored as base64 in log, causing MB-scale payloads.
   let installRes,auditRes,ratingsRes;
   try{
     [installRes,auditRes,ratingsRes]=await Promise.all([
-      sbGetLong('install_orders_slim?select=pi,status,subjobs,service,delivery_date,log,created_at&status=neq.deleted&order=created_at.desc'),
-      sbGetLong('audit_orders?select=pi,status,date,slot,log,auditor_name,auditor_email,created_at&status=neq.deleted&order=created_at.desc'),
-      sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email&order=created_at.desc'),
+      sbGetLong('install_orders_slim?select=pi,status,subjobs,service,delivery_date,created_at&status=neq.deleted'),
+      sbGetLong('audit_orders?select=pi,status,date,slot,auditor_name,auditor_email,created_at&status=neq.deleted'),
+      sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
     m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load analytics data — network timeout. Please try again.</div>`;
     return;
   }
   // Fallback for q3_score column not yet in DB
-  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,created_at,staff_name,staff_email&order=created_at.desc').catch(()=>[]);
+  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,created_at,staff_name,staff_email').catch(()=>[]);
   // Merge original_delivery_date from a lightweight separate query
   const delivMeta=await sbGetLong('install_orders?select=pi,original_delivery_date&status=neq.deleted').catch(()=>[]);
   if(Array.isArray(installRes)&&Array.isArray(delivMeta)){
@@ -1159,7 +1160,9 @@ async function renderAnalytics(m){
     audits:Array.isArray(auditRes)?auditRes:[],
     ratings:Array.isArray(ratingsRes)?ratingsRes:[],
   };
-  drawAnalytics(m);
+  try{drawAnalytics(m);}catch(e){
+    m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Analytics render error: ${e.message}. Please reload.</div>`;
+  }
 }
 
 // Returns flat list of attempts (one per subjob) within [from,to].
@@ -1202,7 +1205,7 @@ function _anInstallAttempts(installs,from,to){
           installers:asgns.length?asgns:(sj.assignments||[]),
           items:sj.items||[],
           auditBy:o.service&&o.service.audit_by,
-          hasDelay:(o.log||[]).some(l=>l.t&&l.t.toLowerCase().includes('delay')),
+          hasDelay:!!(o.original_delivery_date&&o.delivery_date&&o.original_delivery_date!==o.delivery_date),
           originalDelivery:o.original_delivery_date||null,
           currentDelivery:o.delivery_date||null,
           order:o,
@@ -1305,13 +1308,7 @@ function drawAnalytics(m){
   const iTotal=iAttempts.length;
 
   // Audit: completed orders by actual completion date; pending/in-progress by scheduled date
-  const aFiltered=audits.filter(o=>{
-    if(o.status==='completed'){
-      const cl=(o.log||[]).find(l=>l.t&&l.d&&l.t.startsWith('Site audit completed'));
-      if(cl){const cd=_anDateIST(cl.d);return cd>=from&&cd<=to;}
-    }
-    return o.date&&o.date>=from&&o.date<=to;
-  });
+  const aFiltered=audits.filter(o=>o.date&&o.date>=from&&o.date<=to);
   const aTotal=aFiltered.length;
 
   // Ratings (all-time — not filtered by date range)
@@ -1334,7 +1331,7 @@ function drawAnalytics(m){
   // Audit calcs
   const aCompleted=aFiltered.filter(o=>o.status==='completed').length;
   const aJobCard=aFiltered.filter(o=>aRatedPIs.has(o.pi)).length;
-  const aRescheduled=aFiltered.filter(o=>(o.log||[]).some(l=>(l.t||'').toLowerCase().includes('reschedule'))).length;
+  const aRescheduled=aFiltered.filter(o=>o.status==='pending').length;
   const AR_q1=avgA(AR,'q1_score'),AR_q2=avgA(AR,'q2_score'),AR_q3=avgA(AR,'q3_score');
   const AR_prom=AR.filter(r=>r.q1_score>=9).length,AR_det=AR.filter(r=>r.q1_score<=7).length;
   const AR_nps=AR.length?Math.round((AR_prom-AR_det)/AR.length*100):null;
