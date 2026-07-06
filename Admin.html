@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="/manifest_admin.json"/>
+<meta name="theme-color" content="#1F3A5F"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
 <title>Material Depot — Admin Console</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -949,8 +953,12 @@ function renderSketchA(r){
   return c.toDataURL('image/jpeg',0.85);
 }
 function fmtDateA(ds){if(!ds)return '—';const d=new Date(ds+'T00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+async function _compressAdmin(dataUrl){
+  if(!dataUrl)return null;
+  return new Promise(res=>{const im=new Image();if(dataUrl.startsWith('http'))im.crossOrigin='anonymous';im.onload=()=>{try{const s=Math.min(1,1600/Math.max(im.width,im.height));const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.88));}catch(e){res(null);}};im.onerror=()=>res(null);im.src=dataUrl;});
+}
 
-function genAuditPDF(order,ticked){
+async function genAuditPDF(order,ticked){
   const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
   const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
@@ -964,7 +972,7 @@ function genAuditPDF(order,ticked){
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
     head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
-  rooms.forEach((r,i)=>{
+  for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
     const fields=fieldsForA(r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
@@ -975,11 +983,11 @@ function genAuditPDF(order,ticked){
     const sketchImg=renderSketchA(r);
     if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
     const rPhotosA=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
-    if(rPhotosA.length){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(rPhotosA[0],imgFmtA(rPhotosA[0]),M+colW+12,y+6,colW,ih);}catch(e){}}
+    if(rPhotosA.length){const p0=await _compressAdmin(rPhotosA[0]);if(p0){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(p0,'JPEG',M+colW+12,y+6,colW,ih);}catch(e){}}}
     y+=ih+18;
-    for(let ap=1;ap<rPhotosA.length;ap++){if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(rPhotosA[ap],imgFmtA(rPhotosA[ap]),M,y+6,aw,ah);}catch(e){}y+=ah+18;}
+    for(let ap=1;ap<rPhotosA.length;ap++){const xp=await _compressAdmin(rPhotosA[ap]);if(!xp)continue;if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(xp,'JPEG',M,y+6,aw,ah);}catch(e){}y+=ah+18;}
     if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
-  });
+  }
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
@@ -993,13 +1001,13 @@ function genAuditPDF(order,ticked){
   doc.text('Client name: '+((ticked.sign&&ticked.sign.name)||order.customer_name||''),M,y);y+=18;
   doc.text('Date: '+fmtDateA(order.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(ticked.sign&&ticked.sign.img){try{doc.addImage(ticked.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  if(ticked.sign&&ticked.sign.img){const si=await _compressAdmin(ticked.sign.img);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
   doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
   doc.save(('SiteAudit_'+(order.customer_name||'client')+'_'+(order.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
 }
 
-function genInstallPDF(order,sj,jobcard,installerName){
+async function genInstallPDF(order,sj,jobcard,installerName){
   const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
   const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
@@ -1011,15 +1019,15 @@ function genInstallPDF(order,sj,jobcard,installerName){
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-'])});
-  rooms.forEach((r,i)=>{
+  for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-'),M,y+10);y+=24;
     const rPhotosI=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
     const aiw=W-2*M,aih=aiw*0.6;
-    for(let ip=0;ip<rPhotosI.length;ip++){if(y+aih+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(ip===0?'Photo after installation':'Additional photo '+(ip+1),M,y);try{doc.addImage(rPhotosI[ip],imgFmtA(rPhotosI[ip]),M,y+6,aiw,aih);}catch(e){}y+=aih+18;}
+    for(let ip=0;ip<rPhotosI.length;ip++){const ph=await _compressAdmin(rPhotosI[ip]);if(!ph)continue;if(y+aih+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(ip===0?'Photo after installation':'Additional photo '+(ip+1),M,y);try{doc.addImage(ph,'JPEG',M,y+6,aiw,aih);}catch(e){}y+=aih+18;}
     if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
-  });
+  }
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
@@ -1031,7 +1039,7 @@ function genInstallPDF(order,sj,jobcard,installerName){
     y=doc.lastAutoTable.finalY+10;}
   doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((jobcard.sign&&jobcard.sign.name)||order.customer_name||''),M,y);y+=18;doc.text('Date: '+fmtDateA(sj.date),M,y);
   const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(jobcard.sign&&jobcard.sign.img){try{doc.addImage(jobcard.sign.img,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
+  if(jobcard.sign&&jobcard.sign.img){const si=await _compressAdmin(jobcard.sign.img);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
   doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
   doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
   doc.save(('Installation_'+(order.customer_name||'client')+'_'+(order.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
@@ -1540,33 +1548,69 @@ async function _drawLiveLocations(m){
     m.innerHTML=`<div class="page-head"><h1>Live Locations</h1></div><div style="padding:24px;color:var(--amber);font-weight:600">⚠ Location columns not yet added to the database. Run the SQL from setup instructions to enable this feature.</div>`;
     return;
   }
-  const ago=d=>{if(!d)return '—';const s=Math.round((Date.now()-new Date(d))/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';return Math.floor(s/3600)+'h ago';};
-  const roleLabel=r=>r==='site_auditor'?'Auditor':r==='site_installer'?'Installer':r;
-  const rows=workers.length?workers.map(w=>`<tr>
-    <td style="font-weight:700">${w.name||w.email}</td>
-    <td>${roleLabel(w.role)}</td>
-    <td style="color:var(--muted)">${ago(w.last_loc_at)}</td>
-    <td>${w.last_order_pi||'—'}</td>
-    <td><a href="https://maps.google.com/?q=${w.last_lat},${w.last_lng}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:700;text-decoration:none">📍 Open</a></td>
-  </tr>`).join(''):`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:28px">No field workers are currently sharing their location.</td></tr>`;
+  const todayStr=_anDstr(new Date());
+  const [aOrds,iOrds]=await Promise.all([
+    sbGet('audit_orders?select=pi,addr,slot,auditor_email,status&date=eq.'+todayStr+'&status=not.in.(deleted)'),
+    sbGet('install_orders?select=pi,addr,subjobs,status&status=not.in.(deleted,pending,deliv_ontime,deliv_delayed)')
+  ]);
+  const wOrds={};
+  const addOrd=(email,e)=>{if(!email)return;if(!wOrds[email])wOrds[email]=[];wOrds[email].push(e);};
+  const parseSlotH=s=>{if(!s)return 99;const r=s.match(/^(\d{1,2}):(\d{2})$/);return r?+r[1]+ +r[2]/60:99;};
+  const fmtSlot=s=>{if(!s)return'—';const r=s.match(/^(\d{1,2}):(\d{2})$/);if(!r)return s;const h=+r[1],mn=+r[2],ap=h>=12?'PM':'AM',h12=h%12||12;return h12+':'+(mn<10?'0':'')+mn+' '+ap;};
+  if(Array.isArray(aOrds)){
+    for(const o of aOrds)addOrd(o.auditor_email,{pi:o.pi,addr:o.addr||'',slot:o.slot,slotH:parseSlotH(o.slot),done:o.status==='completed'});
+  }
+  if(Array.isArray(iOrds)){
+    for(const o of iOrds){
+      for(const sj of(o.subjobs||[])){
+        for(const a of(sj.assignments||[])){
+          const dates=a.dates||(a.date?[a.date]:[]);
+          if(!dates.includes(todayStr))continue;
+          const slot=(a.slots&&a.slots[0])||sj.slot||null;
+          addOrd(a.installer_email,{pi:o.pi,addr:o.addr||'',slot,slotH:parseSlotH(slot),done:['completed','partial'].includes(sj.status)});
+        }
+      }
+    }
+  }
+  for(const e of Object.keys(wOrds))wOrds[e].sort((a,b)=>a.slotH-b.slotH);
+  const workerCN=email=>{const ords=wOrds[email]||[];const inc=ords.filter(o=>!o.done);return{cur:inc[0]||null,nxt:inc[1]||null};};
+  const ago=d=>{if(!d)return'—';const s=Math.round((Date.now()-new Date(d))/1000);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';return Math.floor(s/3600)+'h ago';};
+  const trA=a=>(a||'').length>45?a.slice(0,45)+'…':a||'—';
+  const rows=workers.length?workers.map(w=>{
+    const{cur,nxt}=workerCN(w.email);
+    return`<tr>
+      <td style="font-weight:700">${w.name||w.email}</td>
+      <td style="color:var(--muted);font-size:12px">${trA(cur?cur.addr:'')}</td>
+      <td style="color:var(--muted)">${ago(w.last_loc_at)}</td>
+      <td>${cur?cur.pi:(w.last_order_pi||'—')}</td>
+      <td style="color:var(--muted)">${cur?fmtSlot(cur.slot):'—'}</td>
+      <td style="color:var(--muted)">${nxt?fmtSlot(nxt.slot):'—'}</td>
+      <td><a href="https://maps.google.com/?q=${w.last_lat},${w.last_lng}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:700;text-decoration:none">📍 Open</a></td>
+    </tr>`;
+  }).join(''):`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:28px">No field workers are currently sharing their location.</td></tr>`;
   m.innerHTML=`
     <div class="page-head"><h1>Live Locations</h1><p style="color:var(--muted);font-size:13px">Field workers at site — auto-refreshes every 30 seconds.</p></div>
     <div id="liveMapEl" style="height:380px;border-radius:14px;overflow:hidden;margin:0 0 20px;border:1px solid var(--line);background:#e8eaed"></div>
     <table style="width:100%;border-collapse:collapse">
       <thead><tr style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">
-        <th style="text-align:left;padding:6px 8px">Worker</th><th style="text-align:left;padding:6px 8px">Role</th>
-        <th style="text-align:left;padding:6px 8px">Last seen</th><th style="text-align:left;padding:6px 8px">Order</th><th style="padding:6px 8px"></th>
+        <th style="text-align:left;padding:6px 8px">Worker</th><th style="text-align:left;padding:6px 8px">Address</th>
+        <th style="text-align:left;padding:6px 8px">Last seen</th><th style="text-align:left;padding:6px 8px">Order</th>
+        <th style="text-align:left;padding:6px 8px">Current start</th><th style="text-align:left;padding:6px 8px">Next start</th><th style="padding:6px 8px"></th>
       </tr></thead>
       <tbody style="font-size:13px">${rows}</tbody>
     </table>`;
+  const escH=s=>(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  const mkIcon=name=>L.divIcon({className:'',html:`<div style="text-align:center;display:inline-block"><svg width="22" height="32" viewBox="0 0 24 36" style="display:block;margin:0 auto"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="#2E6CA8"/><circle cx="12" cy="12" r="5" fill="#fff"/></svg><div style="background:rgba(31,58,95,0.92);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;margin-top:2px;box-shadow:0 1px 4px rgba(0,0,0,0.25)">${name}</div></div>`,iconSize:[80,52],iconAnchor:[40,32]});
   if(window.L&&workers.length){
     try{
       const center=[workers[0].last_lat,workers[0].last_lng];
       const lmap=L.map('liveMapEl',{zoomControl:true}).setView(center,13);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:18}).addTo(lmap);
       workers.forEach(w=>{
-        L.marker([w.last_lat,w.last_lng])
-          .bindPopup(`<b>${w.name||w.email}</b><br>${roleLabel(w.role)}<br>${w.last_order_pi?'Order: '+w.last_order_pi+'<br>':''}${ago(w.last_loc_at)}`)
+        const{cur}=workerCN(w.email);
+        const nm=escH(w.name||w.email.split('@')[0]);
+        L.marker([w.last_lat,w.last_lng],{icon:mkIcon(nm)})
+          .bindPopup(`<b>${w.name||w.email}</b><br>${cur?'Order: '+cur.pi+'<br>':''}${cur&&cur.addr?cur.addr+'<br>':''}${ago(w.last_loc_at)}`)
           .addTo(lmap);
       });
       if(workers.length>1){const grp=L.featureGroup(workers.map(w=>L.marker([w.last_lat,w.last_lng])));lmap.fitBounds(grp.getBounds().pad(0.3));}
@@ -1585,5 +1629,7 @@ async function _drawLiveLocations(m){
   navigate('overview');
 })();
 </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+<script src="/pwa-install.js"></script>
 </body>
 </html>

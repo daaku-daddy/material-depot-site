@@ -99,6 +99,7 @@
   .photobox img{width:100%;display:block;}
   .photo-btns{display:flex;gap:8px;margin-top:8px;}
   .photo-btns .btn{flex:1;justify-content:center;padding:13px 8px;font-size:14px;}
+  .ds-handle{position:absolute;width:32px;height:32px;border-radius:50%;background:#3b82f6;border:3px solid #fff;cursor:grab;transform:translate(-50%,-50%);touch-action:none;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.6);}
   .reqstar{color:var(--red);}
   .addroom{width:100%;background:#fff;border:2px dashed var(--blue);color:var(--blue);border-radius:16px;padding:18px;font-weight:800;font-size:18px;cursor:pointer;margin-bottom:16px;}
   canvas.sign{width:100%;height:190px;border:2px dashed var(--blue);border-radius:14px;background:#fff;touch-action:none;display:block;}
@@ -246,7 +247,7 @@ let JOBS=[];
 
 async function loadJobs(){
   try{
-    const rows=await sbGet('install_orders?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)&order=created_at.desc');
+    const rows=await sbGet('install_orders_slim?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
     // Preserve existing jobcard data
     const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'|'+j.sjId]=j.jobcard;});
@@ -302,7 +303,7 @@ function badge(st){const s=STATUS[st]||{l:st,c:"b-scheduled"};return `<span clas
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function imgFmt(d){if(/webp/i.test(d.slice(0,20)))return 'WEBP';return /png/i.test(d.slice(0,20))?'PNG':'JPEG';}
-function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,maxDim/Math.max(im.width,im.height));const cw=Math.round(im.width*s),ch=Math.round(im.height*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));};im.onerror=()=>res(null);im.src=dataURL;});}
+function compress(dataURL,maxDim,q){return new Promise(res=>{const im=new Image();if(dataURL&&dataURL.startsWith('http'))im.crossOrigin='anonymous';im.onload=()=>{try{const s=Math.min(1,maxDim/Math.max(im.width,im.height));const cw=Math.round(im.width*s),ch=Math.round(im.height*s);const o=document.createElement('canvas');o.width=cw;o.height=ch;o.getContext('2d').drawImage(im,0,0,cw,ch);res(o.toDataURL('image/jpeg',q));}catch(e){res(null);}};im.onerror=()=>res(null);im.src=dataURL;});}
 function autoFlip(){const now=new Date();JOBS.forEach(o=>{if(o.status==="scheduled"&&o.date===dstr(today)){let startH;if(SLOTS[o.slot]){startH=SLOTS[o.slot].start;}else if(o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)){const[h,m]=o.slot.split(':').map(Number);startH=h+m/60;}else return;const start=new Date(today);start.setHours(Math.floor(startH),Math.round((startH%1)*60),0,0);if(now>=new Date(start.getTime()-3*3600*1000))o.status="callpending";}});}
 
 /* ============== LIST ============== */
@@ -489,13 +490,13 @@ function wireDetail(j){
   if($("#viewAuditBtn"))$("#viewAuditBtn").onclick=()=>openAudit(j);
   if($("#viewAudit"))$("#viewAudit").onclick=()=>openAudit(j);
   if($("#dlPdf"))$("#dlPdf").onclick=async()=>{
-    if(!j.jobcard){
-      const rows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs');
-      if(Array.isArray(rows)&&rows[0]){
-        const sj=(rows[0].subjobs||[]).find(s=>s.id===j.sjId);
-        if(sj&&sj.jobcard)j.jobcard=sj.jobcard;
-      }
+    const btn=$("#dlPdf");btn.disabled=true;const oldT=btn.textContent;btn.textContent='Building PDF…';
+    const rows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs');
+    if(Array.isArray(rows)&&rows[0]){
+      const sj=(rows[0].subjobs||[]).find(s=>s.id===j.sjId);
+      if(sj&&sj.jobcard)j.jobcard=sj.jobcard;
     }
+    btn.disabled=false;btn.textContent=oldT;
     if(j.jobcard)genPDF(j);else toast("Job card not available");
   };
 }
@@ -597,15 +598,17 @@ function addRoom(restore){
     });
   }
   renderPhotoGrid();
-  const _resizeAndStore=(dataURL,push)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);push(cv2.toDataURL('image/jpeg',0.88));};im.onerror=()=>push(dataURL);im.src=dataURL;};
+  const _resizeAndStore=(dataURL,push)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);const out=cv2.toDataURL('image/jpeg',0.88);_uploadPhoto(out).then(push).catch(()=>push(out));};im.onerror=()=>push(dataURL);im.src=dataURL;};
   const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
   const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const pbtns=el('div','photo-btns');
   const btnCam=el('button','btn ghost','📷 Camera');const btnGal=el('button','btn ghost','🖼 Gallery');
+  const btnScan=el('button','btn ghost','📄 Scan');
   btnCam.onclick=()=>fileCam.click();btnGal.onclick=()=>fileGal.click();
-  pbtns.appendChild(fileCam);pbtns.appendChild(fileGal);pbtns.appendChild(btnCam);pbtns.appendChild(btnGal);
+  btnScan.onclick=()=>openDocScanner(url=>{room.photos.push(url);renderPhotoGrid();autosave();});
+  pbtns.appendChild(fileCam);pbtns.appendChild(fileGal);pbtns.appendChild(btnCam);pbtns.appendChild(btnGal);pbtns.appendChild(btnScan);
   f3.appendChild(photoGrid);f3.appendChild(pbtns);block.appendChild(f3);
 
   const f4=el('div','fieldgap');f4.innerHTML='<label>Comments (if any)</label>';const cI=document.createElement('textarea');cI.placeholder='Anything to note...';cI.value=room.comments;cI.oninput=()=>{room.comments=cI.value;autosave();};f4.appendChild(cI);block.appendChild(f4);
@@ -1017,14 +1020,14 @@ function startLocationTracking(orderPi){
   if(_locIntervalId!==null)clearInterval(_locIntervalId);
   _locWatchId=navigator.geolocation.watchPosition(pos=>{
     const now=Date.now();
-    if(now-_lastLocSent>90000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
-  },null,{enableHighAccuracy:false,maximumAge:30000,timeout:15000});
+    if(now-_lastLocSent>1800000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
+  },null,{enableHighAccuracy:false,maximumAge:300000,timeout:15000});
   _locIntervalId=setInterval(()=>{
     navigator.geolocation.getCurrentPosition(pos=>{
       const now=Date.now();
-      if(now-_lastLocSent>89000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
-    },null,{timeout:5000,maximumAge:60000});
-  },90000);
+      if(now-_lastLocSent>1799000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
+    },null,{timeout:5000,maximumAge:300000});
+  },1800000);
 }
 function stopLocationTracking(){
   if(_locWatchId!==null){navigator.geolocation.clearWatch(_locWatchId);_locWatchId=null;}
@@ -1071,11 +1074,11 @@ function openArrivalModal(cb){
   }
 
   function startCam(){
-    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false})
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false})
       .then(s=>{_arrStream=s;vid.srcObject=s;vid.style.display='block';})
       .catch(()=>{
         vid.style.display='none';snap.textContent='📷 Open Camera';
-        const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.capture='environment';fi.style.display='none';document.body.appendChild(fi);
+        const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.capture='user';fi.style.display='none';document.body.appendChild(fi);
         snap.onclick=()=>fi.click();
         fi.onchange=()=>{
           if(!fi.files[0])return;
@@ -1101,7 +1104,7 @@ function openArrivalModal(cb){
     snap.textContent='📷  Take Photo';
     startCam();snap.onclick=()=>{if(_arrStream&&vid.readyState>=2)doSnap();};
   };
-  confirm.onclick=()=>{closeArrivalModal();if(_arrConfirmCb)_arrConfirmCb({photo:_photo,lat:capturedLat,lng:capturedLng});};
+  confirm.onclick=async()=>{let ph=_photo;if(ph){try{ph=await _uploadPhoto(ph);}catch(e){}}closeArrivalModal();if(_arrConfirmCb)_arrConfirmCb({photo:ph,lat:capturedLat,lng:capturedLng});};
   document.getElementById('arrCancelBtn').onclick=closeArrivalModal;
   startCam();
 }
@@ -1110,8 +1113,228 @@ function closeArrivalModal(){
   document.getElementById('arrivalOverlay').style.display='none';
 }
 
+// ── Photo Storage Upload ──────────────────────────────────────────────────────
+async function _uploadPhoto(dataURL){
+  const blob=await(await fetch(dataURL)).blob();
+  const fname=Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.jpg';
+  const r=await fetch(SB_URL+'/storage/v1/object/job-photos/'+fname,{
+    method:'POST',
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
+    body:blob
+  });
+  if(!r.ok)throw new Error('upload failed');
+  return SB_URL+'/storage/v1/object/public/job-photos/'+fname;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Doc Scanner ──────────────────────────────────────────────────────────────
+let _dsCb=null,_dsCamStream=null,_dsCorners=[],_dsEnhance=false,_dsReady=false;
+
+function _dsInit(){
+  if(_dsReady)return;_dsReady=true;
+  document.getElementById('dsCancelBtn').onclick=()=>_dsClose();
+  document.getElementById('dsCaptureBtn').onclick=()=>_dsCapture();
+  document.getElementById('dsRetakeBtn').onclick=()=>{
+    document.getElementById('dsCamState').style.display='flex';
+    document.getElementById('dsReviewState').style.display='none';
+    _dsStartCam();
+  };
+  document.getElementById('dsEnhanceBtn').onclick=()=>{
+    _dsEnhance=!_dsEnhance;
+    const b=document.getElementById('dsEnhanceBtn');
+    b.textContent=_dsEnhance?'⚡ B&W ON':'⚡ B&W';b.style.color=_dsEnhance?'#fbbf24':'#9ca3af';b.style.background=_dsEnhance?'#713f12':'#374151';
+  };
+  document.getElementById('dsApplyBtn').onclick=()=>_dsApply();
+  _dsInitHandles();
+}
+
+function openDocScanner(cb){
+  _dsInit();
+  _dsCb=cb;_dsEnhance=false;
+  const eBtn=document.getElementById('dsEnhanceBtn');
+  eBtn.textContent='⚡ B&W';eBtn.style.color='#9ca3af';eBtn.style.background='#374151';
+  document.getElementById('dsCamState').style.display='flex';
+  document.getElementById('dsReviewState').style.display='none';
+  document.getElementById('docScanOverlay').style.display='flex';
+  _dsStartCam();
+}
+
+function _dsStartCam(){
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}})
+    .then(s=>{_dsCamStream=s;document.getElementById('dsCamVideo').srcObject=s;})
+    .catch(()=>{ _dsClose(); alert('Cannot access camera. Please allow camera access.'); });
+}
+
+function _dsStopCam(){if(_dsCamStream){_dsCamStream.getTracks().forEach(t=>t.stop());_dsCamStream=null;}}
+
+function _dsClose(){_dsStopCam();document.getElementById('docScanOverlay').style.display='none';}
+
+function _dsCapture(){
+  const vid=document.getElementById('dsCamVideo');
+  const cv=document.getElementById('dsSrcCanvas');
+  cv.width=vid.videoWidth||1280;cv.height=vid.videoHeight||720;
+  cv.getContext('2d').drawImage(vid,0,0);
+  _dsStopCam();
+  const img=document.getElementById('dsPreviewImg');
+  img.src=cv.toDataURL('image/jpeg',0.92);
+  img.onload=()=>{
+    _dsCorners=[{x:.08,y:.08},{x:.92,y:.08},{x:.92,y:.92},{x:.08,y:.92}];
+    _dsUpdateOverlay();
+    document.getElementById('dsCamState').style.display='none';
+    document.getElementById('dsReviewState').style.display='flex';
+  };
+}
+
+function _dsGetImgRect(){
+  const img=document.getElementById('dsPreviewImg');
+  const c=document.getElementById('dsImgContainer').getBoundingClientRect();
+  const nw=img.naturalWidth||1,nh=img.naturalHeight||1;
+  const sc=Math.min(c.width/nw,c.height/nh);
+  const iw=nw*sc,ih=nh*sc;
+  return{left:(c.width-iw)/2,top:(c.height-ih)/2,width:iw,height:ih,cLeft:c.left,cTop:c.top};
+}
+
+function _dsUpdateOverlay(){
+  const ir=_dsGetImgRect();
+  const ids=['dsH0','dsH1','dsH2','dsH3'];
+  const pts=_dsCorners.map((c,i)=>{
+    const px=ir.left+c.x*ir.width,py=ir.top+c.y*ir.height;
+    const h=document.getElementById(ids[i]);h.style.left=px+'px';h.style.top=py+'px';
+    return{x:px,y:py};
+  });
+  document.getElementById('dsPolygon').setAttribute('points',pts.map(p=>p.x+','+p.y).join(' '));
+}
+
+function _dsInitHandles(){
+  ['dsH0','dsH1','dsH2','dsH3'].forEach((id,idx)=>{
+    const h=document.getElementById(id);
+    h.addEventListener('pointerdown',e=>{
+      e.preventDefault();h.setPointerCapture(e.pointerId);
+      function mv(ev){
+        const ir=_dsGetImgRect();
+        const con=document.getElementById('dsImgContainer').getBoundingClientRect();
+        const lx=ev.clientX-con.left,ly=ev.clientY-con.top;
+        _dsCorners[idx]={x:Math.max(0,Math.min(1,(lx-ir.left)/ir.width)),y:Math.max(0,Math.min(1,(ly-ir.top)/ir.height))};
+        _dsUpdateOverlay();
+      }
+      h.addEventListener('pointermove',mv);
+      h.addEventListener('pointerup',()=>h.removeEventListener('pointermove',mv),{once:true});
+    });
+  });
+}
+
+function _dsHomography(fromPts,toPts){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){
+    const{x:fx,y:fy}=fromPts[i],{x:tx,y:ty}=toPts[i];
+    A.push([fx,fy,1,0,0,0,-fx*tx,-fy*tx]);b.push(tx);
+    A.push([0,0,0,fx,fy,1,-fx*ty,-fy*ty]);b.push(ty);
+  }
+  const n=8,M=A.map((row,i)=>[...row,b[i]]);
+  for(let c=0;c<n;c++){
+    let mx=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[mx][c]))mx=r;
+    [M[c],M[mx]]=[M[mx],M[c]];
+    for(let r=c+1;r<n;r++){if(Math.abs(M[c][c])<1e-12)continue;const f=M[r][c]/M[c][c];for(let j=c;j<=n;j++)M[r][j]-=f*M[c][j];}
+  }
+  const h=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){h[i]=M[i][n];for(let j=i+1;j<n;j++)h[i]-=M[i][j]*h[j];h[i]=Math.abs(M[i][i])<1e-12?0:h[i]/M[i][i];}
+  return[...h,1];
+}
+
+function _dsWarp(srcCv,srcPts,outW,outH){
+  const dst=[{x:0,y:0},{x:outW,y:0},{x:outW,y:outH},{x:0,y:outH}];
+  const H=_dsHomography(dst,srcPts);
+  const oc=document.createElement('canvas');oc.width=outW;oc.height=outH;
+  const octx=oc.getContext('2d');
+  const sctx=srcCv.getContext('2d');
+  const sd=sctx.getImageData(0,0,srcCv.width,srcCv.height);
+  const od=octx.createImageData(outW,outH);
+  const sw=srcCv.width,sh=srcCv.height,src=sd.data,out=od.data;
+  for(let oy=0;oy<outH;oy++){
+    let nx=H[1]*oy+H[2],ny=H[4]*oy+H[5],d=H[7]*oy+H[8];
+    for(let ox=0;ox<outW;ox++,nx+=H[0],ny+=H[3],d+=H[6]){
+      const sx=nx/d,sy=ny/d,oi=(oy*outW+ox)*4;
+      if(sx<0||sy<0||sx>=sw-1||sy>=sh-1){out[oi]=out[oi+1]=out[oi+2]=255;out[oi+3]=255;continue;}
+      const x0=sx|0,y0=sy|0,fx=sx-x0,fy=sy-y0;
+      for(let c=0;c<3;c++){
+        const p00=src[(y0*sw+x0)*4+c],p10=src[(y0*sw+x0+1)*4+c],p01=src[(y0*sw+x0+sw)*4+c],p11=src[(y0*sw+x0+1+sw)*4+c];
+        out[oi+c]=p00*(1-fx)*(1-fy)+p10*fx*(1-fy)+p01*(1-fx)*fy+p11*fx*fy;
+      }
+      out[oi+3]=255;
+    }
+  }
+  octx.putImageData(od,0,0);return oc;
+}
+
+function _dsEnhanceCanvas(cv){
+  const ctx=cv.getContext('2d');const d=ctx.getImageData(0,0,cv.width,cv.height);
+  for(let i=0;i<d.data.length;i+=4){const g=.299*d.data[i]+.587*d.data[i+1]+.114*d.data[i+2];const e=Math.min(255,Math.max(0,(g-128)*1.6+128));d.data[i]=d.data[i+1]=d.data[i+2]=e;}
+  ctx.putImageData(d,0,0);
+}
+
+function _dsApply(){
+  const btn=document.getElementById('dsApplyBtn');
+  btn.disabled=true;btn.textContent='⏳ Processing…';
+  setTimeout(()=>{
+    try{
+      const srcCv=document.getElementById('dsSrcCanvas');
+      const nw=srcCv.width,nh=srcCv.height;
+      const sp=_dsCorners.map(c=>({x:c.x*nw,y:c.y*nh}));
+      const d=(a,b)=>Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2);
+      let outW=Math.round((d(sp[0],sp[1])+d(sp[3],sp[2]))/2);
+      let outH=Math.round((d(sp[0],sp[3])+d(sp[1],sp[2]))/2);
+      const mx=900;if(outW>mx||outH>mx){const s=mx/Math.max(outW,outH);outW=Math.round(outW*s);outH=Math.round(outH*s);}
+      const oc=_dsWarp(srcCv,sp,outW,outH);
+      if(_dsEnhance)_dsEnhanceCanvas(oc);
+      const dataURL=oc.toDataURL('image/jpeg',.88);
+      btn.disabled=false;btn.textContent='✓ Apply Scan';
+      _dsClose();_uploadPhoto(dataURL).then(u=>{if(_dsCb)_dsCb(u);}).catch(()=>{if(_dsCb)_dsCb(dataURL);});
+    }catch(e){console.error(e);btn.disabled=false;btn.textContent='✓ Apply Scan';alert('Scan failed — try again.');}
+  },80);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 renderList();loadJobs();
 </script>
+
+<div id="docScanOverlay" style="display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;font-family:inherit">
+  <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;background:#0a0a0a;flex-shrink:0">
+    <button id="dsCancelBtn" style="background:none;border:none;color:#9ca3af;font-size:15px;cursor:pointer;padding:4px 8px">Cancel</button>
+    <span style="color:#fff;font-weight:700;font-size:15px">📄 Doc Scanner</span>
+    <div style="width:64px"></div>
+  </div>
+  <div id="dsCamState" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
+    <div style="flex:1;position:relative;background:#000;overflow:hidden">
+      <video id="dsCamVideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover"></video>
+    </div>
+    <div style="padding:12px 16px 32px;background:#0a0a0a;flex-shrink:0">
+      <div style="color:#9ca3af;font-size:12px;text-align:center;margin-bottom:12px">Frame the document and tap Capture</div>
+      <button id="dsCaptureBtn" style="background:#2563eb;color:#fff;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:700;width:100%;cursor:pointer">📸 Capture</button>
+    </div>
+  </div>
+  <div id="dsReviewState" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
+    <div id="dsImgContainer" style="flex:1;position:relative;background:#111;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0">
+      <img id="dsPreviewImg" style="max-width:100%;max-height:100%;display:block;object-fit:contain;user-select:none;-webkit-user-select:none" alt=""/>
+      <svg id="dsSvgOverlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">
+        <polygon id="dsPolygon" fill="rgba(59,130,246,0.15)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,4" points=""/>
+      </svg>
+      <div id="dsH0" class="ds-handle"></div>
+      <div id="dsH1" class="ds-handle"></div>
+      <div id="dsH2" class="ds-handle"></div>
+      <div id="dsH3" class="ds-handle"></div>
+    </div>
+    <div style="padding:12px 16px 32px;background:#0a0a0a;flex-shrink:0">
+      <div style="color:#9ca3af;font-size:12px;text-align:center;margin-bottom:12px">Drag blue corners to align with document edges</div>
+      <div style="display:flex;gap:10px;margin-bottom:10px">
+        <button id="dsRetakeBtn" style="background:#374151;color:#e5e7eb;border:none;border-radius:12px;padding:13px 0;font-size:14px;font-weight:600;flex:1;cursor:pointer">↩ Retake</button>
+        <button id="dsEnhanceBtn" style="background:#374151;color:#9ca3af;border:none;border-radius:12px;padding:13px 0;font-size:14px;font-weight:600;flex:1;cursor:pointer">⚡ B&amp;W</button>
+      </div>
+      <button id="dsApplyBtn" style="background:#16a34a;color:#fff;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:700;width:100%;cursor:pointer">✓ Apply Scan</button>
+    </div>
+  </div>
+  <canvas id="dsSrcCanvas" style="display:none"></canvas>
+</div>
 
 <div id="arrivalOverlay" style="display:none;position:fixed;inset:0;z-index:200;background:#0a0a0a;flex-direction:column">
   <div style="padding:16px 16px 8px;color:#fff;font-size:16px;font-weight:700">📍 Confirm you're at site</div>
@@ -1128,5 +1351,6 @@ renderList();loadJobs();
     <button id="arrCancelBtn" style="background:transparent;color:#9ca3af;border:1px solid #374151;border-radius:14px;padding:12px;font-size:14px;width:100%;cursor:pointer">Cancel</button>
   </div>
 </div>
+<script src="/pwa-install.js"></script>
 </body>
 </html>
