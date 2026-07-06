@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="/manifest_sm_audit.json"/>
+<meta name="theme-color" content="#1F3A5F"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
 <title>Material Depot — Service Manager · Site Audit</title>
 <style>
   :root{
@@ -882,26 +886,45 @@ function drawerBody(o){
       </div>
     </div>`;
     html+=`<div class="sec"><h3>Acknowledgement call &amp; time</h3>
-      <div class="note">Call the customer to confirm a date and exact visit time. The same auditor cannot be assigned again within 2 hours of this time on the same day.</div>
+      <div class="note">Call the customer to confirm a date and exact visit time. Assigning SMSes the auditor's details to the customer.</div>
       ${o.status==="call_na"?`<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Marked "Call not picked". Retry, then book when reached.</div>`:""}
-      <div class="field"><label>Audit date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+      <div class="field"><label>Audit date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(today)}"></div>
       <div class="field"><label>Visit time</label><input type="time" id="bookTime" value="09:00" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div></div>`;
   } else if(o.status==="scheduled"){
-    html+=`<div class="sec"><h3>Assign auditor <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— a day before</span></h3>
-      <div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
-      <div class="note">Auditors with a booking within 2 hours of ${slotLabel(o.slot)} on ${fmtDate(o.date)} are blocked. Assigning SMSes the auditor's details to the customer.</div>
+    const schSlotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
+    const schDateDefault=o.date&&o.date>=dstr(today)?o.date:dstr(today);
+    html+=`<div class="sec"><h3>Assign auditor</h3>
+      <div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
+        <div class="k" style="margin-top:6px"></div><div class="v" style="margin-top:4px"><button class="btn ghost sm" id="editSchSlotBtn" style="font-size:11.5px;padding:3px 10px">Edit date / time</button></div></div>
+      <div id="schSlotEditWrap" style="display:none;margin-bottom:10px">
+        <div class="field"><label>New date</label><input type="date" id="schSlotDate" value="${schDateDefault}"></div>
+        <div class="field"><label>New time</label><input type="time" id="schSlotTime" value="${schSlotDefault}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
+        <button class="btn navy sm" id="saveSchSlot" style="margin-top:4px">Save time change</button>
+      </div>
+      <div class="note">Auditors with a nearby booking on the same day are flagged — you can still assign them if the schedule allows. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div></div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
+    const slotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
+    const dateDefault=o.date&&o.date>=dstr(today)?o.date:dstr(today);
     html+=`<div class="sec"><h3>Assignment</h3><div class="kv">
       <div class="k">Auditor</div><div class="v">${getAuditorName(o)} (${aPhone})</div>
       <div class="k">Time</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
       <div class="k">Live status</div><div class="v">${chip(o.status)}</div></div>
-      <div class="note">Auditor's live steps appear here automatically. Customer was notified of the auditor by SMS.</div></div>`;
+      <div class="note">Auditor's live steps appear here automatically.</div>
+      <div id="inlineSlotWrap" style="display:none;margin-top:10px">
+        <div class="field"><label>New date</label><input type="date" id="inlineSlotDate" value="${dateDefault}"></div>
+        <div class="field"><label>New time</label><input type="time" id="inlineSlotTime" value="${slotDefault}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn ghost sm" id="toggleInlineSlot">Edit date / time</button>
+        <button class="btn navy sm" id="saveInlineSlot" style="display:none">Save change</button>
+      </div></div>`;
   } else if(o.status==="reschedule"){
+    const reschedDateDefault=(o.date&&o.date>=dstr(today))?o.date:dstr(today);
     html+=`<div class="sec"><h3>Reschedule</h3>
       <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Customer declined the auditor's pre-visit call. Call to rebook.</div>
-      <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${dstr(addDays(1))}"></div>
+      <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${reschedDateDefault}"></div>
       <div class="field"><label>Visit time</label><input type="time" id="bookTime" value="${o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00'}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
       <div class="field"><label>Remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:72px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div></div>`;
   } else if(o.status==="completed"){
@@ -1121,11 +1144,11 @@ function wireDrawer(o){
     list.innerHTML=AUDITORS.map(a=>{
       const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date);
       const cx=auditorConflictOrder(a.id,o.date,o.slot);
-      const full=cap<1||load>=cap||!!cx;
+      const full=cap<1||load>=cap;
       return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
         <div class="av">${initials(a.name)}</div>
         <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}${cx?` <span style="color:var(--amber)">· has ${slotLabel(cx.slot)} booking</span>`:''}</div></div>
-        <div class="load" style="color:${full?'var(--red)':'var(--green)'}">${cx?'time conflict':load+'/'+cap+(full?' · full':'')}</div></div>`;
+        <div class="load" style="color:${full?'var(--red)':cx?'var(--amber)':'var(--green)'}">${cx?'⚠ nearby booking':load+'/'+cap+(full?' · full':'')}</div></div>`;
     }).join("");
     list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
       draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
@@ -1134,6 +1157,36 @@ function wireDrawer(o){
     o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
     await loadOrders();toast("Assigned "+a.name+" · customer notified");openOrder(o.pi);};
+
+  if($("#editSchSlotBtn"))$("#editSchSlotBtn").onclick=()=>{
+    const wrap=$("#schSlotEditWrap");
+    const showing=wrap.style.display!=='none';
+    wrap.style.display=showing?'none':'block';
+    $("#editSchSlotBtn").textContent=showing?'Edit date / time':'Cancel';
+  };
+  if($("#saveSchSlot"))$("#saveSchSlot").onclick=async()=>{
+    const nd=$("#schSlotDate").value,nt=$("#schSlotTime").value;
+    if(!nd||!nt){toast("Pick a date and time");return;}
+    o.date=nd;o.slot=nt;
+    o.log.push({t:"Slot updated: "+fmtDate(nd)+" · "+slotLabel(nt),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{date:o.date,slot:o.slot,log:o.log});
+    await loadOrders();toast("Slot updated → "+slotLabel(nt)+" on "+fmtDate(nd));openOrder(o.pi);
+  };
+  if($("#toggleInlineSlot"))$("#toggleInlineSlot").onclick=()=>{
+    const wrap=$("#inlineSlotWrap"),saveBtn=$("#saveInlineSlot");
+    const showing=wrap.style.display!=='none';
+    wrap.style.display=showing?'none':'block';
+    saveBtn.style.display=showing?'none':'';
+    $("#toggleInlineSlot").textContent=showing?'Edit date / time':'Cancel';
+  };
+  if($("#saveInlineSlot"))$("#saveInlineSlot").onclick=async()=>{
+    const nd=$("#inlineSlotDate").value,nt=$("#inlineSlotTime").value;
+    if(!nd||!nt){toast("Pick a date and time");return;}
+    o.date=nd;o.slot=nt;
+    o.log.push({t:"Date/time updated: "+fmtDate(nd)+" · "+slotLabel(nt),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{date:o.date,slot:o.slot,log:o.log});
+    await loadOrders();toast("Time updated → "+slotLabel(nt)+" on "+fmtDate(nd));openOrder(o.pi);
+  };
 
   if($("#setFollowUp"))$("#setFollowUp").onclick=async()=>{
     const d=$("#fuDate").value;if(!d){toast("Pick a date first");return;}
@@ -1381,7 +1434,7 @@ function _renderSketchSM(r){
 }
 async function _compressSM(dataUrl){
   if(!dataUrl)return null;
-  return new Promise(res=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1200/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.88));};im.onerror=()=>res(null);im.src=dataUrl;});
+  return new Promise(res=>{const im=new Image();if(dataUrl.startsWith('http'))im.crossOrigin='anonymous';im.onload=()=>{try{const s=Math.min(1,1600/im.width,1200/im.height);const w=Math.round(im.width*s),h=Math.round(im.height*s);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);res(cv.toDataURL('image/jpeg',0.88));}catch(e){res(null);}};im.onerror=()=>res(null);im.src=dataUrl;});
 }
 const _FL_SM=[{k:'area',label:'Area (sq.ft)'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
 const _WP_SM=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type'},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed'}];
@@ -1558,5 +1611,7 @@ Promise.all([loadAuditors(),loadOrders()]).then(()=>{
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
 });
 </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+<script src="/pwa-install.js"></script>
 </body>
 </html>
