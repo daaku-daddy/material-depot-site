@@ -1672,35 +1672,46 @@ async function submitAddOrder(){
   const logEntry={t:"Order added manually by "+SESSION.name,d:new Date().toISOString()};
 
   document.getElementById("ao-submit").disabled=true;
+  const payload={
+    pi, po:po.join(','), skus, bm,
+    customer_name:name, phone, addr,
+    matched_audit:false,
+    delivery_date:delivery||null,
+    original_delivery_date:delivery||null,
+    custom_wp:customWp,
+    status:'pending',
+    log:[logEntry],
+    created_by_email:SESSION.email
+  };
+  let savedId=null;
   try{
-    const saved=await sbPost('install_orders',{
-      pi, po:po.join(','), skus, bm,
-      customer_name:name, phone, addr,
-      matched_audit:false,
-      delivery_date:delivery||null,
-      original_delivery_date:delivery||null,
-      custom_wp:customWp,
-      status:'pending',
-      log:[logEntry],
-      created_by_email:SESSION.email
-    });
+    const saved=await sbPost('install_orders',payload);
     const row=Array.isArray(saved)?saved[0]:saved;
-    ORDERS.unshift({
-      id:row?row.id:null,
-      pi,po,skus,bm,name,phone,addr,
-      matchedAudit:false,
-      deliveryDate:delivery||null,
-      customWp,
-      status:"pending",
-      subjobs:null,service:null,
-      log:[logEntry]
-    });
-    closeAddOrder();
-    render();
-    toast("✓ Installation order "+pi+" saved");
+    savedId=row?row.id:null;
   }catch(e){
-    err.textContent="Save failed: "+e.message;err.classList.add("show");
+    // Unique constraint on pi means a soft-deleted row exists — patch it back to active
+    if(e.message&&e.message.includes('install_orders_pi_key')){
+      try{
+        const ex=await sbGet('install_orders?select=id&pi=eq.'+encodeURIComponent(pi)+'&status=eq.deleted&limit=1');
+        if(!Array.isArray(ex)||!ex.length){err.textContent="Save failed: "+e.message;err.classList.add("show");document.getElementById("ao-submit").disabled=false;return;}
+        savedId=ex[0].id;
+        await sbPatch('install_orders',savedId,payload);
+      }catch(e2){err.textContent="Save failed: "+e2.message;err.classList.add("show");document.getElementById("ao-submit").disabled=false;return;}
+    }else{err.textContent="Save failed: "+e.message;err.classList.add("show");document.getElementById("ao-submit").disabled=false;return;}
   }
+  ORDERS.unshift({
+    id:savedId,
+    pi,po,skus,bm,name,phone,addr,
+    matchedAudit:false,
+    deliveryDate:delivery||null,
+    customWp,
+    status:"pending",
+    subjobs:null,service:null,
+    log:[logEntry]
+  });
+  closeAddOrder();
+  render();
+  toast("✓ Installation order "+pi+" saved");
   document.getElementById("ao-submit").disabled=false;
 }
 document.getElementById("addOrderOverlay").addEventListener("click",e=>{if(e.target.id==="addOrderOverlay")closeAddOrder();});
