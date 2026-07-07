@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Store Team · Material Depot</title>
+<link rel="manifest" href="/manifest_store_team.json">
+<style>
+:root{
+  --navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--ink:#1b2230;--muted:#67748a;
+  --line:#dde3ec;--bg:#eef1f6;--card:#fff;
+  --green:#1f7a3f;--greenbg:#e6f3ea;
+  --amber:#9a6200;--amberbg:#fdf2da;
+  --red:#b3261e;--redbg:#fdecea;
+  --purple:#5b3aa6;--purplebg:#ede8fb;
+  --shadow:0 1px 4px rgba(0,0,0,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;}
+a{color:inherit;text-decoration:none;}
+
+/* ── Login ─────────────────────────────────────────────────────────────── */
+.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}
+.login-card{background:var(--card);border-radius:16px;padding:32px;max-width:380px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.10);}
+.login-logo{font-size:11.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.login-title{font-size:26px;font-weight:900;color:var(--navy);margin-bottom:8px;}
+.login-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
+
+/* ── Common elements ────────────────────────────────────────────────────── */
+.inp{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;font-size:15px;color:var(--ink);outline:none;transition:border .15s;background:#fff;}
+.inp:focus{border-color:var(--blue);}
+textarea.inp{min-height:68px;resize:vertical;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px;}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border:none;border-radius:9px;font-size:13.5px;font-weight:700;cursor:pointer;transition:opacity .15s;white-space:nowrap;}
+.btn.navy{background:var(--navy);color:#fff;}
+.btn.navy:hover{opacity:.88;}
+.btn.ghost{background:transparent;border:1.5px solid var(--line);color:var(--ink);}
+.btn.ghost:hover{background:var(--bg);}
+.btn.danger{color:var(--red);border:1.5px solid currentColor;background:transparent;}
+.btn.danger:hover{background:var(--redbg);}
+.btn.full{width:100%;}
+.btn.sm{padding:6px 12px;font-size:12.5px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.err-msg{display:none;color:var(--red);font-size:13px;font-weight:600;margin-top:8px;padding:9px 12px;background:var(--redbg);border-radius:8px;}
+.err-msg.show{display:block;}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+header{background:var(--navy);color:#fff;padding:0 16px;height:54px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;}
+.hd-badge{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;opacity:.5;}
+.hd-title{font-size:16px;font-weight:800;flex:1;}
+.hd-store-btn{font-size:12.5px;font-weight:700;background:rgba(255,255,255,.13);border:0;border-radius:8px;padding:5px 10px;cursor:pointer;color:#fff;display:flex;align-items:center;gap:4px;}
+.hd-store-btn:hover{background:rgba(255,255,255,.22);}
+.hd-out-btn{font-size:12px;font-weight:700;background:transparent;border:1.5px solid rgba(255,255,255,.28);border-radius:7px;padding:5px 10px;cursor:pointer;color:#fff;}
+.hd-out-btn:hover{background:rgba(255,255,255,.1);}
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+.main{max-width:580px;margin:0 auto;padding:16px 14px 40px;}
+
+/* ── Date nav ─────────────────────────────────────────────────────────────── */
+.date-nav{display:flex;gap:7px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.date-nav::-webkit-scrollbar{display:none;}
+.date-chip{flex:0 0 auto;padding:8px 13px;border-radius:10px;background:var(--card);border:1.5px solid var(--line);cursor:pointer;color:var(--muted);transition:all .15s;text-align:center;min-width:52px;}
+.date-chip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+.date-chip:hover:not(.active){border-color:var(--blue);color:var(--blue);}
+.date-chip .dc-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;}
+.date-chip .dc-num{font-size:19px;font-weight:900;line-height:1;}
+
+/* ── Slot grid ─────────────────────────────────────────────────────────────── */
+.slot-group{margin-bottom:14px;}
+.slot-grp-title{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:7px;padding-left:2px;}
+.slot-card{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:7px;display:flex;align-items:center;gap:12px;transition:border .15s,background .15s;}
+.slot-card.bookable{cursor:pointer;}
+.slot-card.bookable:hover{border-color:var(--blue);background:#f6faff;}
+.slot-card.full{opacity:.5;}
+.slot-card.has-my-booking{border-color:var(--green);}
+.slot-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:1px;}
+.slot-dot.green{background:var(--green);}
+.slot-dot.amber{background:var(--amber);}
+.slot-dot.red{background:var(--red);}
+.slot-info{flex:1;min-width:0;}
+.slot-time{font-size:15px;font-weight:800;color:var(--ink);}
+.slot-range{font-size:12.5px;font-weight:500;color:var(--muted);}
+.slot-avail{font-size:11.5px;color:var(--muted);margin-top:3px;}
+.slot-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
+.slot-badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:#e8f0fb;color:var(--navy);}
+.slot-badge.mine{background:var(--greenbg);color:var(--green);}
+
+/* ── Reservations section ─────────────────────────────────────────────────── */
+.section-head{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:22px 0 8px;}
+.res-card{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;}
+.res-top{display:flex;align-items:flex-start;gap:10px;}
+.res-slot-tag{font-size:11px;font-weight:800;color:var(--navy);background:#e8f0fb;border-radius:6px;padding:3px 8px;white-space:nowrap;flex-shrink:0;margin-top:1px;}
+.res-slot-tag.other{background:#f1f3f6;color:var(--muted);}
+.res-info{flex:1;min-width:0;}
+.res-name{font-size:14px;font-weight:700;}
+.res-detail{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.res-cats{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;}
+.res-cat{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--purplebg);color:var(--purple);}
+.res-actions{display:flex;align-items:center;gap:6px;margin-top:10px;padding-top:10px;border-top:1.5px solid var(--line);}
+
+/* ── Overlays ─────────────────────────────────────────────────────────────── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:200;align-items:flex-end;justify-content:center;}
+.overlay.show{display:flex;}
+.sheet{background:var(--card);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:580px;max-height:90vh;overflow-y:auto;}
+.sheet-title{font-size:18px;font-weight:800;color:var(--navy);margin-bottom:4px;}
+.sheet-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
+.store-option{padding:14px 16px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;font-size:15px;font-weight:700;transition:all .15s;display:flex;align-items:center;gap:10px;}
+.store-option:hover,.store-option.active{border-color:var(--navy);background:#eef3f9;color:var(--navy);}
+.store-option .so-dot{width:8px;height:8px;border-radius:50%;background:var(--line);}
+.store-option.active .so-dot{background:var(--navy);}
+.check-group{display:flex;flex-direction:column;gap:7px;margin-bottom:14px;}
+.check-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;cursor:pointer;transition:border .12s;}
+.check-row:hover{border-color:var(--blue);}
+.check-row input[type=checkbox]{width:17px;height:17px;cursor:pointer;accent-color:var(--navy);}
+.check-row span{font-size:14px;font-weight:600;}
+.sheet-footer{display:flex;gap:8px;margin-top:10px;}
+.sheet-footer .btn{flex:1;}
+
+/* ── Loading / empty ─────────────────────────────────────────────────────── */
+.loading-box{text-align:center;padding:40px 0;color:var(--muted);font-size:14px;}
+.info-note{background:#eef4fb;border:1.5px solid #c5d9f0;border-radius:10px;padding:12px 14px;font-size:13px;color:var(--navy);margin-bottom:16px;}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+.spin{display:inline-block;width:20px;height:20px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;}
+.spin.dark{border-color:var(--line);border-top-color:var(--blue);}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy2);color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;z-index:999;opacity:0;pointer-events:none;transition:opacity .22s;white-space:nowrap;}
+.toast-bar.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="loginScreen" style="display:none">
+  <div class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">Material Depot</div>
+      <div class="login-title">Store Team</div>
+      <div class="login-sub">Sign in to manage slot bookings for your store.</div>
+      <div class="field"><label>Email</label><input class="inp" id="lgEmail" type="email" placeholder="you@materialdepot.com" autocomplete="username"></div>
+      <div class="field"><label>Passcode</label><input class="inp" id="lgPass" type="password" placeholder="••••" autocomplete="current-password"></div>
+      <div class="err-msg" id="lgErr"></div>
+      <button class="btn navy full" id="lgBtn" style="margin-top:8px">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<!-- Store select overlay -->
+<div class="overlay" id="storeOverlay">
+  <div class="sheet">
+    <div class="sheet-title">Select your store</div>
+    <div class="sheet-sub">Choose the experience centre you're working at today. This is remembered on this device.</div>
+    <div id="storeList"></div>
+    <div style="font-size:11.5px;color:var(--muted);text-align:center;padding:8px 0">Contact IT to add a new store.</div>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="appMain" style="display:none">
+  <header>
+    <div class="hd-badge">MD</div>
+    <div class="hd-title">Store Team</div>
+    <button class="hd-store-btn" id="storePicker">📍 —</button>
+    <button class="hd-out-btn" id="signOutBtn">Sign out</button>
+  </header>
+  <div class="main">
+    <div class="date-nav" id="dateNav"></div>
+    <div id="slotContent"><div class="loading-box"><span class="spin dark"></span><div style="margin-top:12px">Loading…</div></div></div>
+  </div>
+</div>
+
+<!-- Booking sheet -->
+<div class="overlay" id="bookOverlay">
+  <div class="sheet" id="bookSheet"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast-bar" id="toastBar"></div>
+
+<script>
+/* ── Supabase ────────────────────────────────────────────────────────────────── */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+
+async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),15000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
+async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+
+/* ── Constants ───────────────────────────────────────────────────────────────── */
+const STORES=['JP Nagar','Whitefield','Yelahanka'];
+
+const SLOT_DEFS=[
+  {id:'10:00',label:'10:00 AM',rangeEnd:'11:00 AM',startMin:600,endMin:660,group:'Morning'},
+  {id:'11:00',label:'11:00 AM',rangeEnd:'12:00 PM',startMin:660,endMin:720,group:'Morning'},
+  {id:'13:00',label:'1:00 PM', rangeEnd:'2:00 PM', startMin:780,endMin:840,group:'Afternoon'},
+  {id:'14:00',label:'2:00 PM', rangeEnd:'3:00 PM', startMin:840,endMin:900,group:'Afternoon'},
+  {id:'16:00',label:'4:00 PM', rangeEnd:'5:00 PM', startMin:960,endMin:1020,group:'Evening'},
+  {id:'17:00',label:'5:00 PM', rangeEnd:'6:00 PM', startMin:1020,endMin:1080,group:'Evening'},
+];
+const DAYS_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+/* ── State ───────────────────────────────────────────────────────────────────── */
+let ME=null,MYSTORE=null,SELECTED_DATE=null;
+let DAY_ORDERS=[],AUDITOR_COUNT=3;
+let _refreshTimer=null;
+
+/* ── Utilities ───────────────────────────────────────────────────────────────── */
+function dstr(d){return d.toISOString().slice(0,10);}
+const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
+function fmtDate(s){if(!s)return'—';const d=new Date(s+'T00:00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+function fmtSlotId(id){const s=SLOT_DEFS.find(x=>x.id===id);return s?s.label:'—';}
+
+function slotsConflict(slotA,slotB){
+  // True if there is <120 min gap between the two slots (in either direction)
+  const gapAB=slotB.startMin-slotA.endMin;
+  const gapBA=slotA.startMin-slotB.endMin;
+  return(gapAB>=0&&gapAB<120)||(gapBA>=0&&gapBA<120);
+}
+
+function getAvailability(slotId){
+  const slot=SLOT_DEFS.find(s=>s.id===slotId);
+  if(!slot)return{available:0,total:AUDITOR_COUNT};
+  const blockedAuditors=new Set();
+  let reservationConflicts=0;
+  for(const o of DAY_ORDERS){
+    if(o.status==='deleted')continue;
+    const oSlot=SLOT_DEFS.find(s=>s.id===o.slot);
+    if(!oSlot||!slotsConflict(slot,oSlot))continue;
+    if(o.auditor_id){
+      blockedAuditors.add(o.auditor_id);
+    } else {
+      // slot_reserved without auditor: counts as one capacity unit
+      reservationConflicts++;
+    }
+  }
+  const used=blockedAuditors.size+reservationConflicts;
+  return{available:Math.max(0,AUDITOR_COUNT-used),total:AUDITOR_COUNT,used};
+}
+
+function genSlotPI(store){
+  const ts=Date.now().toString().slice(-9);
+  const code=store.replace(/\s+/g,'').toUpperCase().slice(0,6);
+  return'SRES-'+code+'-'+ts;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────────── */
+let _toastT=null;
+function toast(msg){const el=document.getElementById('toastBar');el.textContent=msg;el.classList.add('show');clearTimeout(_toastT);_toastT=setTimeout(()=>el.classList.remove('show'),3200);}
+
+/* ── Auth ────────────────────────────────────────────────────────────────────── */
+function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+function getStore(){return localStorage.getItem('md_store')||null;}
+function setStore(s){localStorage.setItem('md_store',s);}
+
+async function doLogin(){
+  const el_e=document.getElementById('lgEmail');
+  const el_p=document.getElementById('lgPass');
+  const email=(el_e.value||'').trim().toLowerCase();
+  const pass=(el_p.value||'').trim();
+  const err=document.getElementById('lgErr');
+  err.classList.remove('show');
+  if(!email||!pass){err.textContent='Email and passcode are required.';err.classList.add('show');return;}
+  const btn=document.getElementById('lgBtn');btn.disabled=true;btn.innerHTML='<span class="spin"></span> Signing in…';
+  try{
+    const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(email)+'&passcode=eq.'+encodeURIComponent(pass)+'&limit=1');
+    if(!Array.isArray(rows)||!rows.length){err.textContent='Invalid email or passcode.';err.classList.add('show');btn.disabled=false;btn.textContent='Sign in';return;}
+    const u=rows[0];
+    ME={id:u.id,email:u.email,name:u.name,role:u.role};
+    localStorage.setItem('md_user',JSON.stringify(ME));
+    startApp();
+  }catch(e){err.textContent='Login failed — check your connection.';err.classList.add('show');btn.disabled=false;btn.textContent='Sign in';}
+}
+
+/* ── App boot ────────────────────────────────────────────────────────────────── */
+function startApp(){
+  const session=getSession();
+  if(!session){showLogin();return;}
+  ME=session;
+  MYSTORE=getStore();
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appMain').style.display='block';
+  renderHeader();
+  if(!MYSTORE){showStorePicker(false);return;}
+  initDateNav();
+  loadDay(SELECTED_DATE||dstr(today()));
+  clearInterval(_refreshTimer);
+  _refreshTimer=setInterval(()=>{if(!document.hidden)loadDay(SELECTED_DATE,true);},30000);
+}
+
+function showLogin(){
+  document.getElementById('loginScreen').style.display='block';
+  document.getElementById('appMain').style.display='none';
+  document.getElementById('lgBtn').onclick=doLogin;
+  document.getElementById('lgPass').onkeydown=e=>{if(e.key==='Enter')doLogin();};
+}
+
+function renderHeader(){
+  const sp=document.getElementById('storePicker');
+  sp.textContent='📍 '+(MYSTORE||'Select store');
+  sp.onclick=()=>showStorePicker(true);
+  document.getElementById('signOutBtn').onclick=()=>{
+    if(!confirm('Sign out?'))return;
+    clearInterval(_refreshTimer);
+    localStorage.removeItem('md_user');
+    ME=null;
+    document.getElementById('appMain').style.display='none';
+    showLogin();
+  };
+}
+
+function showStorePicker(fromHeader){
+  const overlay=document.getElementById('storeOverlay');
+  document.getElementById('storeList').innerHTML=STORES.map(s=>`
+    <div class="store-option${MYSTORE===s?' active':''}" data-store="${s}">
+      <div class="so-dot"></div>${s}
+    </div>`).join('');
+  overlay.classList.add('show');
+  document.querySelectorAll('[data-store]').forEach(el=>el.onclick=()=>{
+    MYSTORE=el.dataset.store;setStore(MYSTORE);
+    overlay.classList.remove('show');
+    renderHeader();
+    if(!SELECTED_DATE)initDateNav();
+    loadDay(SELECTED_DATE||dstr(today()));
+  });
+  if(fromHeader)overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.classList.remove('show');},{once:true});
+}
+
+/* ── Date nav ────────────────────────────────────────────────────────────────── */
+function initDateNav(){
+  const nav=document.getElementById('dateNav');
+  const t=today();
+  if(!SELECTED_DATE)SELECTED_DATE=dstr(t);
+  const chips=[];
+  for(let i=0;i<14;i++){
+    const d=new Date(t);d.setDate(t.getDate()+i);
+    const ds=dstr(d);
+    const lbl=i===0?'Today':i===1?'Tmrw':DAYS_SHORT[d.getDay()];
+    chips.push({ds,lbl,num:d.getDate()});
+  }
+  nav.innerHTML=chips.map(c=>`
+    <div class="date-chip${c.ds===SELECTED_DATE?' active':''}" data-date="${c.ds}">
+      <div class="dc-lbl">${c.lbl}</div>
+      <div class="dc-num">${c.num}</div>
+    </div>`).join('');
+  nav.querySelectorAll('[data-date]').forEach(el=>el.onclick=()=>{
+    SELECTED_DATE=el.dataset.date;
+    nav.querySelectorAll('[data-date]').forEach(e=>e.classList.remove('active'));
+    el.classList.add('active');
+    loadDay(SELECTED_DATE);
+  });
+}
+
+/* ── Load day data ───────────────────────────────────────────────────────────── */
+async function loadDay(date,silent=false){
+  SELECTED_DATE=date;
+  if(!silent)document.getElementById('slotContent').innerHTML='<div class="loading-box"><span class="spin dark"></span><div style="margin-top:12px">Loading availability…</div></div>';
+  try{
+    const [orders,auditors]=await Promise.all([
+      sbGet('audit_orders?select=id,pi,customer_name,phone,status,slot,date,auditor_id,bm,audit_ticked&date=eq.'+date+'&status=neq.deleted'),
+      sbGet('profiles?select=id&role=in.(site_auditor,auditor_installer)'),
+    ]);
+    DAY_ORDERS=Array.isArray(orders)?orders:[];
+    AUDITOR_COUNT=Array.isArray(auditors)&&auditors.length?auditors.length:3;
+    renderSlots(date);
+  }catch(e){
+    if(!silent)document.getElementById('slotContent').innerHTML=`<div style="padding:20px 0;color:var(--red);font-weight:600">&#9888; Failed to load — check connection.</div>`;
+  }
+}
+
+/* ── Render slot grid ────────────────────────────────────────────────────────── */
+function renderSlots(date){
+  const myRes=DAY_ORDERS.filter(o=>o.status==='slot_reserved'&&o.bm===MYSTORE);
+  const otherOrders=DAY_ORDERS.filter(o=>o.status!=='slot_reserved');
+  const allBooked=DAY_ORDERS.filter(o=>o.status!=='slot_reserved');
+  let html='';
+
+  // Slot groups
+  ['Morning','Afternoon','Evening'].forEach(grp=>{
+    const slots=SLOT_DEFS.filter(s=>s.group===grp);
+    html+=`<div class="slot-group"><div class="slot-grp-title">${grp}</div>`;
+    slots.forEach(sl=>{
+      const av=getAvailability(sl.id);
+      const isFull=av.available<=0;
+      const myBookingsForSlot=myRes.filter(r=>r.slot===sl.id);
+      const hasMyBooking=myBookingsForSlot.length>0;
+      const dotClass=isFull?'red':(av.available===1?'amber':'green');
+
+      let availText;
+      if(isFull&&!hasMyBooking){
+        availText=`Full — all ${av.total} auditor${av.total!==1?'s':''} booked`;
+      } else {
+        availText=`${av.available} of ${av.total} auditor${av.total!==1?'s':''} available`;
+      }
+
+      // Show pre-booking badges
+      let badges='';
+      if(myBookingsForSlot.length){
+        badges=`<div class="slot-badges">`+myBookingsForSlot.map(r=>`<span class="slot-badge mine">&#10003; ${r.customer_name||'Booking'}</span>`).join('')+`</div>`;
+      }
+      const otherResForSlot=DAY_ORDERS.filter(o=>o.status==='slot_reserved'&&o.bm!==MYSTORE&&o.slot===sl.id);
+      if(otherResForSlot.length){
+        badges+=`<div class="slot-badges">`+otherResForSlot.map(r=>`<span class="slot-badge">${r.bm||'Other store'} pre-booked</span>`).join('')+`</div>`;
+      }
+
+      html+=`<div class="slot-card${isFull&&!hasMyBooking?' full':(hasMyBooking?' has-my-booking bookable':' bookable')}" data-slot="${sl.id}" data-bookable="${!isFull}">
+        <div class="slot-dot ${dotClass}"></div>
+        <div class="slot-info">
+          <div><span class="slot-time">${sl.label}</span> <span class="slot-range">– ${sl.rangeEnd}</span></div>
+          <div class="slot-avail">${availText}</div>
+          ${badges}
+        </div>
+        ${!isFull?`<button class="btn navy sm" data-book="${sl.id}">Book</button>`:`<span style="font-size:12px;font-weight:700;color:var(--red)">Full</span>`}
+      </div>`;
+    });
+    html+='</div>';
+  });
+
+  // Pre-bookings from this store
+  if(myRes.length){
+    html+=`<div class="section-head">Pre-bookings from ${MYSTORE} · ${fmtDate(date)}</div>`;
+    myRes.forEach(r=>{
+      const cats=Array.isArray(r.audit_ticked)?r.audit_ticked.filter(Boolean):[];
+      html+=`<div class="res-card">
+        <div class="res-top">
+          <div class="res-slot-tag">${fmtSlotId(r.slot)}</div>
+          <div class="res-info">
+            <div class="res-name">${esc(r.customer_name||'—')}</div>
+            <div class="res-detail">${esc(r.phone||'—')}</div>
+          </div>
+        </div>
+        ${cats.length?`<div class="res-cats">${cats.map(c=>`<span class="res-cat">${esc(c)}</span>`).join('')}</div>`:''}
+        <div class="res-actions">
+          <span style="font-size:12px;color:var(--muted);flex:1">Booking ID: ${r.pi}</span>
+          <button class="btn danger sm" data-cancel="${r.id}">Cancel</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  // All other bookings that day (from SM / auditor assignments)
+  if(allBooked.length){
+    html+=`<div class="section-head">All confirmed bookings · ${fmtDate(date)}</div>
+    <div class="info-note" style="margin-bottom:10px">These are already-assigned audit visits on this date. They are accounted for in the slot availability above.</div>`;
+    allBooked.forEach(o=>{
+      html+=`<div class="res-card">
+        <div class="res-top">
+          <div class="res-slot-tag other">${fmtSlotId(o.slot)}</div>
+          <div class="res-info">
+            <div class="res-name">${esc(o.customer_name||o.pi||'—')}</div>
+            <div class="res-detail">${esc(o.pi)} · ${(o.status||'').replace(/_/g,' ')}</div>
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
+  if(!myRes.length&&!allBooked.length){
+    html+=`<div style="text-align:center;padding:30px 0;color:var(--muted);font-size:14px">No bookings for this date yet.</div>`;
+  }
+
+  document.getElementById('slotContent').innerHTML=html;
+
+  // Wire book buttons on slot cards
+  document.querySelectorAll('[data-book]').forEach(btn=>btn.onclick=e=>{
+    e.stopPropagation();
+    openBookingSheet(btn.dataset.book,date);
+  });
+  document.querySelectorAll('.slot-card.bookable').forEach(card=>card.onclick=()=>{
+    if(card.dataset.bookable==='true')openBookingSheet(card.dataset.slot,date);
+  });
+
+  // Wire cancel buttons
+  document.querySelectorAll('[data-cancel]').forEach(btn=>btn.onclick=async()=>{
+    if(!confirm('Cancel this slot reservation?'))return;
+    btn.disabled=true;btn.textContent='Cancelling…';
+    try{
+      await sbPatch('audit_orders',btn.dataset.cancel,{status:'deleted'});
+      toast('Slot reservation cancelled.');
+      loadDay(date);
+    }catch(e){toast('Failed to cancel — please try again.');btn.disabled=false;btn.textContent='Cancel';}
+  });
+}
+
+/* ── Booking sheet ───────────────────────────────────────────────────────────── */
+function openBookingSheet(slotId,date){
+  const slot=SLOT_DEFS.find(s=>s.id===slotId);if(!slot)return;
+  const sheet=document.getElementById('bookSheet');
+  const overlay=document.getElementById('bookOverlay');
+
+  sheet.innerHTML=`
+    <div class="sheet-title">Book ${slot.label}</div>
+    <div class="sheet-sub">${fmtDate(date)} · ${MYSTORE}</div>
+    <div class="field"><label>Customer name *</label><input class="inp" id="bkName" placeholder="Full name" autocomplete="off"></div>
+    <div class="field"><label>Phone number *</label><input class="inp" id="bkPhone" type="tel" placeholder="9876543210"></div>
+    <div class="field"><label>Address *</label><textarea class="inp" id="bkAddr" placeholder="Flat / building / area…"></textarea></div>
+    <div class="field"><label>Audit categories <span style="font-weight:500;color:var(--muted)">(select all that apply)</span></label>
+      <div class="check-group">
+        <label class="check-row"><input type="checkbox" id="bkFl"><span>Wooden Flooring</span></label>
+        <label class="check-row"><input type="checkbox" id="bkWp"><span>Standard Wallpapers</span></label>
+        <label class="check-row"><input type="checkbox" id="bkCwp"><span>Custom Wallpapers</span></label>
+      </div>
+    </div>
+    <div class="err-msg" id="bkErr"></div>
+    <div class="sheet-footer">
+      <button class="btn ghost" id="bkCancel">Cancel</button>
+      <button class="btn navy" id="bkConfirm">Confirm booking</button>
+    </div>`;
+
+  overlay.classList.add('show');
+  document.getElementById('bkCancel').onclick=()=>overlay.classList.remove('show');
+  overlay.onclick=e=>{if(e.target===overlay)overlay.classList.remove('show');};
+
+  document.getElementById('bkConfirm').onclick=async()=>{
+    const name=(document.getElementById('bkName').value||'').trim();
+    const phone=(document.getElementById('bkPhone').value||'').trim();
+    const addr=(document.getElementById('bkAddr').value||'').trim();
+    const err=document.getElementById('bkErr');
+    err.classList.remove('show');
+    if(!name){err.textContent='Customer name is required.';err.classList.add('show');return;}
+    if(!phone){err.textContent='Phone number is required.';err.classList.add('show');return;}
+    if(!addr){err.textContent='Address is required.';err.classList.add('show');return;}
+
+    const cats=[];
+    if(document.getElementById('bkFl').checked)cats.push('Wooden Flooring');
+    if(document.getElementById('bkWp').checked)cats.push('Standard Wallpapers');
+    if(document.getElementById('bkCwp').checked)cats.push('Custom Wallpapers');
+
+    const confirmBtn=document.getElementById('bkConfirm');
+    confirmBtn.disabled=true;confirmBtn.innerHTML='<span class="spin"></span> Booking…';
+
+    try{
+      const pi=genSlotPI(MYSTORE);
+      await sbPost('audit_orders',{
+        pi,
+        po:'',
+        customer_name:name,
+        phone,
+        addr,
+        bm:MYSTORE,
+        date,
+        slot:slotId,
+        status:'slot_reserved',
+        skus:[{c:'AUDIT',n:'Site Audit',audit:true}],
+        audit_ticked:cats,
+        service:null,
+        log:[{t:'Slot pre-booked at '+MYSTORE+' store',d:new Date().toISOString(),by:'manual',who:ME.name}],
+        created_by_email:ME.email,
+      });
+      overlay.classList.remove('show');
+      toast('&#10003; Slot booked for '+name+' · '+slot.label);
+      loadDay(date);
+    }catch(e){
+      err.textContent='Booking failed — '+(e.message||'please try again');
+      err.classList.add('show');
+      confirmBtn.disabled=false;confirmBtn.textContent='Confirm booking';
+    }
+  };
+}
+
+/* ── Tiny escape helper ──────────────────────────────────────────────────────── */
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+/* ── Boot ────────────────────────────────────────────────────────────────────── */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&SELECTED_DATE)loadDay(SELECTED_DATE,true);});
+startApp();
+</script>
+<script src="/pwa-install.js"></script>
+</body>
+</html>

@@ -87,6 +87,7 @@
   .c-onway{background:#e8f0ff;color:#2b54c2;}
   .c-atsite{background:#e9e3fb;color:#5b3aa6;}
   .c-completed{background:var(--greenbg);color:var(--green);}
+  .c-slotres{background:#e8f0fb;color:#1a4a8a;}
   .autobadge{font-size:9px;font-weight:800;letter-spacing:.5px;background:#dfeafd;color:#2b54c2;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle;}
   .btn{border:0;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
   .btn.primary{background:var(--blue);color:#fff;}
@@ -488,6 +489,7 @@ function auditorsAvailable(ds){return AUDITORS.filter(a=>capFor(a.id,ds)>=1).len
 function dailyTotalCap(ds){return AUDITORS.reduce((s,a)=>s+capFor(a.id,ds),0);}
 
 const STATUS={
+  slot_reserved:{l:"Pre-booked (Store)",c:"c-slotres"},
   pending:{l:"Pending",c:"c-pending"},
   created:{l:"Service Created",c:"c-created"},
   call_na:{l:"Call not picked",c:"c-call_na"},
@@ -634,16 +636,20 @@ function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div
 function ordersView(){
   const c={};Object.keys(STATUS).forEach(k=>c[k]=0);ORDERS.forEach(o=>c[o.status]++);
   const live=c.scheduled+c.assigned+c.onway+c.atsite;
+  const mainOrderCount=ORDERS.filter(o=>o.status!=='slot_reserved').length;
   const stats=`<div class="stats">
-    ${statTile(ORDERS.length,"Live audit orders","#1F3A5F","all")}
+    ${statTile(mainOrderCount,"Live audit orders","#1F3A5F","all")}
+    ${c.slot_reserved?statTile(c.slot_reserved,"Store pre-bookings","#1a4a8a","slot_reserved"):''}
     ${statTile(c.pending+c.created+c.call_na,"Need action","#b3261e","action")}
     ${statTile(live,"Scheduled / in progress","#2E6CA8","live")}
     ${statTile(c.reschedule,"To reschedule","#9a6200","reschedule")}
     ${statTile(c.completed,"Completed","#1f7a3f","completed")}</div>`;
-  const filters=["all","followup","pending","created","scheduled","assigned","reschedule","completed"];
+  const filters=["all","slot_reserved","followup","pending","created","scheduled","assigned","reschedule","completed"];
   const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
   const rows=ORDERS.filter(o=>{
-    if(filterStatus!=="all"){
+    if(filterStatus==="all"){
+      if(o.status==='slot_reserved')return false; // pre-bookings shown only via explicit filter
+    } else {
       if(filterStatus==="action")return ["pending","created","call_na"].includes(o.status);
       if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
       if(filterStatus==="live")return ["scheduled","assigned","onway","atsite"].includes(o.status);
@@ -665,10 +671,15 @@ function ordersView(){
       <td>${aud}</td>
       <td>${chip(o.status)}${o.service&&o.service.rectification_raised?`<span class="autobadge" style="background:var(--amberbg);color:var(--amber);margin-left:4px">RECT</span>`:''}${(()=>{const fu=o.service&&o.service.follow_up_date;return fu?`<div style="margin-top:4px"><span class="chip" style="background:${fu<=dstr(today)?'var(--amberbg)':'#fefce8'};color:${fu<=dstr(today)?'var(--amber)':'#7a6200'};font-size:10px">📅 ${fu===dstr(today)?'Follow-up today':fu<dstr(today)?'Follow-up overdue':fmtDate(fu)}</span></div>`:'';})()}</td></tr>`;
   }).join("");
+  const todaySlotRes=ORDERS.filter(o=>o.status==='slot_reserved'&&o.date===dstr(today));
+  const slotResBanner=todaySlotRes.length?`<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a;margin-bottom:0">
+    &#128197; <b>${todaySlotRes.length} slot pre-booking${todaySlotRes.length!==1?'s':''} for today</b> from store teams — waiting for Kylas enquiry numbers. <button data-filter="slot_reserved" style="border:0;background:transparent;color:var(--blue);font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline;padding:0">View all pre-bookings</button>
+  </div>`:'';
   return `<div class="crumbs">Site Audit / Orders</div>
   <div class="pagehead"><div><h1>Audit orders</h1><p>Every confirmed order containing the Site Audit SKU (${AUDIT_SKU}). Click a row to manage.</p></div>
     <div class="actions"><button class="btn ghost sm" onclick="openKylasSheet()">&#128203; Pending POs</button><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}
+  ${slotResBanner}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
       <input type="date" id="dateFilter" value="${filterDate}" title="Filter by audit date" style="border:1.5px solid ${filterDate?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${filterDate?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
@@ -828,8 +839,9 @@ function auditorsView(){
 /* ============== DRAWER ============== */
 function openOrder(pi){
   currentPI=pi;const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
-  $("#dwTitle").textContent=o.name;
-  $("#dwSub").innerHTML=`${o.pi} · BM ${o.bm} ${chip(o.status)}`;
+  $("#dwTitle").textContent=o.name||(o.status==='slot_reserved'?'Pre-booked Slot':'—');
+  const _bmLabel=o.status==='slot_reserved'?'Store':'BM';
+  $("#dwSub").innerHTML=`${o.pi} · ${_bmLabel} ${o.bm} ${chip(o.status)}`;
   $("#dwBody").innerHTML=drawerBody(o);
   $("#dwFoot").innerHTML=drawerFoot(o);
   $("#scrim").classList.add("show");$("#drawer").classList.add("show");
@@ -847,7 +859,28 @@ function stepper(o){
   <div class="stephint">Tap any earlier step to move the order back if you misclicked.</div>`;
 }
 
+function slotReservedDrawerBody(o){
+  const cats=Array.isArray(o.auditTicked)?o.auditTicked.filter(Boolean):[];
+  return `<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a">
+    &#128197; Slot pre-booked from <b>${o.bm}</b> store. When the Kylas enquiry arrives, create a new service order and schedule it for this date and time.
+  </div>
+  <div class="sec"><h3>Pre-booking details</h3><div class="kv">
+    <div class="k">Date</div><div class="v">${fmtDate(o.date)}</div>
+    <div class="k">Slot</div><div class="v">${slotLabel(o.slot)}</div>
+    <div class="k">Store</div><div class="v">${o.bm}</div>
+    <div class="k">Categories</div><div class="v">${cats.length?cats.join(', '):'—'}</div>
+    <div class="k">Booking ID</div><div class="v">${o.pi}</div>
+  </div></div>
+  <div class="sec"><h3>Customer</h3><div class="kv">
+    <div class="k">Name</div><div class="v">${o.name}</div>
+    <div class="k">Phone</div><div class="v">${o.phone}</div>
+    <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div>
+  </div></div>
+  <div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='manual'?' · store team':''}</div></div>`).join("")}</div></div>`;
+}
+
 function drawerBody(o){
+  if(o.status==='slot_reserved')return slotReservedDrawerBody(o);
   let html=stepper(o);
   const skupills=o.skus.map(s=>`<span class="skupill ${s.audit?'audit':''}">${s.c} · ${s.n}</span>`).join(" ");
   html+=`<div class="sec"><h3>Order</h3><div class="kv">
@@ -1025,6 +1058,7 @@ function editAuditServiceSection(o){
 
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">🗑 Delete</button>`;
+  if(o.status==="slot_reserved")return `${del}<button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="pending")return `${del}<button class="btn gray" id="dClose">Cancel</button><button class="btn navy" id="createService">Create service</button>`;
   if(["created","call_na"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
