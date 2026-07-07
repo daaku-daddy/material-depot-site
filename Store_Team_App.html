@@ -209,7 +209,7 @@ let DAY_ORDERS=[],AUDITOR_COUNT=3;
 let _refreshTimer=null;
 
 /* ── Utilities ───────────────────────────────────────────────────────────────── */
-function dstr(d){return d.toISOString().slice(0,10);}
+function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
 const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
 function fmtDate(s){if(!s)return'—';const d=new Date(s+'T00:00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
 function fmtSlotId(id){const s=SLOT_DEFS.find(x=>x.id===id);return s?s.label:'—';}
@@ -361,10 +361,12 @@ async function loadDay(date,silent=false){
   try{
     const [orders,auditors]=await Promise.all([
       sbGet('audit_orders?select=id,pi,customer_name,phone,status,slot,date,auditor_id,bm,audit_ticked&date=eq.'+date+'&status=neq.deleted'),
-      sbGet('profiles?select=id&role=in.(site_auditor,auditor_installer)'),
+      sbGet('profiles?select=id,active_from&role=in.(site_auditor,auditor_installer)'),
     ]);
     DAY_ORDERS=Array.isArray(orders)?orders:[];
-    AUDITOR_COUNT=Array.isArray(auditors)&&auditors.length?auditors.length:3;
+    // Only count auditors who are active on this date (active_from null = always active)
+    const activeAuditors=(Array.isArray(auditors)?auditors:[]).filter(a=>!a.active_from||a.active_from<=date);
+    AUDITOR_COUNT=activeAuditors.length||1;
     renderSlots(date);
   }catch(e){
     if(!silent)document.getElementById('slotContent').innerHTML=`<div style="padding:20px 0;color:var(--red);font-weight:600">&#9888; Failed to load — check connection.</div>`;

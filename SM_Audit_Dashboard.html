@@ -481,9 +481,13 @@ function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
 const DEFAULT_CAP=3;
 const CAPS={};
 (function(){try{const c=localStorage.getItem('md_audit_caps');if(c)Object.assign(CAPS,JSON.parse(c));}catch(e){}}());
-function capFor(aid,ds){const c=CAPS[aid];if(c&&c[ds]!==undefined)return c[ds];return DEFAULT_CAP;}
+function capFor(aid,ds){
+  const a=AUDITORS.find(x=>x.id===aid);
+  if(a&&a.activeFrom&&ds<a.activeFrom)return 0; // not yet active on this date
+  const c=CAPS[aid];if(c&&c[ds]!==undefined)return c[ds];return DEFAULT_CAP;
+}
 function setCap(aid,ds,v){if(!CAPS[aid])CAPS[aid]={};CAPS[aid][ds]=v;try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}}
-// auditors available on a date = those with cap>=1
+// auditors available on a date = those with cap>=1 (respects active_from)
 function auditorsAvailable(ds){return AUDITORS.filter(a=>capFor(a.id,ds)>=1).length;}
 // total daily throughput = sum of caps
 function dailyTotalCap(ds){return AUDITORS.reduce((s,a)=>s+capFor(a.id,ds),0);}
@@ -514,8 +518,8 @@ function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner')
 /* ============== SUPABASE LOAD ============== */
 async function loadAuditors(){
   try{
-    const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email');
-    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP}));
+    const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email,active_from');
+    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null}));
     AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
   }catch(e){console.error('loadAuditors',e);}
 }
@@ -822,18 +826,36 @@ function slotsView(){
 }
 
 function auditorsView(){
-  // editable per-day cap grid: rows = auditors, cols = next 7 days
   const days=[];for(let i=0;i<7;i++)days.push(addDays(i));
+  const todayStr=dstr(today);
   const headDays=days.map(d=>`<th>${d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric'})}</th>`).join("");
   const rows=AUDITORS.map(a=>{
-    const cells=days.map(d=>{const ds=dstr(d);return `<td><input type="number" min="0" value="${capFor(a.id,ds)}" data-cap="${a.id}" data-date="${ds}"></td>`;}).join("");
-    return `<tr><td class="audname">${a.name}<div style="font-weight:500;color:var(--muted);font-size:11px">${a.zone} · ${a.phone}</div></td>${cells}</tr>`;
+    const isActiveNow=!a.activeFrom||a.activeFrom<=todayStr;
+    const statusChip=isActiveNow
+      ?`<span class="chip c-completed" style="font-size:10px;padding:2px 8px">&#9679; Active</span>`
+      :`<span class="chip c-pending" style="font-size:10px;padding:2px 8px">From ${fmtDate(a.activeFrom)}</span>`;
+    const cells=days.map(d=>{
+      const ds=dstr(d);
+      const inactive=a.activeFrom&&ds<a.activeFrom;
+      return `<td><input type="number" min="0" value="${capFor(a.id,ds)}" data-cap="${a.id}" data-date="${ds}"${inactive?' disabled style="opacity:.35;background:#f5f5f5"':''}></td>`;
+    }).join("");
+    return `<tr>
+      <td class="audname" style="min-width:160px">
+        <div style="font-weight:700">${a.name}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">
+          ${statusChip}
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:var(--muted)">Active from:</div>
+        <input type="date" style="margin-top:3px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 8px;outline:none;width:100%" value="${a.activeFrom||''}" data-activefrom="${a.id}" title="Leave blank = active immediately. Set a future date = available from that date.">
+      </td>
+      ${cells}
+    </tr>`;
   }).join("");
   return `<div class="crumbs">Setup / Auditors &amp; caps</div>
-  <div class="pagehead"><div><h1>Auditors &amp; daily caps</h1><p>Set each auditor's max jobs per day, varied by date. 0 = unavailable that day.</p></div>
-   <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button><button class="btn navy sm" id="saveCaps">Save caps</button></div></div>
-  <div class="note">Default cap when left untouched is ${DEFAULT_CAP}/day. Caps drive both window capacity (availability) and the assignment limit.</div>
-  <div class="tablecard capgrid"><table><thead><tr><th class="audname">Auditor</th>${headDays}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  <div class="pagehead"><div><h1>Auditors &amp; daily caps</h1><p>Mark each auditor as active (with optional start date) and set their daily order cap.</p></div>
+   <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button><button class="btn navy sm" id="saveCaps">Save</button></div></div>
+  <div class="note"><b>Active from</b>: leave blank = active now. Set a future date = auditor starts accepting orders from that date. <b>Daily cap</b>: max audit orders per day (default ${DEFAULT_CAP}). Set to 0 to make unavailable on a specific day. Greyed cells = before start date.</div>
+  <div class="tablecard capgrid"><table><thead><tr><th class="audname" style="min-width:160px">Auditor</th>${headDays}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ============== DRAWER ============== */
@@ -1313,7 +1335,25 @@ function wire(){
     catch(e){toast("Restore failed — "+e.message);b.disabled=false;b.textContent="Restore";}
   });
   document.querySelectorAll("[data-cap]").forEach(inp=>inp.onchange=()=>{setCap(inp.dataset.cap,inp.dataset.date,parseInt(inp.value)||0);});
-  if($("#saveCaps"))$("#saveCaps").onclick=()=>{try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}toast("Auditor caps saved");render();};
+  if($("#saveCaps"))$("#saveCaps").onclick=async()=>{
+    const btn=$("#saveCaps");btn.disabled=true;btn.textContent="Saving…";
+    try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}
+    // Persist active_from changes to DB for each auditor
+    const activeFromInputs=document.querySelectorAll("[data-activefrom]");
+    const patches=[];
+    activeFromInputs.forEach(inp=>{
+      const aid=inp.dataset.activefrom;
+      const a=AUDITORS.find(x=>x.id===aid);
+      const newVal=inp.value||null;
+      if(a&&a.activeFrom!==newVal){
+        a.activeFrom=newVal; // update in-memory
+        patches.push(sbPatch('profiles',aid,{active_from:newVal}).catch(()=>{}));
+      }
+    });
+    await Promise.all(patches);
+    btn.disabled=false;btn.textContent="Save";
+    toast("Auditor settings saved");render();
+  };
   document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);try{localStorage.setItem('md_audit_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}render();toast("Flooring window deleted");});
   document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);try{localStorage.setItem('md_audit_slots_wp',JSON.stringify(SLOTS_WP));}catch(e){}render();toast("Wallpaper window deleted");});
   if($("#addSlotFl"))$("#addSlotFl").onclick=()=>{SLOTS_FL.push({id:"sf"+Date.now(),label:"New window"});try{localStorage.setItem('md_audit_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}render();toast("Flooring window added");};
