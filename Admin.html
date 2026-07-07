@@ -80,6 +80,7 @@
   .rb-site_auditor{background:#e4f0fb;color:var(--blue);}
   .rb-installer{background:var(--greenbg);color:var(--green);}
   .rb-auditor_installer{background:#e0f4f4;color:#0f6e74;}
+  .rb-store_staff{background:var(--amberbg);color:var(--amber);}
 
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
   .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;}
@@ -289,13 +290,15 @@ const ROLES = {
   site_auditor:       {label:'Site Auditor',             color:'#2E6CA8', file:'Site_Auditor_App.html'},
   installer:          {label:'Site Installer',           color:'#1f7a3f', file:'Site_Installer_App.html'},
   auditor_installer:  {label:'Auditor + Installer',      color:'#0f6e74', file:'Site_Auditor_App.html'},
+  store_staff:        {label:'Store Team',               color:'#9a6200', file:'Store_Team_App.html'},
 };
-const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧'};
+const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪'};
 const ROLE_DESCS = {
   service_mgr:'Audit scheduling & installation tracking dashboard',
   site_auditor:'Field audit mobile app — site visits & reports',
   installer:'Field installation app — job checklist & progress',
   auditor_installer:'Both audit and installer apps — can switch between them',
+  store_staff:'Experience centre slot booking for walk-in clients',
 };
 
 function roleBadge(r){const c=ROLES[r]||{label:r,color:'#999'};return `<span class="role-badge rb-${r}">${c.label}</span>`;}
@@ -352,7 +355,7 @@ async function renderOverview(m){
     sbGet('install_orders?status=in.(scheduled,onway,atsite)&select=id'),
   ]);
   const list=Array.isArray(users)?users:[];
-  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0};
+  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0,store_staff:0};
   list.forEach(u=>{if(c[u.role]!==undefined)c[u.role]++;});
   const total=list.length;
   const active=(Array.isArray(auditActive)?auditActive.length:0)+(Array.isArray(installActive)?installActive.length:0);
@@ -368,7 +371,8 @@ async function renderOverview(m){
       <div class="stat-card"><div class="val">${c.service_mgr}</div><div class="lbl">Service Managers</div><div class="bar"><div class="bar-fill" style="width:${total?c.service_mgr/total*100:0}%;background:var(--navy)"></div></div></div>
       <div class="stat-card"><div class="val">${c.site_auditor}</div><div class="lbl">Site Auditors</div><div class="bar"><div class="bar-fill" style="width:${total?c.site_auditor/total*100:0}%;background:var(--blue)"></div></div></div>
       <div class="stat-card"><div class="val">${c.installer}</div><div class="lbl">Site Installers</div><div class="bar"><div class="bar-fill" style="width:${total?c.installer/total*100:0}%;background:var(--green)"></div></div></div>
-      <div class="stat-card"><div class="val">${active}</div><div class="lbl">Active Jobs Today</div><div class="bar"><div class="bar-fill" style="width:60%;background:var(--amber)"></div></div></div>
+      <div class="stat-card"><div class="val">${c.store_staff}</div><div class="lbl">Store Team</div><div class="bar"><div class="bar-fill" style="width:${total?c.store_staff/total*100:0}%;background:var(--amber)"></div></div></div>
+      <div class="stat-card"><div class="val">${active}</div><div class="lbl">Active Jobs Today</div><div class="bar"><div class="bar-fill" style="width:60%;background:var(--blue)"></div></div></div>
     </div>
     <div class="card">
       <div class="card-head"><h2>Team Members</h2><button class="btn-primary" style="margin-left:auto" onclick="openAddUser()">+ Add User</button></div>
@@ -455,6 +459,7 @@ function openAddUser(){
           <option value="site_auditor">Site Auditor</option>
           <option value="installer">Site Installer</option>
           <option value="auditor_installer">Site Auditor + Installer</option>
+          <option value="store_staff">Store Team</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -515,6 +520,7 @@ function openEditRole(u){
           <option value="site_auditor" ${u.role==='site_auditor'?'selected':''}>Site Auditor</option>
           <option value="installer" ${u.role==='installer'?'selected':''}>Site Installer</option>
           <option value="auditor_installer" ${u.role==='auditor_installer'?'selected':''}>Site Auditor + Installer</option>
+          <option value="store_staff" ${u.role==='store_staff'?'selected':''}>Store Team</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         </select>
       </div>
@@ -609,7 +615,7 @@ function drawRoleViewer(m){
   m.innerHTML=`
     <div class="page-head"><h1>Role Viewer</h1><p>Preview exactly what each role sees when they log in.</p></div>
     <div class="role-cards">
-      ${['service_mgr','site_auditor','installer','auditor_installer'].map(k=>{
+      ${['service_mgr','site_auditor','installer','auditor_installer','store_staff'].map(k=>{
         const cnt=(rvPersons[k]||[]).length;
         return `<div class="role-card${rvRole===k?' active':''}" onclick="setRoleView('${k}')">
           <div class="rc-ico">${ROLE_ICONS[k]}</div>
