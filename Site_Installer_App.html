@@ -193,6 +193,7 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+async function sbPatchLong(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),90000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
@@ -630,19 +631,20 @@ function autosave(){
   const mySeq=++_autosaveSeq;
   _autosaveTimer=setTimeout(async()=>{
     if(_autosaveSeq!==mySeq)return;
+    if(_completionWrite){showSaveStatus('saved');return;}
     if(!jcJob||!jcJob.id||!jcJob.sjId){showSaveStatus('local');return;}
     try{
       const parentRows=await sbGet('install_orders?id=eq.'+jcJob.id+'&select=subjobs');
-      if(_autosaveSeq!==mySeq)return;
+      if(_autosaveSeq!==mySeq||_completionWrite)return;
       if(Array.isArray(parentRows)&&parentRows[0]){
         const subjobs=parentRows[0].subjobs||[];
         const sj=subjobs.find(s=>s.id===jcJob.sjId);
         const draftRooms=collectRooms().map(({photos,...rest})=>rest);
         if(sj)sj.jobcard={draft:true,rooms:draftRooms};
-        if(_autosaveSeq!==mySeq)return;
+        if(_autosaveSeq!==mySeq||_completionWrite)return;
         await sbPatch('install_orders',jcJob.id,{subjobs});
-        // If completion fired while this draft was in-flight, re-issue completion now
-        if(_completionWrite){try{await sbPatch('install_orders',jcJob.id,_completionWrite);}catch(e){}}
+        // Safety: if completion fired while draft was in-flight, re-issue completion
+        if(_completionWrite){try{await sbPatchLong('install_orders',jcJob.id,_completionWrite);}catch(e){}}
         else if(_autosaveSeq===mySeq)showSaveStatus('saved');
       }
     }catch(e){showSaveStatus('local');}
@@ -871,9 +873,12 @@ function showInstallSignature(j,ratings){
           sj.jobcard=j.jobcard;
         }
         const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
-        const completionPatch={subjobs,status:parentStatus,log:j.parentLog};
+        // Step 1: update status immediately (small — ensures order leaves atsite in SM/admin)
+        await sbPatch('install_orders',j.id,{status:parentStatus,log:j.parentLog});
+        // Step 2: save full job card (subjobs with job card data — may be large)
+        const completionPatch={subjobs};
         _completionWrite=completionPatch;
-        await sbPatch('install_orders',j.id,completionPatch);
+        await sbPatchLong('install_orders',j.id,completionPatch);
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
         // Write ratings to dedicated table for reporting/NPS
         try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){

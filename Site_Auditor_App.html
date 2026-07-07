@@ -192,6 +192,7 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+async function sbPatchLong(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),90000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
@@ -608,14 +609,15 @@ function autosave(){
   const mySeq=++_autosaveSeq;
   _autosaveTimer=setTimeout(async()=>{
     if(_autosaveSeq!==mySeq)return;
+    // Never overwrite a completed job card with a draft
+    if(_completionWrite){showSaveStatus('saved');return;}
     if(!jcOrder||!jcOrder.id){showSaveStatus('local');return;}
     try{
       const draftRooms=collectRooms().map(({photos,...rest})=>rest);
-      if(_autosaveSeq!==mySeq)return;
+      if(_autosaveSeq!==mySeq||_completionWrite)return;
       await sbPatch('audit_orders',jcOrder.id,{audit_ticked:{draft:true,rooms:draftRooms}});
-      // If the completion write fired while this draft was in-flight, the draft
-      // may have landed after and overwritten it. Re-issue the completion write now.
-      if(_completionWrite){try{await sbPatch('audit_orders',jcOrder.id,_completionWrite);}catch(e){}}
+      // Safety: if completion write landed while draft was in-flight, re-issue it
+      if(_completionWrite){try{await sbPatchLong('audit_orders',jcOrder.id,_completionWrite);}catch(e){}}
       else if(_autosaveSeq===mySeq)showSaveStatus('saved');
     }catch(e){showSaveStatus('local');}
   },3000);
@@ -801,17 +803,22 @@ function showAuditSignature(o,ratings){
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto",who:ME.name});
-    if(o.id){try{
+    if(o.id){
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photos:r.photos||[],sketchStrokes:r.sketchStrokes||[]}))};
-      const completionPatch={status:'completed',log:o.log,audit_ticked:ticked};
-      _completionWrite=completionPatch;
-      await sbPatch('audit_orders',o.id,completionPatch);
-      try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
-      // Write ratings to dedicated table for reporting/NPS
+      // Step 1: mark status completed immediately (small, fast — ensures order moves out of atsite in SM/admin)
+      try{await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});}catch(e){toast("Could not save status — check network");}
+      // Step 2: save job card with long timeout (may be large due to base64 photo fallbacks)
+      const jcPatch={audit_ticked:ticked};
+      _completionWrite=jcPatch;
+      try{
+        await sbPatchLong('audit_orders',o.id,jcPatch);
+        try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
+      }catch(e){toast("Job card saved locally — will retry on next open");}
+      // Write ratings
       try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){
         try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e2){console.error('ratings write failed',e2);}
       }
-    }catch(e){toast("Saved locally — sync failed");}}
+    }
     btn.textContent="Building PDF…";
     let pdfUrl=null;
     try{pdfUrl=await genPDF(o);}catch(e){console.error('PDF error:',e);}

@@ -928,6 +928,16 @@ function drawerBody(o){
       <div class="field"><label>Visit time</label><input type="time" id="bookTime" value="${o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00'}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
       <div class="field"><label>Remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:72px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div></div>`;
   } else if(o.status==="completed"){
+    // Fetch audit_ticked on demand if not already loaded (it's excluded from bulk fetch due to size)
+    if(!o.auditTicked){
+      sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked').then(rows=>{
+        if(Array.isArray(rows)&&rows[0]&&rows[0].audit_ticked){
+          o.auditTicked=rows[0].audit_ticked;
+          const drw=document.getElementById('drawerContent');
+          if(drw)openOrder(o.pi); // re-render drawer with job card data
+        }
+      }).catch(()=>{});
+    }
     const ticked=o.auditTicked;
     const hasRooms=ticked&&!Array.isArray(ticked)&&Array.isArray(ticked.rooms)&&ticked.rooms.length;
     const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
@@ -1071,9 +1081,21 @@ function wireDrawer(o){
   // manual status override
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
+    // Determine effective positions for clearing forward data
+    const tEff=(st==='reschedule'||st==='call_na')?FLOW.indexOf('created'):FLOW.indexOf(st);
+    let curEff=FLOW.indexOf(o.status);
+    if(['assigned','onway','atsite'].includes(o.status))curEff=FLOW.indexOf('assigned');
+    if(o.status==='completed')curEff=FLOW.length-1;
+    if(o.status==='reschedule'||o.status==='call_na')curEff=FLOW.indexOf('created');
     o.status=st;
     o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
-    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,log:o.log});
+    const patch={status:o.status,log:o.log};
+    // Clear forward data when moving backward
+    if(tEff<curEff){
+      if(tEff<FLOW.indexOf('assigned')){o.auditor=null;patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;}
+      if(tEff<FLOW.indexOf('scheduled')){o.slot=null;o.date=null;patch.slot=null;patch.date=null;}
+    }
+    if(o.id)await sbPatch('audit_orders',o.id,patch);
     await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
   });
 
@@ -1317,9 +1339,14 @@ async function submitAddOrder(){
   skus.push({c:AUDIT_SKU,n:"Site Audit",audit:true});
 
   const ticked=[];
-  if(document.getElementById("ao-fl").checked)ticked.push("Wooden Flooring");
-  if(document.getElementById("ao-wp").checked)ticked.push("Standard Wallpapers");
-  if(document.getElementById("ao-cwp").checked)ticked.push("Custom Wallpapers");
+  // Auto-detect from SKU codes if the checkboxes weren't manually ticked
+  const skuUp=skuRaw.toUpperCase();
+  const autoFl=skuUp.includes('WF-')||skuUp.includes('FLOOR');
+  const autoWp=skuUp.includes('WP-')||skuUp.includes('WALL');
+  const autoCustomWp=skuUp.includes('CWP-')||skuUp.includes('CUSTOM');
+  if(document.getElementById("ao-fl").checked||autoFl)ticked.push("Wooden Flooring");
+  if(document.getElementById("ao-wp").checked||autoWp)ticked.push("Standard Wallpapers");
+  if(document.getElementById("ao-cwp").checked||autoCustomWp)ticked.push("Custom Wallpapers");
 
   const logEntry={t:"Order added manually by "+SESSION.name,d:new Date().toISOString()};
 
