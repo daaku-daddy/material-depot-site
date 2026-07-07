@@ -492,16 +492,17 @@ async function submitAddUser(){
   const itypeEl=document.getElementById('f-itype');
   const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
   btn.disabled=true;btn.textContent='Adding…';
-  const res=await sbPost('profiles',{name,email,role,installer_type});
-  btn.disabled=false;btn.innerHTML='Add User';
-  if(res&&(res.code||res.error)){
-    const msg=res.message||'';
-    err.textContent=msg.includes('unique')||msg.includes('duplicate')?'This email is already added.':msg||'Something went wrong.';
-    err.classList.add('show');return;
+  try{
+    await sbPost('profiles',{name,email,role,installer_type});
+    closeModal();
+    toast(`✓ ${name} added as ${ROLES[role]?.label||role}`);
+    await renderUsers(document.getElementById('main'));
+  }catch(e){
+    btn.disabled=false;btn.textContent='Add User';
+    const msg=e.message||'';
+    err.textContent=msg.includes('unique')||msg.includes('duplicate')?'This email is already added.':msg.includes('violates')||msg.includes('check')?'Role not allowed — ask IT to run the DB constraint update.':msg||'Something went wrong.';
+    err.classList.add('show');
   }
-  closeModal();
-  toast(`✓ ${name} added as ${ROLES[role].label}`);
-  await renderUsers(document.getElementById('main'));
 }
 
 function openEditRole(u){
@@ -550,14 +551,14 @@ async function submitEditRole(id,name){
   const role=document.getElementById('e-role').value;
   const itypeEl=document.getElementById('e-itype');
   const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
-  const res=await sbPatch('profiles',id,{role,installer_type});
-  if(Array.isArray(res)&&res.length>0){
+  try{
+    await sbPatch('profiles',id,{role,installer_type});
     closeModal();
-    toast(`✓ ${name}'s role updated to ${ROLES[role].label}`);
+    toast(`✓ ${name}'s role updated to ${ROLES[role]?.label||role}`);
     await renderUsers(document.getElementById('main'));
-  } else {
-    const msg=(res&&res.message)||'Unknown error';
-    toast(`Error: ${msg}`);
+  }catch(e){
+    const msg=e.message||'';
+    toast('Error: '+(msg.includes('violates')||msg.includes('check')?'Role not allowed — run the DB constraint update in Supabase SQL Editor.':msg||'Unknown error'));
   }
 }
 
