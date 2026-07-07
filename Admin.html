@@ -306,18 +306,21 @@ function initials(n){return(n||'').split(' ').map(x=>x[0]).join('').slice(0,2).t
 function fmtDate(s){if(!s)return '—';const d=new Date(s);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
 
 const JOB_STATUS={
-  pending:    {l:'Pending',      c:'c-pending'},
-  assigned:   {l:'Assigned',     c:'c-scheduled'},
-  callpending:{l:'Call Pending', c:'c-scheduled'},
-  scheduled:  {l:'Scheduled',    c:'c-scheduled'},
-  onway:      {l:'On the Way',   c:'c-onway'},
-  atsite:     {l:'At Site',      c:'c-atsite'},
-  completed:  {l:'Completed',    c:'c-completed'},
-  reschedule: {l:'Reschedule',   c:'c-reschedule'},
+  pending:    {l:'Pending',         c:'c-pending'},
+  created:    {l:'Service Created', c:'c-scheduled'},
+  follow_up:  {l:'Follow-up set',   c:'c-scheduled'},
+  call_na:    {l:'Call N/A',        c:'c-pending'},
+  assigned:   {l:'Assigned',        c:'c-scheduled'},
+  callpending:{l:'Call Pending',    c:'c-scheduled'},
+  scheduled:  {l:'Scheduled',       c:'c-scheduled'},
+  onway:      {l:'On the Way',      c:'c-onway'},
+  atsite:     {l:'At Site',         c:'c-atsite'},
+  completed:  {l:'Completed',       c:'c-completed'},
+  reschedule: {l:'Reschedule',      c:'c-reschedule'},
 };
 function jobChip(s){const st=JOB_STATUS[s]||{l:s,c:'c-pending'};return `<span class="chip ${st.c}"><span class="dot"></span>${st.l}</span>`;}
 
-let realJobs=[];
+let realJobs=[], _jobsNameMap={}, _jobsPollTid=null;
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
 function showModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('overlay').style.display='flex';}
@@ -330,6 +333,7 @@ function navigate(view){
   if(currentView!==view)jobsSearch='';
   currentView=view;
   if(view!=='live'&&_liveLocTimer){clearInterval(_liveLocTimer);_liveLocTimer=null;}
+  if(view!=='jobs'&&_jobsPollTid){clearInterval(_jobsPollTid);_jobsPollTid=null;}
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   renderView(view);
 }
@@ -663,27 +667,28 @@ function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'
 let jobsFilter='all',jobsDateFilter='',jobsSearch='';
 function setJobDateFilter(d){jobsDateFilter=d;drawJobs(document.getElementById('main'));}
 
-async function renderJobs(m){
-  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+async function _loadJobsData(m){
   const [auditRes,installRes,profileRes]=await Promise.all([
-    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&order=created_at.desc'),
-    sbGet('install_orders?select=pi,customer_name,addr,subjobs,status,delivery_date&order=created_at.desc'),
+    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&status=not.in.(deleted,slot_reserved)&order=created_at.desc'),
+    sbGet('install_orders?select=pi,customer_name,addr,subjobs,status,delivery_date&status=neq.deleted&order=created_at.desc'),
     sbGet('profiles?select=name,email&role=neq.admin'),
   ]);
-  const nameMap={};
-  if(Array.isArray(profileRes)) profileRes.forEach(p=>{nameMap[p.email]=p.name;});
+  if(Array.isArray(profileRes)) profileRes.forEach(p=>{_jobsNameMap[p.email]=p.name;});
   realJobs=[];
   if(Array.isArray(auditRes)){
     auditRes.forEach(r=>realJobs.push({
       id:r.pi||'—', type:'audit',
       customer:r.customer_name||'—', addr:r.addr||'—',
-      assignee:r.auditor_name||(r.auditor_email?nameMap[r.auditor_email]:null),
+      assignee:r.auditor_name||(r.auditor_email?_jobsNameMap[r.auditor_email]:null),
       status:r.status||'pending', date:r.date||null,
     }));
   }
   if(Array.isArray(installRes)){
     installRes.forEach(r=>{
-      const emails=[...new Set((r.subjobs||[]).filter(sj=>sj.installer_email).map(sj=>sj.installer_email))];
+      const emails=[...new Set((r.subjobs||[]).flatMap(sj=>{
+        if(sj.assignments&&sj.assignments.length)return sj.assignments.map(a=>a.installer_email).filter(Boolean);
+        return sj.installer_email?[sj.installer_email]:[];
+      }))];
       const installDates=[...new Set((r.subjobs||[]).flatMap(sj=>{
         const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{date:sj.date,mode:'standard',dates:[]}]:[]);
         return asgns.flatMap(a=>a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]));
@@ -691,13 +696,22 @@ async function renderJobs(m){
       realJobs.push({
         id:r.pi||'—', type:'install',
         customer:r.customer_name||'—', addr:r.addr||'—',
-        assignee:emails.length?emails.map(e=>nameMap[e]||e.split('@')[0]).join(', '):null,
+        assignee:emails.length?emails.map(e=>_jobsNameMap[e]||e.split('@')[0]).join(', '):null,
         status:r.status||'pending', date:r.delivery_date||null,
         installDates,
       });
     });
   }
-  drawJobs(m);
+  if(m)drawJobs(m);
+}
+
+async function renderJobs(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  await _loadJobsData(m);
+  if(_jobsPollTid)clearInterval(_jobsPollTid);
+  _jobsPollTid=setInterval(()=>{
+    if(currentView==='jobs'&&!document.hidden)_loadJobsData(document.getElementById('main'));
+  },30000);
 }
 
 function drawJobs(m){
