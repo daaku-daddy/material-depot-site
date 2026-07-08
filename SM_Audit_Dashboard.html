@@ -862,8 +862,8 @@ function auditorsView(){
 function openOrder(pi){
   currentPI=pi;const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
   $("#dwTitle").textContent=o.name||(o.status==='slot_reserved'?'Pre-booked Slot':'—');
-  const _bmLabel=o.status==='slot_reserved'?'Store':'BM';
-  $("#dwSub").innerHTML=`${o.pi} · ${_bmLabel} ${o.bm} ${chip(o.status)}`;
+  const _store=o.status==='slot_reserved'?(o.log?.[0]?.who||o.bm||'—'):null;
+  $("#dwSub").innerHTML=`${o.pi} · ${_store?'Store '+_store:'BM '+o.bm} ${chip(o.status)}`;
   $("#dwBody").innerHTML=drawerBody(o);
   $("#dwFoot").innerHTML=drawerFoot(o);
   $("#scrim").classList.add("show");$("#drawer").classList.add("show");
@@ -883,13 +883,18 @@ function stepper(o){
 
 function slotReservedDrawerBody(o){
   const cats=Array.isArray(o.auditTicked)?o.auditTicked.filter(Boolean):[];
+  const store=o.log?.[0]?.who||o.bm||'—';
+  const bmName=(o.bm&&o.bm!==store)?o.bm:null;
+  const enqId=o.po&&o.po.length?o.po[0]:null;
   return `<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a">
-    &#128197; Slot pre-booked from <b>${o.bm}</b> store. When the Kylas enquiry arrives, create a new service order and schedule it for this date and time.
+    &#128197; Slot pre-booked from <b>${store}</b> store. When the Kylas enquiry arrives, create a new service order and schedule it for this date and time.
   </div>
   <div class="sec"><h3>Pre-booking details</h3><div class="kv">
     <div class="k">Date</div><div class="v">${fmtDate(o.date)}</div>
     <div class="k">Slot</div><div class="v">${slotLabel(o.slot)}</div>
-    <div class="k">Store</div><div class="v">${o.bm}</div>
+    <div class="k">Store</div><div class="v">${store}</div>
+    ${bmName?`<div class="k">BM</div><div class="v">${bmName}</div>`:''}
+    ${enqId?`<div class="k">ENQ ID</div><div class="v">${enqId}</div>`:''}
     <div class="k">Categories</div><div class="v">${cats.length?cats.join(', '):'—'}</div>
     <div class="k">Booking ID</div><div class="v">${o.pi}</div>
   </div></div>

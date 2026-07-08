@@ -190,10 +190,8 @@ function fmtDate(s){if(!s)return'—';const d=new Date(s+'T00:00:00');return d.t
 function fmtSlotId(id){const s=SLOT_DEFS.find(x=>x.id===id);return s?s.label:'—';}
 
 function slotsConflict(slotA,slotB){
-  // True if there is <120 min gap between the two slots (in either direction)
-  const gapAB=slotB.startMin-slotA.endMin;
-  const gapBA=slotA.startMin-slotB.endMin;
-  return(gapAB>=0&&gapAB<120)||(gapBA>=0&&gapBA<120);
+  // Slots conflict if start times are within 120 min (covers same slot + adjacent slots)
+  return Math.abs(slotA.startMin-slotB.startMin)<120;
 }
 
 function getAvailability(slotId){
@@ -296,7 +294,7 @@ async function loadDay(date,silent=false){
   if(!silent)document.getElementById('slotContent').innerHTML='<div class="loading-box"><span class="spin dark"></span><div style="margin-top:12px">Loading availability…</div></div>';
   try{
     const [orders,auditors]=await Promise.all([
-      sbGet('audit_orders?select=id,pi,customer_name,phone,status,slot,date,auditor_id,bm,audit_ticked&date=eq.'+date+'&status=neq.deleted'),
+      sbGet('audit_orders?select=id,pi,po,customer_name,phone,status,slot,date,auditor_id,bm,audit_ticked,log&date=eq.'+date+'&status=neq.deleted'),
       sbGet('profiles?select=id,active_from&role=in.(site_auditor,auditor_installer)'),
     ]);
     DAY_ORDERS=Array.isArray(orders)?orders:[];
@@ -311,7 +309,8 @@ async function loadDay(date,silent=false){
 
 /* ── Render slot grid ────────────────────────────────────────────────────────── */
 function renderSlots(date){
-  const myRes=DAY_ORDERS.filter(o=>o.status==='slot_reserved'&&o.bm===MYSTORE);
+  const isMyBooking=o=>o.status==='slot_reserved'&&(o.log?.[0]?.who===MYSTORE||o.bm===MYSTORE);
+  const myRes=DAY_ORDERS.filter(isMyBooking);
   const otherOrders=DAY_ORDERS.filter(o=>o.status!=='slot_reserved');
   const allBooked=DAY_ORDERS.filter(o=>o.status!=='slot_reserved');
   let html='';
@@ -339,9 +338,9 @@ function renderSlots(date){
       if(myBookingsForSlot.length){
         badges=`<div class="slot-badges">`+myBookingsForSlot.map(r=>`<span class="slot-badge mine">&#10003; ${r.customer_name||'Booking'}</span>`).join('')+`</div>`;
       }
-      const otherResForSlot=DAY_ORDERS.filter(o=>o.status==='slot_reserved'&&o.bm!==MYSTORE&&o.slot===sl.id);
+      const otherResForSlot=DAY_ORDERS.filter(o=>o.status==='slot_reserved'&&!isMyBooking(o)&&o.slot===sl.id);
       if(otherResForSlot.length){
-        badges+=`<div class="slot-badges">`+otherResForSlot.map(r=>`<span class="slot-badge">${r.bm||'Other store'} pre-booked</span>`).join('')+`</div>`;
+        badges+=`<div class="slot-badges">`+otherResForSlot.map(r=>`<span class="slot-badge">${r.log?.[0]?.who||r.bm||'Other store'} pre-booked</span>`).join('')+`</div>`;
       }
 
       html+=`<div class="slot-card${isFull&&!hasMyBooking?' full':(hasMyBooking?' has-my-booking bookable':' bookable')}" data-slot="${sl.id}" data-bookable="${!isFull}">
@@ -362,12 +361,14 @@ function renderSlots(date){
     html+=`<div class="section-head">Pre-bookings from ${MYSTORE} · ${fmtDate(date)}</div>`;
     myRes.forEach(r=>{
       const cats=Array.isArray(r.audit_ticked)?r.audit_ticked.filter(Boolean):[];
+      const bookingBm=r.bm&&r.bm!==MYSTORE?r.bm:null;
       html+=`<div class="res-card">
         <div class="res-top">
           <div class="res-slot-tag">${fmtSlotId(r.slot)}</div>
           <div class="res-info">
             <div class="res-name">${esc(r.customer_name||'—')}</div>
-            <div class="res-detail">${esc(r.phone||'—')}</div>
+            <div class="res-detail">${esc(r.phone||'—')}${bookingBm?' · BM: '+esc(bookingBm):''}</div>
+            ${r.po?`<div style="font-size:11.5px;color:var(--muted);margin-top:2px">ENQ: ${esc(r.po)}</div>`:''}
           </div>
         </div>
         ${cats.length?`<div class="res-cats">${cats.map(c=>`<span class="res-cat">${esc(c)}</span>`).join('')}</div>`:''}
@@ -435,6 +436,8 @@ function openBookingSheet(slotId,date){
     <div class="field"><label>Customer name *</label><input class="inp" id="bkName" placeholder="Full name" autocomplete="off"></div>
     <div class="field"><label>Phone number *</label><input class="inp" id="bkPhone" type="tel" placeholder="9876543210"></div>
     <div class="field"><label>Address *</label><textarea class="inp" id="bkAddr" placeholder="Flat / building / area…"></textarea></div>
+    <div class="field"><label>ENQ ID <span style="font-weight:500;color:var(--muted)">(optional — if customer has existing enquiry)</span></label><input class="inp" id="bkEnq" placeholder="ENQ2026…" autocomplete="off"></div>
+    <div class="field"><label>BM Name <span style="font-weight:500;color:var(--muted)">(optional)</span></label><input class="inp" id="bkBm" placeholder="Business manager name" autocomplete="off"></div>
     <div class="field"><label>Audit categories <span style="font-weight:500;color:var(--muted)">(select all that apply)</span></label>
       <div class="check-group">
         <label class="check-row"><input type="checkbox" id="bkFl"><span>Wooden Flooring</span></label>
@@ -456,6 +459,8 @@ function openBookingSheet(slotId,date){
     const name=(document.getElementById('bkName').value||'').trim();
     const phone=(document.getElementById('bkPhone').value||'').trim();
     const addr=(document.getElementById('bkAddr').value||'').trim();
+    const enqId=(document.getElementById('bkEnq').value||'').trim();
+    const bmName=(document.getElementById('bkBm').value||'').trim();
     const err=document.getElementById('bkErr');
     err.classList.remove('show');
     if(!name){err.textContent='Customer name is required.';err.classList.add('show');return;}
@@ -472,20 +477,21 @@ function openBookingSheet(slotId,date){
 
     try{
       const pi=genSlotPI(MYSTORE);
+      const logNote='Slot pre-booked at '+MYSTORE+' store'+(bmName?' · BM: '+bmName:'');
       await sbPost('audit_orders',{
         pi,
-        po:'',
+        po:enqId||'',
         customer_name:name,
         phone,
         addr,
-        bm:MYSTORE,
+        bm:bmName||MYSTORE,
         date,
         slot:slotId,
         status:'slot_reserved',
         skus:[{c:'AUDIT',n:'Site Audit',audit:true}],
         audit_ticked:cats,
         service:null,
-        log:[{t:'Slot pre-booked at '+MYSTORE+' store',d:new Date().toISOString(),by:'manual',who:MYSTORE}],
+        log:[{t:logNote,d:new Date().toISOString(),by:'manual',who:MYSTORE}],
         created_by_email:'store-team',
       });
       overlay.classList.remove('show');
