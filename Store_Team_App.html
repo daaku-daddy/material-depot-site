@@ -19,13 +19,6 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;}
 a{color:inherit;text-decoration:none;}
 
-/* ── Login ─────────────────────────────────────────────────────────────── */
-.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}
-.login-card{background:var(--card);border-radius:16px;padding:32px;max-width:380px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.10);}
-.login-logo{font-size:11.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
-.login-title{font-size:26px;font-weight:900;color:var(--navy);margin-bottom:8px;}
-.login-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
-
 /* ── Common elements ────────────────────────────────────────────────────── */
 .inp{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;font-size:15px;color:var(--ink);outline:none;transition:border .15s;background:#fff;}
 .inp:focus{border-color:var(--blue);}
@@ -51,8 +44,6 @@ header{background:var(--navy);color:#fff;padding:0 16px;height:54px;display:flex
 .hd-title{font-size:16px;font-weight:800;flex:1;}
 .hd-store-btn{font-size:12.5px;font-weight:700;background:rgba(255,255,255,.13);border:0;border-radius:8px;padding:5px 10px;cursor:pointer;color:#fff;display:flex;align-items:center;gap:4px;}
 .hd-store-btn:hover{background:rgba(255,255,255,.22);}
-.hd-out-btn{font-size:12px;font-weight:700;background:transparent;border:1.5px solid rgba(255,255,255,.28);border-radius:7px;padding:5px 10px;cursor:pointer;color:#fff;}
-.hd-out-btn:hover{background:rgba(255,255,255,.1);}
 
 /* ── Main layout ─────────────────────────────────────────────────────────── */
 .main{max-width:580px;margin:0 auto;padding:16px 14px 40px;}
@@ -133,21 +124,6 @@ header{background:var(--navy);color:#fff;padding:0 16px;height:54px;display:flex
 </head>
 <body>
 
-<!-- Login screen -->
-<div id="loginScreen" style="display:none">
-  <div class="login-screen">
-    <div class="login-card">
-      <div class="login-logo">Material Depot</div>
-      <div class="login-title">Store Team</div>
-      <div class="login-sub">Sign in to manage slot bookings for your store.</div>
-      <div class="field"><label>Email</label><input class="inp" id="lgEmail" type="email" placeholder="you@materialdepot.com" autocomplete="username"></div>
-      <div class="field"><label>Passcode</label><input class="inp" id="lgPass" type="password" placeholder="••••" autocomplete="current-password"></div>
-      <div class="err-msg" id="lgErr"></div>
-      <button class="btn navy full" id="lgBtn" style="margin-top:8px">Sign in</button>
-    </div>
-  </div>
-</div>
-
 <!-- Store select overlay -->
 <div class="overlay" id="storeOverlay">
   <div class="sheet">
@@ -164,7 +140,6 @@ header{background:var(--navy);color:#fff;padding:0 16px;height:54px;display:flex
     <div class="hd-badge">MD</div>
     <div class="hd-title">Store Team</div>
     <button class="hd-store-btn" id="storePicker">📍 —</button>
-    <button class="hd-out-btn" id="signOutBtn">Sign out</button>
   </header>
   <div class="main">
     <div class="date-nav" id="dateNav"></div>
@@ -204,7 +179,7 @@ const SLOT_DEFS=[
 const DAYS_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ── State ───────────────────────────────────────────────────────────────────── */
-let ME=null,MYSTORE=null,SELECTED_DATE=null;
+let MYSTORE=null,SELECTED_DATE=null;
 let DAY_ORDERS=[],AUDITOR_COUNT=3;
 let _refreshTimer=null;
 
@@ -251,37 +226,13 @@ function genSlotPI(store){
 let _toastT=null;
 function toast(msg){const el=document.getElementById('toastBar');el.textContent=msg;el.classList.add('show');clearTimeout(_toastT);_toastT=setTimeout(()=>el.classList.remove('show'),3200);}
 
-/* ── Auth ────────────────────────────────────────────────────────────────────── */
-function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+/* ── Store persistence ───────────────────────────────────────────────────────── */
 function getStore(){return localStorage.getItem('md_store')||null;}
 function setStore(s){localStorage.setItem('md_store',s);}
 
-async function doLogin(){
-  const el_e=document.getElementById('lgEmail');
-  const el_p=document.getElementById('lgPass');
-  const email=(el_e.value||'').trim().toLowerCase();
-  const pass=(el_p.value||'').trim();
-  const err=document.getElementById('lgErr');
-  err.classList.remove('show');
-  if(!email||!pass){err.textContent='Email and passcode are required.';err.classList.add('show');return;}
-  const btn=document.getElementById('lgBtn');btn.disabled=true;btn.innerHTML='<span class="spin"></span> Signing in…';
-  try{
-    const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(email)+'&passcode=eq.'+encodeURIComponent(pass)+'&limit=1');
-    if(!Array.isArray(rows)||!rows.length){err.textContent='Invalid email or passcode.';err.classList.add('show');btn.disabled=false;btn.textContent='Sign in';return;}
-    const u=rows[0];
-    ME={id:u.id,email:u.email,name:u.name,role:u.role};
-    localStorage.setItem('md_user',JSON.stringify(ME));
-    startApp();
-  }catch(e){err.textContent='Login failed — check your connection.';err.classList.add('show');btn.disabled=false;btn.textContent='Sign in';}
-}
-
 /* ── App boot ────────────────────────────────────────────────────────────────── */
 function startApp(){
-  const session=getSession();
-  if(!session){showLogin();return;}
-  ME=session;
   MYSTORE=getStore();
-  document.getElementById('loginScreen').style.display='none';
   document.getElementById('appMain').style.display='block';
   renderHeader();
   if(!MYSTORE){showStorePicker(false);return;}
@@ -291,25 +242,10 @@ function startApp(){
   _refreshTimer=setInterval(()=>{if(!document.hidden)loadDay(SELECTED_DATE,true);},30000);
 }
 
-function showLogin(){
-  document.getElementById('loginScreen').style.display='block';
-  document.getElementById('appMain').style.display='none';
-  document.getElementById('lgBtn').onclick=doLogin;
-  document.getElementById('lgPass').onkeydown=e=>{if(e.key==='Enter')doLogin();};
-}
-
 function renderHeader(){
   const sp=document.getElementById('storePicker');
   sp.textContent='📍 '+(MYSTORE||'Select store');
   sp.onclick=()=>showStorePicker(true);
-  document.getElementById('signOutBtn').onclick=()=>{
-    if(!confirm('Sign out?'))return;
-    clearInterval(_refreshTimer);
-    localStorage.removeItem('md_user');
-    ME=null;
-    document.getElementById('appMain').style.display='none';
-    showLogin();
-  };
 }
 
 function showStorePicker(fromHeader){
@@ -549,8 +485,8 @@ function openBookingSheet(slotId,date){
         skus:[{c:'AUDIT',n:'Site Audit',audit:true}],
         audit_ticked:cats,
         service:null,
-        log:[{t:'Slot pre-booked at '+MYSTORE+' store',d:new Date().toISOString(),by:'manual',who:ME.name}],
-        created_by_email:ME.email,
+        log:[{t:'Slot pre-booked at '+MYSTORE+' store',d:new Date().toISOString(),by:'manual',who:MYSTORE}],
+        created_by_email:'store-team',
       });
       overlay.classList.remove('show');
       toast('&#10003; Slot booked for '+name+' · '+slot.label);

@@ -342,19 +342,20 @@ Same fix as auditor app. `showPassToClientInst(j)` does the early cancel. `_comp
 
 ### Store Team App (`Store_Team_App.html`)
 - Standalone slot-booking app for in-store staff at Material Depot's 3 experience centres: JP Nagar, Whitefield, Yelahanka
-- **Login**: profiles email + passcode → localStorage `md_store` (selected store persists)
+- **Open access** — no login required. Any visitor with the URL can use it. Store selection persisted in `localStorage` key `md_store` per device; first visit shows store picker overlay.
+- **No `ME` session** — booking log uses `who:MYSTORE` and `created_by_email:'store-team'`. No sign-out button.
 - **6 fixed slots**: 10:00, 11:00, 13:00, 14:00, 16:00, 17:00 (each 1 hour)
 - **2-hour gap rule**: `slotsConflict(slotA,slotB)` — two slots conflict if gap between their start times is < 120 minutes in either direction
 - **Availability**: AUDITOR_COUNT × cap per date, minus conflicting bookings. Active auditors filtered by `active_from ≤ date` (or null). Fetched from `profiles?select=id,active_from&role=in.(site_auditor,auditor_installer)`
-- **Date selection**: 7-day strip (today + next 6). `dstr(d)` uses local date parts (`getFullYear/getMonth/getDate`) — **NOT `toISOString()`** which returns UTC and causes off-by-one at midnight IST
-- **Pre-booking creates** `audit_orders` row: `{pi:'SRES-{storeCode6}-{timestamp9}', bm:MYSTORE, date, slot:slotId, status:'slot_reserved', skus:[{c:'AUDIT',n:'Site Audit',audit:true}], ...}`
+- **Date selection**: 14-day strip (today + next 13). `dstr(d)` uses local date parts (`getFullYear/getMonth/getDate`) — **NOT `toISOString()`** which returns UTC and causes off-by-one at midnight IST
+- **Pre-booking creates** `audit_orders` row: `{pi:'SRES-{storeCode6}-{timestamp9}', bm:MYSTORE, date, slot:slotId, status:'slot_reserved', skus:[{c:'AUDIT',n:'Site Audit',audit:true}], log:[{who:MYSTORE, ...}], created_by_email:'store-team'}`
 - **Confirmed bookings section**: shows ALL non-deleted, non-slot_reserved audit orders for the selected date (all stores, all auditors). This is intentional — shows store staff total auditor workload for the day, which determines slot availability across all stores.
 - **Poll**: no background poll — data re-fetched each time the date changes or booking is made
 - `STORES` constant: `['JP Nagar','Whitefield','Yelahanka']`
 
 ### Admin Console (`Admin.html`)
 - Nav views: Overview, Users, Role Viewer, **Job Overview**, Performance, **📉 Analytics**
-- **`store_staff` role** added throughout: ROLES dict, ROLE_ICONS (🏪), ROLE_DESCS, overview stats tile, Add User modal option, Edit Role modal option, Role Viewer cards. CSS: `.rb-store_staff{background:var(--amberbg);color:var(--amber);}`. Routes to `Store_Team_App.html`.
+- **`store_staff` role** present in Admin UI (ROLES dict, ROLE_ICONS 🏪, ROLE_DESCS, overview stats tile, Add/Edit User modals, Role Viewer). CSS: `.rb-store_staff{background:var(--amberbg);color:var(--amber);}`. Routes to `Store_Team_App.html`. **Note**: Store_Team_App is now open-access — no login required — so creating `store_staff` profiles is no longer necessary for the app to work.
 - **Job Overview**: `_loadJobsData(m)` + `renderJobs(m)` split — initial load shows spinner; thereafter a `_jobsPollTid` interval polls every 30s while the Jobs view is active (same cadence as SM Dashboard). Clears on nav away. Queries: `audit_orders?status=not.in.(deleted,slot_reserved)`, `install_orders?status=neq.deleted`. Installer email extraction reads `sj.assignments[].installer_email` (new format) with legacy `sj.installer_email` fallback.
 - **Job Overview status labels**: `JOB_STATUS` dict includes `created`, `follow_up`, `call_na` in addition to the original set. Previously unknown statuses rendered with wrong chip style.
 - **Job Overview** (merged Jobs + Job Cards): clickable table rows open a wide detail modal (`openJobDetail(pi, type)`). Modal fetches full order data on demand (including `audit_ticked`/`subjobs`). Shows rooms, measurements, photos (click to open full size), ratings (Q1+Q2+Q3 for both audit and install), signature. Download Job Card PDF button in modal. `genAuditPDF` and `genInstallPDF` now include Q3 in client feedback table.
@@ -591,6 +592,8 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 49. **`pwa-install.js` included in all 7 HTML files** (updated 2026-07-06): Store_Team_App.html was added as the 7th file — it also includes `<script src="/pwa-install.js"></script>`.
 
 50. **`active_from` is cross-device via Supabase** (2026-07-06): SM sets auditor `active_from` in Auditors & Caps view → Save PATCHes it to `profiles` table. Store_Team_App fetches `profiles?select=id,active_from&role=in.(site_auditor,auditor_installer)` each time a date is selected. This ensures Store Team on any device sees the current SM-configured auditor availability.
+
+51. **Store Team App is open access — no login** (2026-07-07): `Store_Team_App.html` has no authentication. `ME` session variable removed. `doLogin()`, `showLogin()`, `getSession()` functions removed. Login screen HTML removed. `startApp()` skips session check — shows store picker if no `md_store` in localStorage, otherwise loads day view directly. Header shows only store picker button (no sign-out). Booking log uses `who:MYSTORE` and `created_by_email:'store-team'`. The anon Supabase key already had write access to `audit_orders`, so no backend changes were required. Share URL: `https://material-depot-site.vercel.app/Store_Team_App.html`.
 
 ## Pending POs Import (replaces Kylas Sheet as of 2026-06-22)
 
