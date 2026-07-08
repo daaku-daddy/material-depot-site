@@ -494,6 +494,7 @@ function dailyTotalCap(ds){return AUDITORS.reduce((s,a)=>s+capFor(a.id,ds),0);}
 
 const STATUS={
   slot_reserved:{l:"Pre-booked (Store)",c:"c-slotres"},
+  slot_converted:{l:"Pre-booking Fulfilled",c:"c-completed"},
   pending:{l:"Pending",c:"c-pending"},
   created:{l:"Service Created",c:"c-created"},
   call_na:{l:"Call not picked",c:"c-call_na"},
@@ -644,7 +645,7 @@ function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div
 function ordersView(){
   const c={};Object.keys(STATUS).forEach(k=>c[k]=0);ORDERS.forEach(o=>c[o.status]++);
   const live=c.scheduled+c.assigned+c.onway+c.atsite;
-  const mainOrderCount=ORDERS.filter(o=>o.status!=='slot_reserved').length;
+  const mainOrderCount=ORDERS.filter(o=>!['slot_reserved','slot_converted'].includes(o.status)).length;
   const stats=`<div class="stats">
     ${statTile(mainOrderCount,"Live audit orders","#1F3A5F","all")}
     ${c.slot_reserved?statTile(c.slot_reserved,"Store pre-bookings","#1a4a8a","slot_reserved"):''}
@@ -656,7 +657,7 @@ function ordersView(){
   const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
   const rows=ORDERS.filter(o=>{
     if(filterStatus==="all"){
-      if(o.status==='slot_reserved')return false; // pre-bookings shown only via explicit filter
+      if(o.status==='slot_reserved'||o.status==='slot_converted')return false;
     } else {
       if(filterStatus==="action")return ["pending","created","call_na"].includes(o.status);
       if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
@@ -1102,7 +1103,7 @@ function editAuditServiceSection(o){
 
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">🗑 Delete</button>`;
-  if(o.status==="slot_reserved")return `<button class="btn danger" id="cancelRes">Cancel Reservation</button><button class="btn gray" id="dClose">Close</button>`;
+  if(o.status==="slot_reserved")return `<button class="btn danger" id="cancelRes">Cancel Reservation</button><button class="btn green" id="markSvcCreated">✓ Service Created</button><button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="pending")return `${del}<button class="btn gray" id="dClose">Cancel</button><button class="btn navy" id="createService">Create service</button>`;
   if(["created","call_na"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
@@ -1322,6 +1323,16 @@ function wireDrawer(o){
       await sbPatch('audit_orders',o.id,{status:'deleted'});
       closeDrawer();await Promise.all([loadOrders(),loadDeletedOrders()]);toast("Slot reservation cancelled");
     }catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Cancel Reservation";}
+  };
+
+  if($("#markSvcCreated"))$("#markSvcCreated").onclick=async()=>{
+    if(!confirm("Mark this pre-booking as fulfilled?\nUse this once the Kylas service order has been created for this customer — the pre-booking will stop occupying the slot so it won't be double-counted."))return;
+    const btn=$("#markSvcCreated");btn.disabled=true;btn.textContent="Saving…";
+    o.log=o.log||[];o.log.push({t:"Service created — pre-booking fulfilled",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    try{
+      await sbPatch('audit_orders',o.id,{status:'slot_converted',log:o.log});
+      closeDrawer();await loadOrders();toast("Pre-booking marked as service created");
+    }catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="✓ Service Created";}
   };
 
   if($("#slotResBmSave"))$("#slotResBmSave").onclick=async()=>{
