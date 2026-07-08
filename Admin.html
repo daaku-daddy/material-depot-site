@@ -811,10 +811,15 @@ async function openJobDetail(pi,type){
       const o=rows[0];const at=o.audit_ticked;
       const rooms=(at&&at.rooms)||[];
       const hasSign=at&&at.sign&&at.sign.img;
+      const isDraft=at&&!Array.isArray(at)&&at.draft&&!hasSign;
       const hasCard=rooms.length||hasSign;
       window._jdAudit={order:o,ticked:at};
       const roomsHtml=rooms.map((r,i)=>jdRoomCard(r,i)).join('');
       const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${at.sign.name||'—'}</b>${at.sign.ratings?` · ⭐ ${at.sign.ratings.q1}/10 · 👤 ${at.sign.ratings.q2}/10 · 🧹 ${at.sign.ratings.q3||'—'}/10`:''}</div>`:'';
+      const jcSection=isDraft
+        ?`<div class="jd-section"><div class="jd-sec-head" style="color:var(--amber)">⚠️ Job Card Draft — ${rooms.length} room${rooms.length!==1?'s':''} recorded, client sign-off not yet completed</div>${roomsHtml}</div>`
+        :rooms.length?`<div class="jd-section"><div class="jd-sec-head">Job Card — ${rooms.length} room${rooms.length!==1?'s':''} audited</div>${roomsHtml}${signHtml}</div>`
+        :'<div class="jd-section" style="color:var(--muted);font-size:13px">No job card data found for this order.</div>';
       document.getElementById('modal').innerHTML=`
         <div class="jd-head"><div class="jd-pi">${o.pi} · Site Audit</div>${jobChip(o.status)}</div>
         <div class="jd-info">
@@ -824,9 +829,9 @@ async function openJobDetail(pi,type){
           <div class="jd-row"><span class="jd-label">Date / Slot</span><span>${fdt(o.date)} · ${o.slot||'—'}</span></div>
           <div class="jd-row"><span class="jd-label">Auditor</span><span>${o.auditor_name||'—'}</span></div>
         </div>
-        ${rooms.length?`<div class="jd-section"><div class="jd-sec-head">Job Card — ${rooms.length} room${rooms.length!==1?'s':''} audited</div>${roomsHtml}${signHtml}</div>`:(at&&!Array.isArray(at)&&at.draft?'<div class="jd-section" style="color:var(--amber);font-size:13px;font-weight:700">⚠️ Job card is in draft — not yet completed</div>':'<div class="jd-section" style="color:var(--muted);font-size:13px">No job card data found for this order.</div>')}
+        ${jcSection}
         <div class="jd-btns">
-          ${hasCard?`<button class="btn-primary" onclick="window._jdAudit&&genAuditPDF(window._jdAudit.order,window._jdAudit.ticked)">📥 Download Job Card PDF</button>`:''}
+          ${hasCard?`<button class="btn-primary" onclick="window._jdAudit&&genAuditPDF(window._jdAudit.order,window._jdAudit.ticked)">${isDraft?'📥 Download Draft PDF (missing signature)':'📥 Download Job Card PDF'}</button>`:''}
           <button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button>
         </div>
         ${o.log&&o.log.length?`<div class="jd-section"><div class="jd-sec-head">Activity</div><div class="jd-log">${jdLog(o.log)}</div></div>`:''}`;

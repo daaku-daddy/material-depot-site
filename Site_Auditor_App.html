@@ -234,7 +234,18 @@ function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+enc
 let ORDERS=[];
 
 const AUDITOR_COLS='id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log';
+let _retryingCompletion=false;
+async function _retryPendingCompletions(){
+  if(_retryingCompletion)return;_retryingCompletion=true;
+  try{
+    const pKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_ps_'));
+    for(const k of pKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatch('audit_orders',d.id,{status:'completed',log:d.log});localStorage.removeItem(k);}catch(e){}}
+    const jcKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_pjc_'));
+    for(const k of jcKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatchLong('audit_orders',d.id,{audit_ticked:d.ticked});localStorage.removeItem(k);}catch(e){}}
+  }finally{_retryingCompletion=false;}
+}
 async function loadJobs(){
+  _retryPendingCompletions();
   try{
     const rows=await sbGet('audit_orders?auditor_email=eq.'+encodeURIComponent(ME.email)+'&select='+AUDITOR_COLS+'&status=neq.deleted&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
@@ -806,14 +817,24 @@ function showAuditSignature(o,ratings){
     if(o.id){
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photos:r.photos||[],sketchStrokes:r.sketchStrokes||[]}))};
       // Step 1: mark status completed immediately (small, fast — ensures order moves out of atsite in SM/admin)
-      try{await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});}catch(e){toast("Could not save status — check network");}
+      try{
+        await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});
+        try{localStorage.removeItem('md_audit_ps_'+o.pi);}catch(e2){}
+      }catch(e){
+        toast("Status not saved — will retry automatically");
+        try{localStorage.setItem('md_audit_ps_'+o.pi,JSON.stringify({id:o.id,log:o.log}));}catch(e2){}
+      }
       // Step 2: save job card with long timeout (may be large due to base64 photo fallbacks)
       const jcPatch={audit_ticked:ticked};
       _completionWrite=jcPatch;
       try{
         await sbPatchLong('audit_orders',o.id,jcPatch);
         try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
-      }catch(e){toast("Job card saved locally — will retry on next open");}
+        try{localStorage.removeItem('md_audit_pjc_'+o.pi);}catch(e){}
+      }catch(e){
+        toast("Job card save failed — will retry automatically on next open");
+        try{localStorage.setItem('md_audit_pjc_'+o.pi,JSON.stringify({id:o.id,ticked}));}catch(e2){}
+      }
       // Write ratings
       try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){
         try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e2){console.error('ratings write failed',e2);}

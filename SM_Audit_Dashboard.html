@@ -1085,7 +1085,8 @@ function drawerFoot(o){
   if(["created","call_na"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
   if(o.status==="reschedule")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Rebook slot</button>`;
-  if(["assigned","onway","atsite"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button>`;
+  if(["assigned","onway"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button>`;
+  if(o.status==="atsite")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markDone">Mark Completed</button>`;
   if(o.status==="completed")return `${del}<button class="btn gray" id="dClose">Close</button>${o.service&&o.service.rectification_raised?`<span class="chip c-assigned" style="flex:1;justify-content:center;cursor:default">↩ Rectified</span>`:`<button class="btn amber" id="raiseRect">↩ Raise Rectification</button>`}`;
   return `${del}<button class="btn gray" id="dClose">Close</button>`;
 }
@@ -1291,6 +1292,16 @@ function wireDrawer(o){
   };
 
   if($("#raiseRect"))$("#raiseRect").onclick=()=>openRect(o);
+
+  if($("#markDone"))$("#markDone").onclick=async()=>{
+    if(!confirm("Mark this audit as completed?\nOnly do this if the auditor finished the job but their app failed to sync the status."))return;
+    const btn=$("#markDone");btn.disabled=true;btn.textContent="Saving…";
+    o.log=o.log||[];o.log.push({t:"Status manually marked completed by SM",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    try{
+      await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});
+      closeDrawer();await loadOrders();toast("Order marked as completed");
+    }catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Mark Completed";}
+  };
 
   if($("#delOrder"))$("#delOrder").onclick=async()=>{
     if(!confirm("Move order "+o.pi+" to Deleted Orders?\nIt will be stored and can be recovered from the Deleted Orders section."))return;
