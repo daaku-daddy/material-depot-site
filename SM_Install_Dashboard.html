@@ -1033,7 +1033,7 @@ function drawerBody(o){
     <div class="k">Phone</div><div class="v">${o.phone}</div>
     <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div></div></div>`;
 
-  if(o.service) html+=editInstallServiceSection(o);
+  if(o.service&&o.status!=='deliv_ontime') html+=editInstallServiceSection(o);
 
   // ---- AUDIT TYPE selector ----
   html+=`<div class="sec"><h3>Site audit type</h3>
@@ -1885,8 +1885,9 @@ async function submitRect(){
   if(!newPi){err.textContent='Enter a PI number for the new order.';err.classList.add('show');return;}
   const o=_rectOrder;const btn=document.getElementById('rect-submit');btn.disabled=true;
   try{
-    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:{rectification_of:o.pi,issue},log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual',who:SESSION.name}],created_by_email:SESSION.email};
-    if(svcType==='install')await sbPost('install_orders',{...base,matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
+    const _rectSvc={rectification_of:o.pi,issue,flooring:(o.service&&o.service.flooring)||[],wallpaper:(o.service&&o.service.wallpaper)||[]};
+    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:_rectSvc,log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual',who:SESSION.name}],created_by_email:SESSION.email};
+    if(svcType==='install')await sbPost('install_orders',{...base,status:'deliv_ontime',matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
     else await sbPost('audit_orders',{...base,audit_ticked:[]});
     const updSvc={...(o.service||{}),rectification_raised:true,rectification_pi:newPi,rectification_type:svcType};
     const updLog=[...o.log,{t:'Rectification raised — '+(svcType==='install'?'re-installation':'re-audit')+' · new order '+newPi,d:new Date().toISOString(),by:'manual',who:SESSION.name}];

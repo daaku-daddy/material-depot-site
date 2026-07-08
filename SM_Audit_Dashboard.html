@@ -939,7 +939,7 @@ function drawerBody(o){
     <div class="k">Phone</div><div class="v">${o.phone}</div>
     <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div></div></div>`;
 
-  if(o.service) html+=editAuditServiceSection(o);
+  if(o.service&&o.status!=='pending') html+=editAuditServiceSection(o);
 
   // Manual status override — always available
   html+=`<div class="sec"><h3>Set status <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— manual override</span></h3>
@@ -1735,9 +1735,10 @@ async function submitRect(){
   if(!newPi){err.textContent='Enter a PI number for the new order.';err.classList.add('show');return;}
   const o=_rectOrder;const btn=document.getElementById('rect-submit');btn.disabled=true;
   try{
-    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:{rectification_of:o.pi,issue},log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual'}],created_by_email:SESSION.email};
+    const _rectSvc={rectification_of:o.pi,issue,flooring:(o.service&&o.service.flooring)||[],wallpaper:(o.service&&o.service.wallpaper)||[]};
+    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:_rectSvc,log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual'}],created_by_email:SESSION.email};
     if(svcType==='audit')await sbPost('audit_orders',{...base,audit_ticked:[]});
-    else await sbPost('install_orders',{...base,matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
+    else await sbPost('install_orders',{...base,status:'deliv_ontime',matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
     const updSvc={...(o.service||{}),rectification_raised:true,rectification_pi:newPi,rectification_type:svcType};
     const updLog=[...o.log,{t:'Rectification raised — '+(svcType==='audit'?'re-audit':'re-installation')+' · new order '+newPi,d:new Date().toISOString(),by:'manual'}];
     await sbPatch('audit_orders',o.id,{service:updSvc,log:updLog});
