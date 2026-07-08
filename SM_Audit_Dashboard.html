@@ -577,10 +577,10 @@ function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()
 const BOOKED=["scheduled","assigned","onway","atsite","completed"];
 function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===slotId&&BOOKED.includes(o.status)).length;}
 function auditorLoad(aid,date,excludeId){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
-function auditorConflictOrder(aid,date,slotTime,excludeId){
+function auditorConflictOrder(aid,date,slotTime,excludeId,excludeId2=null){
   if(!slotTime||!/^\d{1,2}:\d{2}$/.test(slotTime))return null;
   const[h,m]=slotTime.split(':').map(Number);const newStart=h*60+m;const newEnd=newStart+60;
-  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&(function(){
+  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&(excludeId2===null||o.id!==excludeId2)&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&(function(){
     const[oh,om]=o.slot.split(':').map(Number);const oStart=oh*60+om;const oEnd=oStart+60;
     const gapAB=newStart-oEnd;const gapBA=oStart-newEnd;
     return(gapAB<0&&gapBA<0)||(gapAB>=0&&gapAB<120)||(gapBA>=0&&gapBA<120);
@@ -1346,11 +1346,20 @@ function wireDrawer(o){
 
   if($("#slotResAudList")){
     const list=$("#slotResAudList");
+    const _enqId=o.po&&o.po.length?o.po[0]:null;
+    const _nm=o.name?o.name.trim().toLowerCase():null;
+    const linkedSvc=ORDERS.find(r=>r.id!==o.id&&r.status!=='slot_reserved'&&r.status!=='deleted'&&r.status!=='slot_converted'&&r.slot===o.slot&&r.date===o.date&&((_enqId&&r.pi===_enqId)||(_nm&&r.name&&r.name.trim().toLowerCase()===_nm)));
     list.innerHTML=AUDITORS.map(a=>{
       const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
-      const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id);
-      const full=cap<1||load>=cap;
+      const isLinkedAud=linkedSvc&&linkedSvc.auditor===a.id;
+      const cx=isLinkedAud?null:auditorConflictOrder(a.id,o.date,o.slot,o.id,linkedSvc?.id);
+      const full=!isLinkedAud&&(cap<1||load>=cap);
       const isAssigned=o.auditor===a.id;
+      if(isLinkedAud)return `<div class="auditorrow on" style="pointer-events:none">
+        <div class="av">${initials(a.name)}</div>
+        <div><div class="nm">${a.name} <span style="color:var(--green);font-size:11px">✓ Assigned via ${linkedSvc.pi}</span></div>
+        <div class="mt">Already handling this customer at this slot</div></div>
+        <div class="load" style="color:var(--green)">✓</div></div>`;
       return `<div class="auditorrow ${full||cx?'full':''} ${isAssigned?'on':''}" data-aud="${a.id}">
         <div class="av">${initials(a.name)}</div>
         <div><div class="nm">${a.name}${isAssigned?' <span style="color:var(--green);font-size:11px">Currently reserved</span>':''}</div>

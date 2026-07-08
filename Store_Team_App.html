@@ -204,12 +204,16 @@ function getAvailability(slotId){
   let reservationConflicts=0;
   for(const o of DAY_ORDERS){
     if(o.status==='deleted'||o.status==='slot_converted')continue;
+    if(o.status==='slot_reserved'&&!o.auditor_id){
+      const nm=(o.customer_name||'').trim().toLowerCase();
+      const absorbed=DAY_ORDERS.some(r=>r.slot===o.slot&&r.status!=='deleted'&&r.status!=='slot_reserved'&&r.status!=='slot_converted'&&((o.po&&r.pi===o.po)||(nm&&(r.customer_name||'').trim().toLowerCase()===nm)));
+      if(absorbed)continue;
+    }
     const oSlot=SLOT_DEFS.find(s=>s.id===o.slot);
     if(!oSlot||!slotsConflict(slot,oSlot))continue;
     if(o.auditor_id){
       blockedAuditors.add(o.auditor_id);
     } else {
-      // slot_reserved without auditor: counts as one capacity unit
       reservationConflicts++;
     }
   }
