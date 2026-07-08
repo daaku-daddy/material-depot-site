@@ -322,10 +322,15 @@ function renderSlots(date){
   const allBooked=DAY_ORDERS.filter(o=>o.status!=='slot_reserved');
   let html='';
 
+  // For today, hide slots whose start time has already passed
+  const isToday=date===dstr(today());
+  const nowMin=isToday?(()=>{const n=new Date();return n.getHours()*60+n.getMinutes();})():null;
+
   // Slot groups
   ['Morning','Afternoon','Evening'].forEach(grp=>{
-    const slots=SLOT_DEFS.filter(s=>s.group===grp);
+    const slots=SLOT_DEFS.filter(s=>s.group===grp&&(nowMin===null||s.startMin>nowMin));
     html+=`<div class="slot-group"><div class="slot-grp-title">${grp}</div>`;
+    if(!slots.length){html+='<div style="font-size:13px;color:var(--muted);padding:10px 4px">No upcoming slots</div></div>';return;}
     slots.forEach(sl=>{
       const av=getAvailability(sl.id);
       const isFull=av.available<=0;
