@@ -667,7 +667,7 @@ function setJobDateFilter(d){jobsDateFilter=d;drawJobs(document.getElementById('
 
 async function _loadJobsData(m){
   const [auditRes,installRes,profileRes]=await Promise.all([
-    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&status=not.in.(deleted,slot_reserved)&order=created_at.desc'),
+    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&status=not.in.(deleted,slot_reserved,slot_converted)&order=created_at.desc'),
     sbGet('install_orders?select=pi,customer_name,addr,subjobs,status,delivery_date&status=neq.deleted&order=created_at.desc'),
     sbGet('profiles?select=name,email&role=neq.admin'),
   ]);
@@ -884,7 +884,7 @@ async function renderPerf(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
   const [usersRes,auditRes,installRes]=await Promise.all([
     sbGet('profiles?select=*&role=neq.admin&order=name.asc'),
-    sbGet('audit_orders?select=auditor_email,status,created_at,created_by_email'),
+    sbGet('audit_orders?select=auditor_email,status,created_at,created_by_email&status=not.in.(deleted,slot_reserved,slot_converted)'),
     sbGet('install_orders?select=subjobs,status,created_at,created_by_email'),
   ]);
   const field=Array.isArray(usersRes)?usersRes.filter(u=>u.role!=='admin'):[];
@@ -1164,7 +1164,7 @@ async function renderAnalytics(m){
   try{
     [installRes,auditRes,ratingsRes]=await Promise.all([
       sbGetLong('install_orders_slim?select=pi,status,subjobs,service,delivery_date,created_at&status=neq.deleted'),
-      sbGetLong('audit_orders?select=pi,status,date,slot,auditor_name,auditor_email,created_at&status=neq.deleted'),
+      sbGetLong('audit_orders?select=pi,status,date,slot,auditor_name,auditor_email,created_at&status=not.in.(deleted,slot_reserved,slot_converted)'),
       sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
@@ -1581,7 +1581,7 @@ async function _drawLiveLocations(m){
   const todayStr=_anDstr(new Date());
   // Fetch today's orders and all field worker profiles in parallel
   const [aOrds,iOrds,allProfs]=await Promise.all([
-    sbGet('audit_orders?select=pi,addr,slot,auditor_email,status&date=eq.'+todayStr+'&status=not.in.(deleted)'),
+    sbGet('audit_orders?select=pi,addr,slot,auditor_email,status&date=eq.'+todayStr+'&status=not.in.(deleted,slot_reserved,slot_converted)'),
     sbGet('install_orders?select=pi,addr,subjobs,status&status=not.in.(deleted,pending,deliv_ontime,deliv_delayed)'),
     sbGet('profiles?select=name,email,role,last_lat,last_lng,last_loc_at,last_order_pi&role=in.(site_auditor,installer,auditor_installer)')
   ]);
