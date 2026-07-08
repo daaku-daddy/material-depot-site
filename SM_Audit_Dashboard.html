@@ -578,8 +578,12 @@ function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===
 function auditorLoad(aid,date,excludeId){return ORDERS.filter(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&["assigned","onway","atsite","completed"].includes(o.status)).length;}
 function auditorConflictOrder(aid,date,slotTime,excludeId){
   if(!slotTime||!/^\d{1,2}:\d{2}$/.test(slotTime))return null;
-  const[h,m]=slotTime.split(':').map(Number);const newMin=h*60+m;
-  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&Math.abs(o.slot.split(':').reduce((a,v,i)=>a+(i===0?Number(v)*60:Number(v)),0)-newMin)<120)||null;
+  const[h,m]=slotTime.split(':').map(Number);const newStart=h*60+m;const newEnd=newStart+60;
+  return ORDERS.find(o=>o.auditor===aid&&o.date===date&&o.id!==excludeId&&BOOKED.includes(o.status)&&o.id!==undefined&&o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)&&(function(){
+    const[oh,om]=o.slot.split(':').map(Number);const oStart=oh*60+om;const oEnd=oStart+60;
+    const gapAB=newStart-oEnd;const gapBA=oStart-newEnd;
+    return(gapAB<0&&gapBA<0)||(gapAB>=0&&gapAB<120)||(gapBA>=0&&gapBA<120);
+  })())||null;
 }
 function orderCategoriesAudit(o){
   const at=o.auditTicked;
@@ -886,6 +890,7 @@ function slotReservedDrawerBody(o){
   const store=o.log?.[0]?.who||o.bm||'—';
   const bmName=(o.bm&&o.bm!==store)?o.bm:null;
   const enqId=o.po&&o.po.length?o.po[0]:null;
+  const assignedAuditor=auditorById(o.auditor);
   return `<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a">
     &#128197; Slot pre-booked from <b>${store}</b> store. When the Kylas enquiry arrives, create a new service order and schedule it for this date and time.
   </div>
@@ -895,6 +900,7 @@ function slotReservedDrawerBody(o){
     <div class="k">Store</div><div class="v">${store}</div>
     ${bmName?`<div class="k">BM</div><div class="v">${bmName}</div>`:''}
     ${enqId?`<div class="k">ENQ ID</div><div class="v">${enqId}</div>`:''}
+    ${assignedAuditor?`<div class="k">Auditor</div><div class="v" style="color:var(--green);font-weight:700">${assignedAuditor.name}</div>`:''}
     <div class="k">Categories</div><div class="v">${cats.length?cats.join(', '):'—'}</div>
     <div class="k">Booking ID</div><div class="v">${o.pi}</div>
   </div></div>
@@ -903,6 +909,17 @@ function slotReservedDrawerBody(o){
     <div class="k">Phone</div><div class="v">${o.phone}</div>
     <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div>
   </div></div>
+  <div class="sec"><h3>SM — Assign BM &amp; Auditor</h3>
+    <div class="field" style="margin-bottom:12px"><label style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);display:block;margin-bottom:5px">BM Name</label>
+      <div style="display:flex;gap:8px">
+        <input class="inp" id="slotResBmInput" value="${bmName||''}" placeholder="Business manager name…" style="flex:1;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit">
+        <button class="btn navy sm" id="slotResBmSave">Save</button>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:7px">Reserve auditor</div>
+    <div id="slotResAudList"></div>
+    <button class="btn navy full" id="slotResAssign" style="margin-top:8px" disabled>Reserve Auditor</button>
+  </div>
   <div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='manual'?' · store team':''}</div></div>`).join("")}</div></div>`;
 }
 
@@ -1085,7 +1102,7 @@ function editAuditServiceSection(o){
 
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">🗑 Delete</button>`;
-  if(o.status==="slot_reserved")return `${del}<button class="btn gray" id="dClose">Close</button>`;
+  if(o.status==="slot_reserved")return `<button class="btn danger" id="cancelRes">Cancel Reservation</button><button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="pending")return `${del}<button class="btn gray" id="dClose">Cancel</button><button class="btn navy" id="createService">Create service</button>`;
   if(["created","call_na"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
@@ -1297,6 +1314,53 @@ function wireDrawer(o){
   };
 
   if($("#raiseRect"))$("#raiseRect").onclick=()=>openRect(o);
+
+  if($("#cancelRes"))$("#cancelRes").onclick=async()=>{
+    if(!confirm("Cancel this slot reservation? It will be removed from the calendar."))return;
+    const btn=$("#cancelRes");btn.disabled=true;btn.textContent="Cancelling…";
+    try{
+      await sbPatch('audit_orders',o.id,{status:'deleted'});
+      closeDrawer();await Promise.all([loadOrders(),loadDeletedOrders()]);toast("Slot reservation cancelled");
+    }catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Cancel Reservation";}
+  };
+
+  if($("#slotResBmSave"))$("#slotResBmSave").onclick=async()=>{
+    const bm=($("#slotResBmInput").value||'').trim();
+    if(!bm){toast("Enter a BM name");return;}
+    const btn=$("#slotResBmSave");btn.disabled=true;btn.textContent="Saving…";
+    o.log=o.log||[];o.log.push({t:"BM assigned: "+bm,d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    try{await sbPatch('audit_orders',o.id,{bm,log:o.log});await loadOrders();toast("BM set to "+bm);openOrder(o.pi);}
+    catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Save";}
+  };
+
+  if($("#slotResAudList")){
+    const list=$("#slotResAudList");
+    list.innerHTML=AUDITORS.map(a=>{
+      const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
+      const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id);
+      const full=cap<1||load>=cap;
+      const isAssigned=o.auditor===a.id;
+      return `<div class="auditorrow ${full||cx?'full':''} ${isAssigned?'on':''}" data-aud="${a.id}">
+        <div class="av">${initials(a.name)}</div>
+        <div><div class="nm">${a.name}${isAssigned?' <span style="color:var(--green);font-size:11px">Currently reserved</span>':''}</div>
+        <div class="mt">${cx?`has ${slotLabel(cx.slot)} booking — conflict`:'Available for this slot'}</div></div>
+        <div class="load" style="color:${full?'var(--red)':cx?'var(--amber)':'var(--green)'}">${cx?'⚠ conflict':load+'/'+cap}</div></div>`;
+    }).join("");
+    list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
+      draft.auditor=el.dataset.aud;
+      list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));
+      el.classList.add("on");const b=$("#slotResAssign");if(b)b.disabled=false;
+    });
+  }
+  if($("#slotResAssign"))$("#slotResAssign").onclick=async()=>{
+    if(!draft.auditor)return;const a=auditorById(draft.auditor);if(!a)return;
+    const btn=$("#slotResAssign");btn.disabled=true;btn.textContent="Reserving…";
+    o.log=o.log||[];o.log.push({t:"Auditor reserved: "+a.name,d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    try{
+      await sbPatch('audit_orders',o.id,{auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
+      await loadOrders();toast("Auditor reserved: "+a.name);openOrder(o.pi);
+    }catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Reserve Auditor";}
+  };
 
   if($("#markDone"))$("#markDone").onclick=async()=>{
     if(!confirm("Mark this audit as completed?\nOnly do this if the auditor finished the job but their app failed to sync the status."))return;

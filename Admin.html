@@ -375,7 +375,7 @@ async function renderOverview(m){
       <div class="stat-card"><div class="val">${c.service_mgr}</div><div class="lbl">Service Managers</div><div class="bar"><div class="bar-fill" style="width:${total?c.service_mgr/total*100:0}%;background:var(--navy)"></div></div></div>
       <div class="stat-card"><div class="val">${c.site_auditor}</div><div class="lbl">Site Auditors</div><div class="bar"><div class="bar-fill" style="width:${total?c.site_auditor/total*100:0}%;background:var(--blue)"></div></div></div>
       <div class="stat-card"><div class="val">${c.installer}</div><div class="lbl">Site Installers</div><div class="bar"><div class="bar-fill" style="width:${total?c.installer/total*100:0}%;background:var(--green)"></div></div></div>
-      <div class="stat-card"><div class="val">${c.store_staff}</div><div class="lbl">Store Team</div><div class="bar"><div class="bar-fill" style="width:${total?c.store_staff/total*100:0}%;background:var(--amber)"></div></div></div>
+      <div class="stat-card" style="cursor:pointer;border:1.5px solid var(--amber)" onclick="window.open('Store_Team_App.html','_blank')"><div class="val" style="font-size:20px">🏪</div><div class="lbl">Store Team App</div><div style="font-size:11px;color:var(--amber);font-weight:700;margin-top:4px">Open (public link) ↗</div></div>
       <div class="stat-card"><div class="val">${active}</div><div class="lbl">Active Jobs Today</div><div class="bar"><div class="bar-fill" style="width:60%;background:var(--blue)"></div></div></div>
     </div>
     <div class="card">
@@ -463,7 +463,6 @@ function openAddUser(){
           <option value="site_auditor">Site Auditor</option>
           <option value="installer">Site Installer</option>
           <option value="auditor_installer">Site Auditor + Installer</option>
-          <option value="store_staff">Store Team</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -525,7 +524,6 @@ function openEditRole(u){
           <option value="site_auditor" ${u.role==='site_auditor'?'selected':''}>Site Auditor</option>
           <option value="installer" ${u.role==='installer'?'selected':''}>Site Installer</option>
           <option value="auditor_installer" ${u.role==='auditor_installer'?'selected':''}>Site Auditor + Installer</option>
-          <option value="store_staff" ${u.role==='store_staff'?'selected':''}>Store Team</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         </select>
       </div>

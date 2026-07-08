@@ -190,8 +190,11 @@ function fmtDate(s){if(!s)return'—';const d=new Date(s+'T00:00:00');return d.t
 function fmtSlotId(id){const s=SLOT_DEFS.find(x=>x.id===id);return s?s.label:'—';}
 
 function slotsConflict(slotA,slotB){
-  // Slots conflict if start times are within 120 min (covers same slot + adjacent slots)
-  return Math.abs(slotA.startMin-slotB.startMin)<120;
+  // Conflict if overlap OR less than 120 min between end of one slot and start of the other
+  const gapAB=slotB.startMin-slotA.endMin;
+  const gapBA=slotA.startMin-slotB.endMin;
+  if(gapAB<0&&gapBA<0)return true; // overlap / same slot
+  return(gapAB>=0&&gapAB<120)||(gapBA>=0&&gapBA<120);
 }
 
 function getAvailability(slotId){
