@@ -1,5 +1,5 @@
-const CACHE = 'md-v1';
-const OFFLINE = ['/Site_Auditor_App.html', '/Site_Installer_App.html', '/md_icon.svg'];
+const CACHE = 'md-v2';
+const OFFLINE = ['/Site_Auditor_App.html', '/Site_Installer_App.html', '/md_icon.svg', '/pwa-install.js', '/manifest_auditor.json', '/manifest_installer.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(OFFLINE)).then(() => self.skipWaiting()));

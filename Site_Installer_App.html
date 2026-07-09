@@ -123,6 +123,7 @@
       <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br><span id="meType">Installer</span></div>
     </div>
   </header>
+  <div id="locDeniedBanner" style="display:none;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location so the office can track you.</div>
   <div class="wrap" id="listView"></div>
 </div>
 
@@ -1019,20 +1020,20 @@ async function _patchMyLoc(lat,lng,pi){
   try{await fetch(SB_URL+'/rest/v1/profiles?email=eq.'+encodeURIComponent(ME.email),{method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify({last_lat:lat,last_lng:lng,last_loc_at:lat!=null?new Date().toISOString():null,last_order_pi:pi||null})});}catch(e){}
 }
 function startLocationTracking(orderPi){
-  _activeOrderPi=orderPi;
+  _activeOrderPi=orderPi||null;
+  if(_locWatchId!==null)return; // already tracking — just updated PI
   if(!navigator.geolocation)return;
-  if(_locWatchId!==null)navigator.geolocation.clearWatch(_locWatchId);
-  if(_locIntervalId!==null)clearInterval(_locIntervalId);
+  if(_locIntervalId!==null){clearInterval(_locIntervalId);_locIntervalId=null;}
   _locWatchId=navigator.geolocation.watchPosition(pos=>{
     const now=Date.now();
-    if(now-_lastLocSent>1800000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
-  },null,{enableHighAccuracy:false,maximumAge:300000,timeout:15000});
+    if(now-_lastLocSent>300000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
+  },()=>{},{enableHighAccuracy:false,maximumAge:60000,timeout:15000});
   _locIntervalId=setInterval(()=>{
     navigator.geolocation.getCurrentPosition(pos=>{
       const now=Date.now();
-      if(now-_lastLocSent>1799000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
-    },null,{timeout:5000,maximumAge:300000});
-  },1800000);
+      if(now-_lastLocSent>299000){_lastLocSent=now;_patchMyLoc(pos.coords.latitude,pos.coords.longitude,_activeOrderPi);}
+    },()=>{},{timeout:5000,maximumAge:60000});
+  },300000);
 }
 function stopLocationTracking(){
   if(_locWatchId!==null){navigator.geolocation.clearWatch(_locWatchId);_locWatchId=null;}
@@ -1301,6 +1302,8 @@ function _dsApply(){
 // ─────────────────────────────────────────────────────────────────────────────
 
 renderList();loadJobs();
+startLocationTracking(null);
+if(navigator.permissions){navigator.permissions.query({name:'geolocation'}).then(r=>{const b=document.getElementById('locDeniedBanner');const upd=()=>{if(b)b.style.display=r.state==='denied'?'block':'none';};upd();r.onchange=upd;}).catch(()=>{});}
 </script>
 
 <div id="docScanOverlay" style="display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;font-family:inherit">
