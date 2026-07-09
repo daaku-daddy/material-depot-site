@@ -409,6 +409,21 @@ function detailBody(o){
       <div class="actions"><a class="callbtn" href="tel:${o.phone.replace(/\s/g,'')}">&#128222; Call customer</a></div>
     </div>`;
 }
+function showCommentThen(title,cb){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:80;display:flex;align-items:flex-end';
+  ov.innerHTML='<div style="background:#fff;border-radius:20px 20px 0 0;padding:20px 18px 30px;width:100%;max-width:520px;box-sizing:border-box;margin:0 auto">'
+    +'<div style="font-weight:800;font-size:15px;margin-bottom:12px;color:var(--navy)">'+title+'</div>'
+    +'<textarea id="_cmtTa" placeholder="Add a comment (optional — leave blank to skip)" style="width:100%;box-sizing:border-box;padding:11px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;min-height:80px;resize:vertical;font-family:inherit;margin-bottom:12px"></textarea>'
+    +'<div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">'
+    +'<button id="_cmtCancel" style="padding:14px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-weight:700;font-size:14px;cursor:pointer">Cancel</button>'
+    +'<button id="_cmtOk" style="padding:14px;background:var(--navy);color:#fff;border:none;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer">Confirm</button>'
+    +'</div></div>';
+  document.body.appendChild(ov);
+  const done=c=>{ov.remove();cb(c);};
+  ov.querySelector('#_cmtCancel').onclick=()=>ov.remove();
+  ov.querySelector('#_cmtOk').onclick=()=>done((ov.querySelector('#_cmtTa').value||'').trim());
+}
 function wireDetail(o){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
   const adv=async(st,msg,logOverride,extraLog)=>{
@@ -422,26 +437,32 @@ function wireDetail(o){
     await loadJobs();toast(msg);openDetail(o.pi);
   };
   function showRescheduleForm(){
+    const todayStr=dstr(new Date());
     $("#detBody").innerHTML=`
       <div class="card">
         <h2 style="color:var(--red);margin:0 0 10px">Reschedule audit</h2>
-        <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Explain why this visit can't proceed. This will be sent to the Service Manager along with the request to rebook.</p>
+        <p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">Explain why this visit can't proceed. The SM will rebook the slot.</p>
         <label style="font-weight:700;font-size:13px">Reason <span style="color:var(--red)">*</span></label>
-        <textarea id="reschedReason" placeholder="e.g. Customer not available, site not accessible, material not matching…" style="display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:11px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;min-height:110px;resize:vertical;font-family:inherit"></textarea>
+        <textarea id="reschedReason" placeholder="e.g. Customer not available, site not accessible, material not matching…" style="display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:11px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;min-height:100px;resize:vertical;font-family:inherit"></textarea>
+        <label style="font-weight:700;font-size:13px;display:block;margin-top:14px">Follow-up date <span style="font-weight:400;font-size:11px;color:var(--muted)">(optional — when to call client)</span></label>
+        <input type="date" id="followUpDate" min="${todayStr}" style="display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:11px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;font-family:inherit">
       </div>
       <div class="actions" style="margin-top:14px">
         <button class="btn ghost" id="cancelResched">Cancel</button>
         <button class="btn warn" id="confirmResched">Confirm Reschedule</button>
       </div>`;
     $("#cancelResched").onclick=()=>openDetail(o.pi);
-    $("#confirmResched").onclick=()=>{
+    $("#confirmResched").onclick=async()=>{
       const reason=($("#reschedReason").value||'').trim();
+      const followUp=($("#followUpDate").value||'').trim();
       if(!reason){toast("Please enter a reason for rescheduling");return;}
-      adv("reschedule","Sent to SM to reschedule","Reschedule requested: "+reason);
+      const logMsg="Reschedule requested: "+reason+(followUp?` · Follow-up: ${followUp}`:'');
+      await adv("reschedule","Sent to SM to reschedule",logMsg);
+      if(followUp&&o.id){try{await sbPatch('audit_orders',o.id,{service:Object.assign({},o.service,{follow_up_date:followUp})});}catch(e){}}
     };
   }
-  if($("#toCall"))$("#toCall").onclick=()=>adv("callpending","Moved to Call Pending");
-  if($("#custYes"))$("#custYes").onclick=()=>adv("onway","On the way — SM notified");
+  if($("#toCall"))$("#toCall").onclick=()=>showCommentThen("Starting pre-visit call",c=>{adv("callpending","Pre-visit call started"+(c?` — ${c}`:``));});
+  if($("#custYes"))$("#custYes").onclick=()=>showCommentThen("Confirming on the way",c=>{adv("onway","Auditor on the way · customer confirmed"+(c?` — ${c}`:``));});
   if($("#atSite"))$("#atSite").onclick=()=>openArrivalModal(({photo,lat,lng})=>{
     const extra={};
     if(photo)extra.arrivalPhoto=photo;

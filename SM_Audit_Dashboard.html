@@ -615,7 +615,7 @@ function setDateFilter(d){filterDate=d;render();}
 /* ============== NAV COUNTS ============== */
 function counts(){
   $("#cOrders").textContent=ORDERS.length;
-  $("#cToday").textContent=ORDERS.filter(o=>o.date===dstr(today)).length;
+  $("#cToday").textContent=ORDERS.filter(o=>o.date===dstr(today)&&o.status!=='slot_reserved'&&o.status!=='slot_converted').length;
   $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule").length;
   if($("#cDeleted"))$("#cDeleted").textContent=DELETED.length||'';
   if($("#cRect"))$("#cRect").textContent=ORDERS.filter(o=>o.service&&o.service.rectification_of).length||'';
@@ -702,7 +702,7 @@ function ordersView(){
 }
 
 function scheduleView(){
-  const list=ORDERS.filter(o=>o.date===dstr(today)).sort((a,b)=>(a.slot||"").localeCompare(b.slot||""));
+  const list=ORDERS.filter(o=>o.date===dstr(today)&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||"").localeCompare(b.slot||""));
   const rows=list.map(o=>`<tr data-pi="${o.pi}">
     <td><b>${slotLabel(o.slot)}</b></td><td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
@@ -755,7 +755,7 @@ function calendarView(){
   const days=Array.from({length:10},(_,i)=>addDays(i-3));
   const cols=days.map(d=>{
     const ds=dstr(d);const isToday=ds===todayStr;const isSel=ds===calSelDay;const isPast=d<today;
-    const dayOrds=ORDERS.filter(o=>o.date===ds).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+    const dayOrds=ORDERS.filter(o=>o.date===ds&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
     const cnt=dayOrds.length;
     const minis=dayOrds.slice(0,3).map(o=>`<div class="calmini" data-pi="${o.pi}">
       <div class="calmini-name">${o.name}</div>
@@ -772,7 +772,7 @@ function calendarView(){
       <div class="daycol-b">${minis}${more}${cnt===0?'<div class="calempty-day">—</div>':''}</div>
     </div>`;
   }).join('');
-  const selOrds=ORDERS.filter(o=>o.date===calSelDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+  const selOrds=ORDERS.filter(o=>o.date===calSelDay&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const selDate=new Date(calSelDay+'T00:00');
   const selLabel=calSelDay===todayStr?'Today — '+selDate.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'}):selDate.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const detCards=selOrds.map(o=>`<div class="caldet-card" data-pi="${o.pi}">
@@ -979,7 +979,7 @@ function drawerBody(o){
         <div class="field"><label>New time</label><input type="time" id="schSlotTime" value="${schSlotDefault}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
         <button class="btn navy sm" id="saveSchSlot" style="margin-top:4px">Save time change</button>
       </div>
-      <div class="note">Auditors with a nearby booking on the same day are flagged — you can still assign them if the schedule allows. Assigning SMSes the auditor's details to the customer.</div>
+      <div class="note">Auditors with a time conflict (booking within 2 hours) are blocked and cannot be assigned. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div></div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
@@ -999,11 +999,12 @@ function drawerBody(o){
         <button class="btn navy sm" id="saveInlineSlot" style="display:none">Save change</button>
       </div></div>`;
   } else if(o.status==="reschedule"){
-    const reschedDateDefault=(o.date&&o.date>=dstr(today))?o.date:dstr(today);
+    const fuDate=o.service&&o.service.follow_up_date?o.service.follow_up_date:'';
     html+=`<div class="sec"><h3>Reschedule</h3>
-      <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Customer declined the auditor's pre-visit call. Call to rebook.</div>
-      <div class="field"><label>New date</label><input type="date" id="bookDate" min="${dstr(today)}" value="${reschedDateDefault}"></div>
+      <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Customer declined the auditor's pre-visit call. If the new date is confirmed, rebook the slot. If not, save a follow-up date and call back later.</div>
+      <div class="field"><label>New date <span style="font-weight:400;font-size:11px;color:var(--muted)">(leave blank to save follow-up only)</span></label><input type="date" id="bookDate" min="${dstr(today)}" value=""></div>
       <div class="field"><label>Visit time</label><input type="time" id="bookTime" value="${o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00'}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
+      <div class="field"><label>Follow-up date <span style="font-weight:400;font-size:11px;color:var(--muted)">(when to call client for new date)</span></label><input type="date" id="followUpDate" min="${dstr(today)}" value="${fuDate}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff"></div>
       <div class="field"><label>Remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark" placeholder="Reason for reschedule, customer notes…" style="width:100%;min-height:72px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div></div>`;
   } else if(o.status==="completed"){
     // Fetch audit_ticked on demand if not already loaded (it's excluded from bulk fetch due to size)
@@ -1107,7 +1108,7 @@ function drawerFoot(o){
   if(o.status==="pending")return `${del}<button class="btn gray" id="dClose">Cancel</button><button class="btn navy" id="createService">Create service</button>`;
   if(["created","call_na"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;
-  if(o.status==="reschedule")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Rebook slot</button>`;
+  if(o.status==="reschedule")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn ghost" id="saveFollowUp">Save follow-up</button><button class="btn navy" id="bookSlot" disabled>Rebook slot</button>`;
   if(["assigned","onway"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="atsite")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn green" id="markDone">Mark Completed</button>`;
   if(o.status==="completed")return `${del}<button class="btn gray" id="dClose">Close</button>${o.service&&o.service.rectification_raised?`<span class="chip c-assigned" style="flex:1;justify-content:center;cursor:default">↩ Rectified</span>`:`<button class="btn amber" id="raiseRect">↩ Raise Rectification</button>`}`;
@@ -1235,25 +1236,43 @@ function wireDrawer(o){
     const wasResched=o.status==="reschedule";
     o.date=draft.date;o.slot=draft.slot;o.status="scheduled";
     const remark=wasResched?($("#reschedRemark")||{}).value||'':'';
-    const logLabel=wasResched?"Slot rebooked":"Slot booked";
+    const logLabel=wasResched?"Slot rebooked — auditor cleared, reassignment needed":"Slot booked";
     o.log.push({t:logLabel+": "+fmtDate(o.date)+" · "+slotLabel(o.slot)+(remark.trim()?" — "+remark.trim():""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
-    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,slot:o.slot,date:o.date,log:o.log});
+    const patch={status:o.status,slot:o.slot,date:o.date,log:o.log};
+    if(wasResched){patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;o.auditor=null;o.auditorName=null;o.auditorEmail=null;}
+    if(o.id)await sbPatch('audit_orders',o.id,patch);
     await loadOrders();toast((wasResched?"Slot rebooked":"Slot booked")+" — "+fmtDate(o.date));openOrder(o.pi);};
+  if($("#saveFollowUp"))$("#saveFollowUp").onclick=async()=>{
+    const fu=($("#followUpDate")||{}).value||'';
+    const rem=($("#reschedRemark")||{}).value||'';
+    if(!fu&&!rem){toast("Enter a follow-up date or remarks to save");return;}
+    const logText="Follow-up noted"+(fu?" · Call client by "+fmtDate(fu):'')+(rem?" — "+rem:'');
+    o.log.push({t:logText,d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const svc=Object.assign({},o.service,fu?{follow_up_date:fu}:{});
+    if(o.id)await sbPatch('audit_orders',o.id,{log:o.log,service:svc});
+    await loadOrders();toast("Follow-up saved");openOrder(o.pi);};
 
   // ---- auditor assignment ----
   if($("#auditorList")){
     const list=$("#auditorList");
-    list.innerHTML=AUDITORS.map(a=>{
-      const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
-      const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id);
-      const full=cap<1||load>=cap;
-      return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
-        <div class="av">${initials(a.name)}</div>
-        <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}${cx?` <span style="color:var(--amber)">· has ${slotLabel(cx.slot)} booking</span>`:''}</div></div>
-        <div class="load" style="color:${full?'var(--red)':cx?'var(--amber)':'var(--green)'}">${cx?'⚠ nearby booking':load+'/'+cap+(full?' · full':'')}</div></div>`;
-    }).join("");
-    list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
-      draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
+    const _renderAudList=()=>{
+      list.innerHTML=AUDITORS.map(a=>{
+        const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
+        const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id);
+        const capBlocked=(cap<1&&load===0)||(cap>0&&load>=cap);
+        const overCap=cap<1&&load>0;
+        const full=capBlocked||!!cx;
+        const loadText=overCap?`${load}/${cap} · over cap`:`${load}/${cap}${capBlocked?' · full':''}`;
+        return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
+          <div class="av">${initials(a.name)}</div>
+          <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}${cx?` <span style="color:var(--red)">· conflict: ${slotLabel(cx.slot)}</span>`:''}</div></div>
+          <div class="load" style="color:${full?'var(--red)':overCap?'var(--amber)':'var(--green)'}">${cx?'⚠ cannot assign':loadText}</div></div>`;
+      }).join("");
+      list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
+        draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
+    };
+    _renderAudList();
+    loadOrders().then(()=>{if(currentPI===o.pi&&$("#auditorList"))_renderAudList();});
   }
   if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
     o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});

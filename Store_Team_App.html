@@ -448,8 +448,8 @@ function openBookingSheet(slotId,date){
     <div class="field"><label>Customer name *</label><input class="inp" id="bkName" placeholder="Full name" autocomplete="off"></div>
     <div class="field"><label>Phone number *</label><input class="inp" id="bkPhone" type="tel" placeholder="9876543210"></div>
     <div class="field"><label>Address *</label><textarea class="inp" id="bkAddr" placeholder="Flat / building / area…"></textarea></div>
-    <div class="field"><label>ENQ ID <span style="font-weight:500;color:var(--muted)">(optional — if customer has existing enquiry)</span></label><input class="inp" id="bkEnq" placeholder="ENQ2026…" autocomplete="off"></div>
-    <div class="field"><label>BM Name <span style="font-weight:500;color:var(--muted)">(optional)</span></label><input class="inp" id="bkBm" placeholder="Business manager name" autocomplete="off"></div>
+    <div class="field"><label>ENQ ID *</label><input class="inp" id="bkEnq" placeholder="ENQ2026…" autocomplete="off"></div>
+    <div class="field"><label>BM Name *</label><input class="inp" id="bkBm" placeholder="Business manager name" autocomplete="off"></div>
     <div class="field"><label>Audit categories <span style="font-weight:500;color:var(--muted)">(select all that apply)</span></label>
       <div class="check-group">
         <label class="check-row"><input type="checkbox" id="bkFl"><span>Wooden Flooring</span></label>
@@ -457,6 +457,7 @@ function openBookingSheet(slotId,date){
         <label class="check-row"><input type="checkbox" id="bkCwp"><span>Custom Wallpapers</span></label>
       </div>
     </div>
+    <div class="field"><label>Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea class="inp" id="bkComments" placeholder="Any notes about the customer or visit…" style="min-height:70px;resize:vertical"></textarea></div>
     <div class="err-msg" id="bkErr"></div>
     <div class="sheet-footer">
       <button class="btn ghost" id="bkCancel">Cancel</button>
@@ -473,11 +474,14 @@ function openBookingSheet(slotId,date){
     const addr=(document.getElementById('bkAddr').value||'').trim();
     const enqId=(document.getElementById('bkEnq').value||'').trim();
     const bmName=(document.getElementById('bkBm').value||'').trim();
+    const comments=(document.getElementById('bkComments').value||'').trim();
     const err=document.getElementById('bkErr');
     err.classList.remove('show');
     if(!name){err.textContent='Customer name is required.';err.classList.add('show');return;}
     if(!phone){err.textContent='Phone number is required.';err.classList.add('show');return;}
     if(!addr){err.textContent='Address is required.';err.classList.add('show');return;}
+    if(!enqId){err.textContent='Enquiry ID is required.';err.classList.add('show');return;}
+    if(!bmName){err.textContent='BM name is required.';err.classList.add('show');return;}
 
     const cats=[];
     if(document.getElementById('bkFl').checked)cats.push('Wooden Flooring');
@@ -489,10 +493,10 @@ function openBookingSheet(slotId,date){
 
     try{
       const pi=genSlotPI(MYSTORE);
-      const logNote='Slot pre-booked at '+MYSTORE+' store'+(bmName?' · BM: '+bmName:'');
+      const logNote='Slot pre-booked at '+MYSTORE+' store · BM: '+bmName+(comments?' · '+comments:'');
       await sbPost('audit_orders',{
         pi,
-        po:enqId||'',
+        po:enqId,
         customer_name:name,
         phone,
         addr,

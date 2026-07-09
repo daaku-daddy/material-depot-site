@@ -850,7 +850,7 @@ function scheduleView(){
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
     <td style="max-width:160px">${mapLink(o.addr)}</td>
     <td>${a.installer_name||'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
-    <td>${chip(sj.status)}</td></tr>`).join("");
+    <td>${chip(o.status==='partial'&&sj.status!=='completed'?'partial':sj.status)}</td></tr>`).join("");
   return `<div class="crumbs">Installations / Today's installs</div>
   <div class="pagehead"><div><h1>Today — ${fmtDate(dstr(today))}</h1><p>Live view of today's install sub-jobs and installer progress.</p></div></div>
   <div class="tablecard"><table>
@@ -914,7 +914,7 @@ function calendarView(){
     const minis=items.slice(0,3).map(({o,sj})=>`<div class="calmini" data-pi="${o.pi}">
       <div class="calmini-name">${o.name}</div>
       <div class="calmini-meta">${typeTag(sj.type)} ${primaryName(sj).split(' ')[0]}</div>
-      <div class="calmini-foot">${sjChip(sj.status)}</div>
+      <div class="calmini-foot">${sjChip(o.status==='partial'&&sj.status!=='completed'?'partial':sj.status)}</div>
     </div>`).join('');
     const more=cnt>3?`<div class="calmore">+${cnt-3} more</div>`:'';
     return `<div class="daycol${isSel?' sel':''}${isPast?' past':''}${isToday?' today':''}" data-calday="${ds}">
@@ -943,7 +943,7 @@ function calendarView(){
       <div class="caldet-r">
         <div class="caldet-slot">${slotStr}</div>
         <div class="caldet-person">${allNames}</div>
-        ${sjChip(sj.status)}
+        ${sjChip(o.status==='partial'&&sj.status!=='completed'?'partial':sj.status)}
       </div>
     </div>`;
   }).join('');
@@ -1198,6 +1198,7 @@ function renderAssignSection(o,sj,container){
         </div>`;
         if(sj.status==='reschedule')html+=`<div><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:56px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:2px"></textarea></div>`;
         html+=`<button class="btn navy sm" id="bookSlot_${sj.id}" style="width:100%">${sj.status==='reschedule'?'Book new slot':'Book slot'}</button>`;
+        if(sj.date||sj.assignments&&sj.assignments.length)html+=`<button class="btn danger sm" id="clearSlot_${sj.id}" style="width:100%;margin-top:4px">Clear slot &amp; release installer</button>`;
         html+=`</div>`;
       }
       html+=`</div>`; // .step-block
@@ -1260,14 +1261,29 @@ function renderAssignSection(o,sj,container){
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';
       sj.date=d;sj.slot=t;
-      // Carry new date/time into existing assignments
-      if(sj.assignments&&sj.assignments.length)sj.assignments.forEach(a=>{a.date=d;a.slots=[t];});
+      if(wasResched){
+        // Clear assignments on reschedule — installer must be re-assigned for the new date
+        sj.assignments=[];assigns=[];
+      } else if(sj.assignments&&sj.assignments.length){
+        sj.assignments.forEach(a=>{a.date=d;a.slots=[t];});
+      }
       sj.status='scheduled';
       syncParent(o);
       const logLabel=wasResched?sj.type+' slot rescheduled'+(remark?' — '+remark:''):sj.type+' slot booked';
       o.log.push({t:logLabel+': '+fmtDate(d)+' · '+slotLabel(t),d:new Date().toISOString(),by:'manual',who:SESSION.name});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       await loadOrders();toast(wasResched?'Slot rescheduled':'Slot booked');openOrder(o.pi);
+    };
+
+    // Clear slot (standard mode)
+    const clearSlotBtn=container.querySelector('#clearSlot_'+sj.id);
+    if(clearSlotBtn)clearSlotBtn.onclick=async()=>{
+      if(!confirm(`Clear the ${sj.type} slot and remove all installer assignments? The order will return to "Service Created" status.`))return;
+      sj.date=null;sj.slot=null;sj.assignments=[];sj.status='created';
+      o.log.push({t:`${sj.type} slot cleared and installer released`,d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      syncParent(o);
+      if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
+      await loadOrders();toast('Slot cleared');openOrder(o.pi);
     };
 
     // Custom mode: date range inputs
@@ -1488,8 +1504,14 @@ function wireDrawer(o){
     const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name);
     const flSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_fl');
     const wpSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_wp');
-    if(!fl.length&&flSj&&flSj.status!=='created'){toast("Flooring sub-job is in progress — cannot remove it");return;}
-    if(!wp.length&&wpSj&&wpSj.status!=='created'){toast("Wallpaper sub-job is in progress — cannot remove it");return;}
+    if(!fl.length&&flSj&&flSj.status!=='created'){
+      if(!confirm("The flooring sub-job is currently "+((STATUS[flSj.status]||{l:flSj.status}).l)+". Removing it will cancel the installer's assignment. Proceed?"))return;
+      o.log.push({t:"Flooring sub-job removed (was "+flSj.status+" — SM correction)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    }
+    if(!wp.length&&wpSj&&wpSj.status!=='created'){
+      if(!confirm("The wallpaper sub-job is currently "+((STATUS[wpSj.status]||{l:wpSj.status}).l)+". Removing it will cancel the installer's assignment. Proceed?"))return;
+      o.log.push({t:"Wallpaper sub-job removed (was "+wpSj.status+" — SM correction)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    }
     o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
     if(o.subjobs){
       if(fl.length&&flSj)flSj.items=fl;
@@ -1565,6 +1587,7 @@ function syncParent(o){
   else if(sts.every(s=>s==="assigned"))o.status="assigned";
   else if(sts.some(s=>s==="assigned"))o.status="assigned";
   else if(sts.some(s=>s==="scheduled"))o.status="scheduled";
+  else if(sts.every(s=>s==="created"))o.status="created";
 }
 
 function deletedView(){
