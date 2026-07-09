@@ -1439,7 +1439,10 @@ function wireDrawer(o){
     // Cascade field-level statuses down to subjobs + assignments so every dashboard stays in sync
     const FIELD_STATUSES=['callpending','onway','atsite','completed','reschedule'];
     const RANK={scheduled:0,assigned:0,callpending:1,onway:2,atsite:3};
-    if(FIELD_STATUSES.includes(st)&&o.subjobs&&o.subjobs.length){
+    if(st==='created'&&o.subjobs&&o.subjobs.length){
+      // Reverting to Service Created: wipe all slot bookings and installer assignments
+      o.subjobs.forEach(sj=>{sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;});
+    } else if(FIELD_STATUSES.includes(st)&&o.subjobs&&o.subjobs.length){
       const newRank=RANK[st]??99;
       o.subjobs.forEach(sj=>{
         if(sj.status==='completed')return;
