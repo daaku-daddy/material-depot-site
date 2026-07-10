@@ -166,6 +166,13 @@
   .skurow .del{border:0;background:#fbeae8;color:var(--red);border-radius:8px;width:34px;height:34px;cursor:pointer;font-weight:800;flex:0 0 auto;}
   .addsku{border:1px dashed var(--blue);background:#fff;color:var(--blue);border-radius:8px;padding:7px;font-weight:700;font-size:12.5px;cursor:pointer;width:100%;}
   .rollhint{font-size:11px;color:var(--muted);margin-top:4px;}
+  .skurow-v{position:relative;background:var(--lighter);border-radius:10px;padding:10px 34px 10px 12px;margin-bottom:10px;}
+  .skv-r{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;align-items:center;margin-bottom:6px;}
+  .skv-r:last-child{margin-bottom:0;}
+  .skv-r label{font-size:11px;font-weight:700;color:var(--muted);}
+  .skv-r input{padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;width:100%;box-sizing:border-box;}
+  .skv-opt{font-weight:500;color:var(--muted);}
+  .del-v{position:absolute;top:8px;right:8px;border:0;background:#fbeae8;color:var(--red);border-radius:7px;width:24px;height:24px;cursor:pointer;font-weight:800;line-height:1;}
   .slotgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
   .slot{border:1px solid var(--line);border-radius:9px;padding:9px;text-align:center;cursor:pointer;background:#fff;}
   .slot.on{border-color:var(--blue);background:#f3f8fd;} .slot.full{opacity:.45;cursor:not-allowed;background:#f6f7f9;}
@@ -1094,12 +1101,21 @@ function drawerBody(o){
       <div class="note">Flooring and wallpaper are scheduled &amp; tracked separately. Each can have multiple installers. Order completes only when all sub-jobs are done.</div>`;
     o.subjobs.forEach(sj=>{
       const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
+      const totalSqft=(sj.items||[]).reduce((s,it)=>s+(parseFloat(it.sqft)||0),0);
+      const skText=sj.items.map(it=>{
+        let q='';
+        if(sj.type==='wallpaper')q=o.customWp?(it.sqft?' · '+it.sqft+' sq.ft':''):(' · '+(it.rolls||'?')+' rolls');
+        else q=it.qty?' · Qty: '+it.qty:'';
+        return it.sku+(it.name?(' · '+it.name):'')+q;
+      }).join(', ');
       html+=`<div class="sjcard" data-sj="${sj.id}">
         <div class="sjh"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WALLPAPER':'FLOORING'}</span>
-          <span class="sk">${sj.items.map(it=>it.sku+(it.name?(' · '+it.name):'')+(it.qty?(' · Qty: '+it.qty):'')+(sj.type==='wallpaper'?(' · '+(it.rolls||'?')+' rolls'):'')).join(', ')}</span>
+          <span class="sk">${skText}</span>
           <span class="st">${chip(sj.status)}</span></div>
         ${sj.type==='wallpaper'
-          ?`<div class="wp-dur-badge"><span>${rolls} rolls → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
+          ?(o.customWp
+            ?`<div class="wp-dur-badge"><span>${totalSqft?totalSqft+' sq.ft total':'Custom wallpaper'} — <strong>duration set manually in Custom / Multi-day mode</strong></span><span style="font-size:18px">📐</span></div>`
+            :`<div class="wp-dur-badge"><span>${rolls} rolls → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`)
           :`<div class="fl-fullday-note">Flooring — 1 full day per installer visit</div>`}
         ${sj.status==='completed'?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download Job Card PDF</button>`:''}
         <div data-assignsection="${sj.id}"></div>
@@ -1170,7 +1186,7 @@ function renderAssignSection(o,sj,container){
         </div>`;
       });
       html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">&#65291; Add another installer</div>`;
-      if(sj.status==='reschedule')html+=`<div style="margin-top:10px"><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:64px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:4px"></textarea></div>`;
+      if(sj.status==='reschedule')html+=`<div style="margin-top:10px"><label class="lbl-sm">Reschedule reason <span style="color:var(--red)">*</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:64px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:4px"></textarea></div>`;
       html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">${sj.status==='reschedule'?'Save reschedule':'Save assignments'}</button>`;
 
     } else {
@@ -1191,12 +1207,12 @@ function renderAssignSection(o,sj,container){
         </div>`;
       } else {
         html+=`<div class="step-bd">`;
-        if(sj.type==='wallpaper')html+=`<div style="font-size:11.5px;color:var(--muted)">${rolls} rolls &rarr; ${slotsN*3}h of work. Choose date &amp; start time.</div>`;
+        if(sj.type==='wallpaper')html+=o.customWp?`<div style="font-size:11.5px;color:var(--muted)">Custom wallpaper order — pick a start date &amp; time; duration isn't auto-calculated from rolls.</div>`:`<div style="font-size:11.5px;color:var(--muted)">${rolls} rolls &rarr; ${slotsN*3}h of work. Choose date &amp; start time.</div>`;
         html+=`<div class="dr-row">
           <div><label class="lbl-sm">Date</label><input type="date" id="stepDate_${sj.id}" class="inp-sm" min="${minDate}" value="${curDate||dstr(today)}"></div>
           <div><label class="lbl-sm">Start time</label><input type="time" id="stepTime_${sj.id}" class="inp-sm" value="${curTime}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>
         </div>`;
-        if(sj.status==='reschedule')html+=`<div><label class="lbl-sm">Reschedule remarks <span style="font-weight:500;color:var(--muted)">(optional)</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:56px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:2px"></textarea></div>`;
+        if(sj.status==='reschedule')html+=`<div><label class="lbl-sm">Reschedule reason <span style="color:var(--red)">*</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:56px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:2px"></textarea></div>`;
         html+=`<button class="btn navy sm" id="bookSlot_${sj.id}" style="width:100%">${sj.status==='reschedule'?'Book new slot':'Book slot'}</button>`;
         if(sj.date||sj.assignments&&sj.assignments.length)html+=`<button class="btn danger sm" id="clearSlot_${sj.id}" style="width:100%;margin-top:4px">Clear slot &amp; release installer</button>`;
         html+=`</div>`;
@@ -1260,6 +1276,7 @@ function renderAssignSection(o,sj,container){
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';
+      if(wasResched&&!remark){toast("Please enter a reason for the reschedule");return;}
       sj.date=d;sj.slot=t;
       if(wasResched){
         // Clear assignments on reschedule — installer must be re-assigned for the new date
@@ -1328,6 +1345,7 @@ function renderAssignSection(o,sj,container){
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';
+      if(wasResched&&!remark){toast("Please enter a reason for the reschedule");return;}
       sj.assignments=valid;
       sj.installer=valid[0].installer_id;sj.installer_email=valid[0].installer_email;
       sj.date=customMode?(valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null):sj.date;
@@ -1343,11 +1361,16 @@ function renderAssignSection(o,sj,container){
   draw();
 }
 
+function _wpRollHint(customWp){
+  return customWp
+    ?`<div class="rollhint">Custom wallpaper order — enter total square footage per SKU. Duration is set manually via Custom / Multi-day mode below (capacity limits don't apply).</div>`
+    :`<div class="rollhint">Roll count sets duration: 1–3 rolls = 3h (1 slot), 4–6 rolls = 6h (2 slots), 7+ rolls = 9h (3 slots).</div>`;
+}
 function serviceCreationPanel(o){
   const flHas=o.skus.some(s=>s.type==="flooring");
   const wpHas=o.skus.some(s=>s.type==="wallpaper");
   return `<div class="sec"><h3>Service creation</h3>
-    <div class="note green">Delivery confirmed on time — you can now create the service. Customer, phone, address and BM are auto-filled. Add SKU Code, SKU Name, and an optional link for each category; for wallpaper, confirm the roll count.</div>
+    <div class="note green">Delivery confirmed on time — you can now create the service. Customer, phone, address and BM are auto-filled. Add the SKU code, product name, and ${o.customWp?'square footage':'roll count'} for each wallpaper SKU.</div>
     <div class="field"><label>Customer name <span class="autofill">auto</span></label><input value="${o.name}" disabled></div>
     <div class="field"><label>Phone <span class="autofill">auto</span></label><input value="${o.phone}" disabled></div>
     <div class="field"><label>Address <span class="autofill">auto</span></label><input value="${o.addr}" disabled></div>
@@ -1361,38 +1384,49 @@ function serviceCreationPanel(o){
       <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wpHas?'on':''}" data-tog="wallpaper"></div></div>
       <div class="skurows ${wpHas?'':'hide'}" data-rows="wallpaper"></div>
       <button class="addsku ${wpHas?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
-      <div class="rollhint">Roll count sets duration: 1–3 rolls = 3h (1 slot), 4–6 rolls = 6h (2 slots), 7+ rolls = 9h (3 slots).</div>
+      ${_wpRollHint(o.customWp)}
     </div>
   </div>`;
 }
 
-function _preSkuRowsInstall(items,grp){
-  return items.map((r,i)=>`<div class="skurow">
-    <div class="sr-top">
-      <input placeholder="SKU Code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
-      <input placeholder="SKU Name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name">
-      <input class="rolls" placeholder="Qty" value="${r.qty||''}" data-grp="${grp}" data-i="${i}" data-f="qty" style="flex:0 0 70px" title="Quantity required">
-      ${grp==='wallpaper'?`<input class="rolls" placeholder="Rolls" inputmode="numeric" value="${r.rolls||''}" data-grp="${grp}" data-i="${i}" data-f="rolls">`:''}
-      <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button>
-    </div>
-    <input class="link" placeholder="SKU Link (optional)" value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link">
-  </div>`).join('');
+// Quantity field config per SKU row: wallpaper tracks Rolls (standard) or Sq Ft (custom_wp order); flooring tracks Qty.
+function _skuQtyField(grp,customWp){
+  if(grp==='wallpaper')return customWp?{f:'sqft',label:'Sq Ft',ph:'e.g. 120'}:{f:'rolls',label:'Rolls',ph:'e.g. 6'};
+  return {f:'qty',label:'Quantity',ph:'e.g. 12 boxes'};
+}
+function _emptySkuRow(grp,customWp){
+  if(grp==='wallpaper')return customWp?{sku:'',name:'',sqft:''}:{sku:'',name:'',rolls:''};
+  return {sku:'',name:'',qty:'',link:''};
+}
+// Vertical/tabular SKU row: one labelled field per line instead of a cramped horizontal strip.
+function _skuRowHtml(r,grp,i,customWp){
+  const qf=_skuQtyField(grp,customWp);
+  return `<div class="skurow-v">
+    <button class="del-v" data-delrow="${grp}" data-i="${i}" title="Remove SKU">&times;</button>
+    <div class="skv-r"><label>SKU Code</label><input placeholder="e.g. WF-OAK-12MM" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku"></div>
+    <div class="skv-r"><label>Product Name</label><input placeholder="Product name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name"></div>
+    <div class="skv-r"><label>${qf.label}</label><input placeholder="${qf.ph}" inputmode="${qf.f==='sqft'?'decimal':qf.f==='rolls'?'numeric':''}" value="${r[qf.f]||''}" data-grp="${grp}" data-i="${i}" data-f="${qf.f}"></div>
+    ${grp==='flooring'?`<div class="skv-r"><label>SKU Link <span class="skv-opt">(optional)</span></label><input placeholder="https://..." value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link"></div>`:''}
+  </div>`;
+}
+function _preSkuRowsInstall(items,grp,customWp){
+  return items.map((r,i)=>_skuRowHtml(r,grp,i,customWp)).join('');
 }
 function editInstallServiceSection(o){
   const flItems=o.service.flooring||[];const wpItems=o.service.wallpaper||[];
   const fl=flItems.length>0;const wp=wpItems.length>0;
   return `<div class="sec"><h3>Service details <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— edit if needed</span></h3>
-    <div class="note">Update SKU codes, names, links and roll counts. Changes also update the installer's job items.</div>
+    <div class="note">Update SKU codes, product names and ${o.customWp?'square footage':'roll counts'}. Changes also update the installer's job items.</div>
     <div class="skugroup" data-grp="flooring">
       <div class="gh"><span class="gt">Wooden Flooring</span><div class="switch ${fl?'on':''}" data-tog="flooring"></div></div>
-      <div class="skurows ${fl?'':'hide'}" data-rows="flooring">${_preSkuRowsInstall(flItems,'flooring')}</div>
+      <div class="skurows ${fl?'':'hide'}" data-rows="flooring">${_preSkuRowsInstall(flItems,'flooring',o.customWp)}</div>
       <button class="addsku ${fl?'':'hide'}" data-add="flooring">+ Add flooring SKU</button>
     </div>
     <div class="skugroup" data-grp="wallpaper">
       <div class="gh"><span class="gt">Wallpaper</span><div class="switch ${wp?'on':''}" data-tog="wallpaper"></div></div>
-      <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper">${_preSkuRowsInstall(wpItems,'wallpaper')}</div>
+      <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper">${_preSkuRowsInstall(wpItems,'wallpaper',o.customWp)}</div>
       <button class="addsku ${wp?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
-      <div class="rollhint">Roll count sets duration: 1–3 rolls = 3h (1 slot), 4–6 rolls = 6h (2 slots), 7+ rolls = 9h (3 slots).</div>
+      ${_wpRollHint(o.customWp)}
     </div>
     <button class="btn navy sm" style="margin-top:8px" id="saveService">Save changes</button>
   </div>`;
@@ -1417,8 +1451,8 @@ function wireDrawer(o){
     draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));
   } else {
     const _sk=o.skus||[];
-    draft.flooring=_sk.filter(s=>s.type==='flooring').map(s=>({sku:s.c,name:'',link:'',qty:'',rolls:''}));
-    draft.wallpaper=_sk.filter(s=>s.type==='wallpaper').map(s=>({sku:s.c,name:'',link:'',qty:'',rolls:''}));
+    draft.flooring=_sk.filter(s=>s.type==='flooring').map(s=>({sku:s.c,name:'',qty:'',link:''}));
+    draft.wallpaper=_sk.filter(s=>s.type==='wallpaper').map(s=>o.customWp?{sku:s.c,name:'',sqft:''}:{sku:s.c,name:'',rolls:''});
   }
   $("#dwClose").onclick=closeDrawer;
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
@@ -1466,16 +1500,7 @@ function wireDrawer(o){
   // service creation
   function renderSkuRows(grp){
     const box=document.querySelector(`[data-rows="${grp}"]`);if(!box)return;
-    box.innerHTML=draft[grp].map((r,i)=>`<div class="skurow">
-      <div class="sr-top">
-        <input placeholder="SKU Code" value="${r.sku||''}" data-grp="${grp}" data-i="${i}" data-f="sku">
-        <input placeholder="SKU Name" value="${r.name||''}" data-grp="${grp}" data-i="${i}" data-f="name">
-        <input class="rolls" placeholder="Qty" value="${r.qty||''}" data-grp="${grp}" data-i="${i}" data-f="qty" style="flex:0 0 70px" title="Quantity required">
-        ${grp==='wallpaper'?`<input class="rolls" placeholder="Rolls" inputmode="numeric" value="${r.rolls||''}" data-grp="${grp}" data-i="${i}" data-f="rolls">`:''}
-        <button class="del" data-delrow="${grp}" data-i="${i}">&times;</button>
-      </div>
-      <input class="link" placeholder="SKU Link (optional)" value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link">
-    </div>`).join("");
+    box.innerHTML=draft[grp].map((r,i)=>_skuRowHtml(r,grp,i,o.customWp)).join("");
     box.querySelectorAll("input").forEach(inp=>inp.oninput=()=>{draft[inp.dataset.grp][inp.dataset.i][inp.dataset.f]=inp.value;});
     box.querySelectorAll("[data-delrow]").forEach(btn=>btn.onclick=()=>{draft[btn.dataset.delrow].splice(+btn.dataset.i,1);renderSkuRows(grp);});
   }
@@ -1483,10 +1508,10 @@ function wireDrawer(o){
     const grp=sw.dataset.tog;const on=!sw.classList.contains("on");sw.classList.toggle("on",on);
     const rows=document.querySelector(`[data-rows="${grp}"]`),add=document.querySelector(`[data-add="${grp}"]`);
     rows.classList.toggle("hide",!on);add.classList.toggle("hide",!on);
-    if(on&&draft[grp].length===0){draft[grp].push({sku:"",name:"",link:"",qty:"",rolls:""});renderSkuRows(grp);}
+    if(on&&draft[grp].length===0){draft[grp].push(_emptySkuRow(grp,o.customWp));renderSkuRows(grp);}
     if(!on)draft[grp]=[];
   });
-  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push({sku:"",name:"",link:"",qty:"",rolls:""});renderSkuRows(grp);});
+  document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push(_emptySkuRow(grp,o.customWp));renderSkuRows(grp);});
   if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
   if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
 

@@ -276,7 +276,7 @@ async function loadJobs(){
             slot:aSlots[0]||null,
             slots:aSlots,
             status:sj.status==='assigned'?'scheduled':sj.status,
-            sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||'',qty:it.qty||''})),
+            sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||'',qty:it.qty||(it.rolls?it.rolls+' rolls':'')||(it.sqft?it.sqft+' sq.ft':'')})),
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
             jobcard:existing[r.pi+'|'+sj.id]||sj.jobcard||null,

@@ -18,7 +18,7 @@
     --ink:#1b2230;--muted:#67748a;--line:#dde3ec;--bg:#eef1f6;--card:#fff;
     --lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;
     --red:#b3261e;--redbg:#fbeae8;--amber:#9a6200;--amberbg:#fdf2da;
-    --purple:#5b3aa6;--purplebg:#efeaf8;
+    --purple:#5b3aa6;--purplebg:#efeaf8;--teal:#0f6e74;
     --shadow:0 1px 2px rgba(20,40,80,.06),0 4px 14px rgba(20,40,80,.06);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
@@ -1164,7 +1164,7 @@ async function renderAnalytics(m){
   try{
     [installRes,auditRes,ratingsRes]=await Promise.all([
       sbGetLong('install_orders_slim?select=pi,status,subjobs,service,delivery_date,created_at&status=neq.deleted'),
-      sbGetLong('audit_orders?select=pi,status,date,slot,auditor_name,auditor_email,created_at&status=not.in.(deleted,slot_reserved,slot_converted)'),
+      sbGetLong('audit_orders?select=pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at&status=not.in.(deleted,slot_reserved,slot_converted)'),
       sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
@@ -1178,6 +1178,11 @@ async function renderAnalytics(m){
   if(Array.isArray(installRes)&&Array.isArray(delivMeta)){
     const dm={};for(const r of delivMeta)dm[r.pi]=r.original_delivery_date||null;
     for(const o of installRes)o.original_delivery_date=dm[o.pi]||null;
+  }
+  const installLogRes=await sbGetLong('install_orders?select=pi,phone,log&status=neq.deleted&created_at=gte.2026-07-01').catch(()=>[]);
+  if(Array.isArray(installLogRes)){
+    const lm={};for(const r of installLogRes)lm[r.pi]={phone:r.phone||null,log:r.log||[]};
+    for(const o of installRes){o.phone=lm[o.pi]?.phone||null;o.log=lm[o.pi]?.log||[];}
   }
   window._anData={
     installs:Array.isArray(installRes)?installRes:[],
@@ -1278,12 +1283,12 @@ function _anInstallerMap(attempts,iRatings,arrMap){
     for(const inst of att.installers){
       const k=inst.installer_email||inst.installer_name;
       if(!k) continue;
-      if(!map[k]) map[k]={name:inst.installer_name||k,email:inst.installer_email||'',orders:0,completed:0,wfQty:0,wpRolls:0,q1:[],q2:[],q3:[]};
+      if(!map[k]) map[k]={name:inst.installer_name||k,email:inst.installer_email||'',orders:0,completed:0,wfQty:0,wpRolls:0,wpSqft:0,q1:[],q2:[],q3:[]};
       map[k].orders++;
       if(['completed','partial'].includes(att.status)) map[k].completed++;
       for(const it of att.items){
         if(att.type==='flooring') map[k].wfQty+=parseFloat((it.qty||'').replace(/[^\d.]/g,''))||0;
-        else map[k].wpRolls+=parseFloat(it.rolls)||0;
+        else{map[k].wpRolls+=parseFloat(it.rolls)||0;map[k].wpSqft+=parseFloat(it.sqft)||0;}
       }
     }
   }
@@ -1335,17 +1340,18 @@ function drawAnalytics(m){
   const aFiltered=audits.filter(o=>o.date&&o.date>=from&&o.date<=to);
   const aTotal=aFiltered.length;
 
-  // Ratings (all-time — not filtered by date range)
-  const IR=ratings.filter(r=>r.order_type==='install');
-  const AR=ratings.filter(r=>r.order_type==='audit');
+  // Ratings — filtered by date range
+  const IR=ratings.filter(r=>r.order_type==='install'&&_anDateIST(r.created_at)>=from&&_anDateIST(r.created_at)<=to);
+  const AR=ratings.filter(r=>r.order_type==='audit'&&_anDateIST(r.created_at)>=from&&_anDateIST(r.created_at)<=to);
   const iRatedPIs=new Set(IR.map(r=>r.pi));
   const aRatedPIs=new Set(AR.map(r=>r.pi));
 
   // Install calcs
   const iCompleted=iAttempts.filter(a=>['completed','partial'].includes(a.status)).length;
   const iDelayed=iAttempts.filter(a=>a.hasDelay).length;
-  const iWithAudit=iAttempts.filter(a=>a.auditBy).length;
-  const iExtAudit=iAttempts.filter(a=>a.auditBy==='customer').length;
+  const auditPhones=new Set(audits.map(o=>o.phone).filter(Boolean));
+  const iUniquePIs=new Set(iAttempts.map(a=>a.pi));
+  const iMDaudit=[...iUniquePIs].filter(pi=>{const o=installs.find(r=>r.pi===pi);return o&&o.phone&&auditPhones.has(o.phone);}).length;
   const iJobCard=iAttempts.filter(a=>iRatedPIs.has(a.pi)).length;
   const avgA=(arr,k)=>{const vs=arr.filter(r=>r[k]!=null).map(r=>+r[k]);return vs.length?+(vs.reduce((s,v)=>s+v,0)/vs.length).toFixed(1):null;};
   const IR_q1=avgA(IR,'q1_score'),IR_q2=avgA(IR,'q2_score'),IR_q3=avgA(IR,'q3_score');
@@ -1355,7 +1361,7 @@ function drawAnalytics(m){
   // Audit calcs
   const aCompleted=aFiltered.filter(o=>o.status==='completed').length;
   const aJobCard=aFiltered.filter(o=>aRatedPIs.has(o.pi)).length;
-  const aRescheduled=aFiltered.filter(o=>o.status==='pending').length;
+  const aRescheduled=aFiltered.filter(o=>o.status==='reschedule').length;
   const AR_q1=avgA(AR,'q1_score'),AR_q2=avgA(AR,'q2_score'),AR_q3=avgA(AR,'q3_score');
   const AR_prom=AR.filter(r=>r.q1_score>=9).length,AR_det=AR.filter(r=>r.q1_score<=7).length;
   const AR_nps=AR.length?Math.round((AR_prom-AR_det)/AR.length*100):null;
@@ -1407,7 +1413,7 @@ function drawAnalytics(m){
       <div class="an-label">${label}</div>
       <div class="an-val" style="color:${c}">${avg}<span style="font-size:14px;color:var(--muted)">/10</span></div>
       <div class="an-stars">${'★'.repeat(s)+'☆'.repeat(5-s)}</div>
-      <div class="an-sub">${cnt} rating${cnt!==1?'s':''} · all-time</div>
+      <div class="an-sub">${cnt} rating${cnt!==1?'s':''} · in range</div>
     </div>`;
   }
   function npsCard(label,nps,prom,det,total){
@@ -1422,7 +1428,7 @@ function drawAnalytics(m){
         <span class="an-nps-n">● ${total?Math.round(pass/total*100):0}% Neutral (Q1 = 8)</span>
         <span class="an-nps-d">▼ ${total?Math.round(det/total*100):0}% Detractors (Q1 ≤ 7)</span>
       </div>
-      <div class="an-sub">${total} rating${total!==1?'s':''} · all-time</div>
+      <div class="an-sub">${total} rating${total!==1?'s':''} · in range</div>
     </div>`;
   }
 
@@ -1445,7 +1451,7 @@ function drawAnalytics(m){
     <td>${inst.completed}</td>
     ${arrCell(inst.arrOnTime,inst.arrLate)}
     ${ratingCell(inst.q1)}${ratingCell(inst.q2)}${ratingCell(inst.q3)}
-    <td style="color:var(--muted);font-size:11px">${inst.wfQty?Math.round(inst.wfQty)+' boxes ':''} ${inst.wpRolls?Math.round(inst.wpRolls)+' rolls':''}</td>
+    <td style="color:var(--muted);font-size:11px">${inst.wfQty?Math.round(inst.wfQty)+' boxes ':''} ${inst.wpRolls?Math.round(inst.wpRolls)+' rolls ':''} ${inst.wpSqft?Math.round(inst.wpSqft)+' sq.ft':''}</td>
   </tr>`).join('');
 
   const audRows=auditors.map(aud=>`<tr>
@@ -1458,6 +1464,19 @@ function drawAnalytics(m){
 
   const iArrNote=iArrTot.onTime+iArrTot.late===0?'Tracking started 2 Jul 2026':'';
   const aArrNote=aArrTot.onTime+aArrTot.late===0?'Tracking started 2 Jul 2026':'';
+
+  const iByStatus={};
+  iAttempts.forEach(a=>{iByStatus[a.status]=(iByStatus[a.status]||0)+1;});
+  const statusDefs=[
+    {k:'completed',l:'Completed',c:'var(--green)'},
+    {k:'partial',l:'Partially Completed',c:'var(--teal)'},
+    {k:'onway',l:'On The Way',c:'var(--blue)'},
+    {k:'atsite',l:'At Site',c:'var(--blue)'},
+    {k:'reschedule',l:'Rescheduled',c:'var(--red)'},
+    {k:'callpending',l:'Call Pending',c:'var(--amber)'},
+    {k:'assigned',l:'Assigned',c:'var(--amber)'},
+    {k:'scheduled',l:'Scheduled',c:'var(--muted)'},
+  ];
 
   m.innerHTML=`
     <div class="page-head"><h1>Analytics</h1><p>Operational metrics. Each scheduling attempt counted separately — a rescheduled order appears twice if both dates fall in the range.</p></div>
@@ -1487,13 +1506,22 @@ function drawAnalytics(m){
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
         ${pctCard('Delivery Delay %',iDelayed,iTotal,'Attempts with a delay log entry','(any log entry mentioning "delay")')}
-        ${pctCard('External Audit %',iExtAudit,iWithAudit,'Customer self-measured — no MD site audit','(audit_by = customer)')}
+        ${pctCard('Material Depot Audit %',iMDaudit,iUniquePIs.size,'Install customers who also had an MD site audit','(phone number match across audit + install orders)')}
         ${pctCard('Job Card &amp; Signature %',iJobCard,iCompleted,'Proxy: ratings written only after client signs','(completed attempts with rating)')}
         ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed',iArrNote)}
         ${npsCard('NPS Score',IR_nps,IR_prom,IR_det,IR.length)}
         ${ratingCard('Q1 — Overall Service',IR_q1,IR.length)}
         ${ratingCard('Q2 — Installer Rating',IR_q2,IR.length)}
         ${ratingCard('Q3 — Site Cleanliness',IR_q3,IR.length)}
+      </div>
+
+      <div class="an-sub-head">Status Breakdown</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line)">
+        ${statusDefs.filter(sd=>iByStatus[sd.k]).map(sd=>`<div style="background:#f8f9fc;border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:120px">
+          <div style="font-size:22px;font-weight:800;color:${sd.c}">${iByStatus[sd.k]}</div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);margin-top:2px">${sd.l}</div>
+          <div style="font-size:11px;color:var(--muted)">${iTotal?Math.round(iByStatus[sd.k]/iTotal*100)+'%':'—'}</div>
+        </div>`).join('')}
       </div>
 
       <div class="an-sub-head">Delivery Date Tracking</div>
@@ -1542,12 +1570,14 @@ function drawAnalytics(m){
         ${pctCard('Job Card &amp; Signature %',aJobCard,aCompleted,'Proxy: ratings written only after client signs','(completed audits with rating)')}
         ${pctCard('Completion Rate %',aCompleted,aTotal,'Audits that reached completed status','')}
         ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote)}
-        ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits with a reschedule event in log','')}
+        ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','')}
         ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length)}
         ${ratingCard('Q1 — Overall Service',AR_q1,AR.length)}
         ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length)}
         ${ratingCard('Q3 — Site Cleanliness',AR_q3,AR.length)}
       </div>
+
+      <div style="font-size:11.5px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line)">Note: Rescheduled audits originally scheduled in range but moved to a future date appear under the original date AND the new date. Reschedule Rate counts audits currently in reschedule status within the selected range.</div>
 
       <div class="an-sub-head">Per-Auditor Breakdown</div>
       ${auditors.length?`<div style="overflow-x:auto"><table class="an-inst-table">
@@ -1565,7 +1595,7 @@ function drawAnalytics(m){
       <b>Arrival on time:</b> Filtered by selected date range, floor 2 Jul 2026 (when tracking began). &gt;3 min late = delayed. N/T = no tracked data in range.<br>
       <b>Delivery delay (log-based):</b> Any log entry mentioning "delay". <b>Confirmed delayed (new):</b> compares original_delivery_date vs current delivery_date — set for orders created from 2 Jul 2026.<br>
       <b>Multi-attempt counting:</b> Each subjob date = one attempt. Rescheduled orders appear once per scheduled date found in the date range (log parsing used for post-July 2026 data).<br>
-      <b>NPS &amp; ratings:</b> All-time scores — not filtered by date range.<br>
+      <b>NPS, ratings &amp; Job Card %:</b> Filtered by selected date range.<br>
       <b>NPS:</b> Promoters Q1 ≥ 9, Detractors Q1 ≤ 7. Range −100 to +100.
     </div>`;
 }
