@@ -502,13 +502,16 @@ let SLOTS_WP=[{id:"sw1",label:"8:00 AM – 11:00 AM"},{id:"sw2",label:"11:00 AM 
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
+// Sundays are a company-wide day off — no installation visits are bookable on that day.
+function isSunday(ds){return !!ds&&new Date(ds+'T00:00').getDay()===0;}
 
 let INSTALLERS=[];
 const FLOOR_DAY_CAP=1;        // flooring jobs/installer/day
 const WP_DAY_SLOTS=3;         // max wallpaper slots/installer/day (3 × 3h windows)
 function slotsForWp(rolls){const r=Number(rolls)||0;return r<=3?1:r<=6?2:3;}
 function totalRolls(sj){return(sj.items||[]).reduce((s,it)=>s+Number(it.rolls||0),0);}
-function dateRange(from,to){if(!from||!to||from>to)return from?[from]:[];const out=[];let d=new Date(from+'T00:00');const end=new Date(to+'T00:00');while(d<=end){out.push(dstr(d));d.setDate(d.getDate()+1);}return out;}
+// Skips Sundays so a multi-day custom install range never schedules a work day on the weekly off day.
+function dateRange(from,to){if(!from||!to||from>to)return from&&!isSunday(from)?[from]:[];const out=[];let d=new Date(from+'T00:00');const end=new Date(to+'T00:00');while(d<=end){if(d.getDay()!==0)out.push(dstr(d));d.setDate(d.getDate()+1);}return out;}
 function autoWpSlots(n){return SLOTS_WP.slice(0,n).map(s=>s.id);}
 
 const STATUS={
@@ -1273,6 +1276,7 @@ function renderAssignSection(o,sj,container){
       const d=container.querySelector('#stepDate_'+sj.id).value;
       const t=container.querySelector('#stepTime_'+sj.id).value||'09:00';
       if(!d){toast("Please set a date for the slot");return;}
+      if(isSunday(d)){toast("Sundays are a day off — pick another date");return;}
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';
@@ -1303,12 +1307,14 @@ function renderAssignSection(o,sj,container){
       await loadOrders();toast('Slot cleared');openOrder(o.pi);
     };
 
-    // Custom mode: date range inputs
+    // Custom mode: date range inputs (Sundays are auto-skipped by dateRange — no work day falls on a Sunday)
     container.querySelectorAll('[data-from]').forEach(inp=>inp.onchange=()=>{
+      if(isSunday(inp.value))toast("Sunday is a day off — it won't be scheduled as a work day");
       const idx=Number(inp.dataset.from);const to=(assigns[idx].dates&&assigns[idx].dates[assigns[idx].dates.length-1])||inp.value;
       assigns[idx].dates=dateRange(inp.value,to);assigns[idx].date=inp.value;
     });
     container.querySelectorAll('[data-to]').forEach(inp=>inp.onchange=()=>{
+      if(isSunday(inp.value))toast("Sunday is a day off — it won't be scheduled as a work day");
       const idx=Number(inp.dataset.to);const from=(assigns[idx].dates&&assigns[idx].dates[0])||inp.value;
       assigns[idx].dates=dateRange(from,inp.value);
     });

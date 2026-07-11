@@ -274,14 +274,16 @@ function showStorePicker(fromHeader){
 function initDateNav(){
   const nav=document.getElementById('dateNav');
   const t=today();
-  if(!SELECTED_DATE)SELECTED_DATE=dstr(t);
   const chips=[];
-  for(let i=0;i<14;i++){
+  // Sundays are a company-wide day off — skip them entirely so the strip always surfaces 14 bookable days.
+  for(let i=0;chips.length<14&&i<30;i++){
     const d=new Date(t);d.setDate(t.getDate()+i);
+    if(d.getDay()===0)continue;
     const ds=dstr(d);
     const lbl=i===0?'Today':i===1?'Tmrw':DAYS_SHORT[d.getDay()];
     chips.push({ds,lbl,num:d.getDate()});
   }
+  if(!SELECTED_DATE||SELECTED_DATE<chips[0].ds)SELECTED_DATE=chips[0].ds;
   nav.innerHTML=chips.map(c=>`
     <div class="date-chip${c.ds===SELECTED_DATE?' active':''}" data-date="${c.ds}">
       <div class="dc-lbl">${c.lbl}</div>
