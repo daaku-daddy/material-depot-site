@@ -181,6 +181,8 @@
   .auditorrow{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff;}
   .auditorrow.on{border-color:var(--blue);background:#f3f8fd;}
   .auditorrow.full{opacity:.5;cursor:not-allowed;}
+  .auditorrow.conflict{border-color:var(--amber);background:#fdf7ec;}
+  .auditorrow.conflict.on{border-color:var(--blue);background:#f3f8fd;}
   .auditorrow .av{width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;}
   .auditorrow .nm{font-weight:700;font-size:13.5px;} .auditorrow .mt{font-size:11.5px;color:var(--muted);}
   .auditorrow .load{margin-left:auto;font-size:11.5px;font-weight:800;}
@@ -979,7 +981,7 @@ function drawerBody(o){
         <div class="field"><label>New time</label><input type="time" id="schSlotTime" value="${schSlotDefault}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
         <button class="btn navy sm" id="saveSchSlot" style="margin-top:4px">Save time change</button>
       </div>
-      <div class="note">Auditors with a time conflict (booking within 2 hours) are blocked and cannot be assigned. Assigning SMSes the auditor's details to the customer.</div>
+      <div class="note">Auditors with a time conflict (booking within 2 hours) are flagged in amber — you can still assign them if the two sites are close by, with a confirmation. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div></div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
@@ -1118,7 +1120,7 @@ function drawerFoot(o){
 /* ============== DRAWER WIRING ============== */
 let draft={};
 function wireDrawer(o){
-  draft={flooring:[],wallpaper:[],slot:null,date:null,auditor:null};
+  draft={flooring:[],wallpaper:[],slot:null,date:null,auditor:null,auditorOverride:false};
   if(o.service){
     draft.flooring=(o.service.flooring||[]).map(x=>({...x}));
     draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));
@@ -1261,23 +1263,34 @@ function wireDrawer(o){
         const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id);
         const capBlocked=(cap<1&&load===0)||(cap>0&&load>=cap);
         const overCap=cap<1&&load>0;
-        const full=capBlocked||!!cx;
+        // Cap/quota is a hard block — cannot select. A 2-hour time conflict is a soft warning the SM can override (e.g. two nearby sites).
+        const full=capBlocked;
+        const conflict=!!cx&&!full;
         const loadText=overCap?`${load}/${cap} · over cap`:`${load}/${cap}${capBlocked?' · full':''}`;
-        return `<div class="auditorrow ${full?'full':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}">
+        return `<div class="auditorrow ${full?'full':''}${conflict?' conflict':''} ${draft.auditor===a.id?'on':''}" data-aud="${a.id}"${cx?` data-conflict-slot="${cx.slot}"`:''}>
           <div class="av">${initials(a.name)}</div>
-          <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}${cx?` <span style="color:var(--red)">· conflict: ${slotLabel(cx.slot)}</span>`:''}</div></div>
-          <div class="load" style="color:${full?'var(--red)':overCap?'var(--amber)':'var(--green)'}">${cx?'⚠ cannot assign':loadText}</div></div>`;
+          <div><div class="nm">${a.name}</div><div class="mt">${a.zone} · ${a.phone}${cx?` <span style="color:var(--amber)">· conflict: ${slotLabel(cx.slot)}</span>`:''}</div></div>
+          <div class="load" style="color:${full?'var(--red)':conflict?'var(--amber)':overCap?'var(--amber)':'var(--green)'}">${conflict?'⚠ 2h conflict':loadText}</div></div>`;
       }).join("");
       list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
+        const conflictSlot=el.dataset.conflictSlot;
+        if(conflictSlot){
+          const aName=(auditorById(el.dataset.aud)||{}).name||'This auditor';
+          if(!confirm(`${aName} has a booking at ${slotLabel(conflictSlot)} — within 2 hours of this slot (${slotLabel(o.slot)}). Assign anyway? Only do this if the two sites are close by.`))return;
+          draft.auditorOverride=true;
+        } else {
+          draft.auditorOverride=false;
+        }
         draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
     };
     _renderAudList();
     loadOrders().then(()=>{if(currentPI===o.pi&&$("#auditorList"))_renderAudList();});
   }
   if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
-    o.log.push({t:"Auditor assigned: "+a.name+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const overrideNote=draft.auditorOverride?" · ⚠ assigned despite 2-hour scheduling conflict (SM override)":"";
+    o.log.push({t:"Auditor assigned: "+a.name+overrideNote+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
-    await loadOrders();toast("Assigned "+a.name+" · customer notified");openOrder(o.pi);};
+    await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
 
   if($("#editSchSlotBtn"))$("#editSchSlotBtn").onclick=()=>{
     const wrap=$("#schSlotEditWrap");
@@ -1372,20 +1385,29 @@ function wireDrawer(o){
       const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
       const isLinkedAud=linkedSvc&&linkedSvc.auditor===a.id;
       const cx=isLinkedAud?null:auditorConflictOrder(a.id,o.date,o.slot,o.id,linkedSvc?.id);
-      const full=!isLinkedAud&&(cap<1||load>=cap);
+      const full=!isLinkedAud&&(cap<1||load>=cap); // cap/quota only — a 2-hour time conflict (cx) is overridable
+      const conflict=!isLinkedAud&&!!cx&&!full;
       const isAssigned=o.auditor===a.id;
       if(isLinkedAud)return `<div class="auditorrow on" style="pointer-events:none">
         <div class="av">${initials(a.name)}</div>
         <div><div class="nm">${a.name} <span style="color:var(--green);font-size:11px">✓ Assigned via ${linkedSvc.pi}</span></div>
         <div class="mt">Already handling this customer at this slot</div></div>
         <div class="load" style="color:var(--green)">✓</div></div>`;
-      return `<div class="auditorrow ${full||cx?'full':''} ${isAssigned?'on':''}" data-aud="${a.id}">
+      return `<div class="auditorrow ${full?'full':''}${conflict?' conflict':''} ${isAssigned?'on':''}" data-aud="${a.id}"${cx?` data-conflict-slot="${cx.slot}"`:''}>
         <div class="av">${initials(a.name)}</div>
         <div><div class="nm">${a.name}${isAssigned?' <span style="color:var(--green);font-size:11px">Currently reserved</span>':''}</div>
         <div class="mt">${cx?`has ${slotLabel(cx.slot)} booking — conflict`:'Available for this slot'}</div></div>
-        <div class="load" style="color:${full?'var(--red)':cx?'var(--amber)':'var(--green)'}">${cx?'⚠ conflict':load+'/'+cap}</div></div>`;
+        <div class="load" style="color:${full?'var(--red)':conflict?'var(--amber)':'var(--green)'}">${conflict?'⚠ 2h conflict':load+'/'+cap}</div></div>`;
     }).join("");
     list.querySelectorAll(".auditorrow:not(.full)").forEach(el=>el.onclick=()=>{
+      const conflictSlot=el.dataset.conflictSlot;
+      if(conflictSlot){
+        const aName=(auditorById(el.dataset.aud)||{}).name||'This auditor';
+        if(!confirm(`${aName} has a booking at ${slotLabel(conflictSlot)} — within 2 hours of this slot (${slotLabel(o.slot)}). Reserve anyway? Only do this if the two sites are close by.`))return;
+        draft.auditorOverride=true;
+      } else {
+        draft.auditorOverride=false;
+      }
       draft.auditor=el.dataset.aud;
       list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));
       el.classList.add("on");const b=$("#slotResAssign");if(b)b.disabled=false;
@@ -1394,10 +1416,11 @@ function wireDrawer(o){
   if($("#slotResAssign"))$("#slotResAssign").onclick=async()=>{
     if(!draft.auditor)return;const a=auditorById(draft.auditor);if(!a)return;
     const btn=$("#slotResAssign");btn.disabled=true;btn.textContent="Reserving…";
-    o.log=o.log||[];o.log.push({t:"Auditor reserved: "+a.name,d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const overrideNote=draft.auditorOverride?" · ⚠ reserved despite 2-hour scheduling conflict (SM override)":"";
+    o.log=o.log||[];o.log.push({t:"Auditor reserved: "+a.name+overrideNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     try{
       await sbPatch('audit_orders',o.id,{auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
-      await loadOrders();toast("Auditor reserved: "+a.name);openOrder(o.pi);
+      await loadOrders();toast("Auditor reserved: "+a.name+(draft.auditorOverride?" (conflict override)":""));openOrder(o.pi);
     }catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Reserve Auditor";}
   };
 
