@@ -321,6 +321,7 @@ const JOB_STATUS={
 function jobChip(s){const st=JOB_STATUS[s]||{l:s,c:'c-pending'};return `<span class="chip ${st.c}"><span class="dot"></span>${st.l}</span>`;}
 
 let realJobs=[], _jobsNameMap={}, _jobsPollTid=null;
+const SQFT_PER_ROLL=57; // matches SM_Install_Dashboard.html — 1 wallpaper roll covers this many sq.ft
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);}
 function showModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('overlay').style.display='flex';}
@@ -1287,8 +1288,11 @@ function _anInstallerMap(attempts,iRatings,arrMap){
       map[k].orders++;
       if(['completed','partial'].includes(att.status)) map[k].completed++;
       for(const it of att.items){
-        if(att.type==='flooring') map[k].wfQty+=parseFloat((it.qty||'').replace(/[^\d.]/g,''))||0;
-        else{map[k].wpRolls+=parseFloat(it.rolls)||0;map[k].wpSqft+=parseFloat(it.sqft)||0;}
+        // SKU items now carry a single sqft measurement (no separate flooring qty / wallpaper rolls field).
+        // Roll count is always derived: ceil(sqft/57). parseFloat guards against stray legacy non-numeric values.
+        const sqft=parseFloat(it.sqft)||0;
+        if(att.type==='flooring') map[k].wfQty+=sqft;
+        else{map[k].wpSqft+=sqft;map[k].wpRolls+=sqft?Math.ceil(sqft/SQFT_PER_ROLL):0;}
       }
     }
   }
@@ -1451,7 +1455,7 @@ function drawAnalytics(m){
     <td>${inst.completed}</td>
     ${arrCell(inst.arrOnTime,inst.arrLate)}
     ${ratingCell(inst.q1)}${ratingCell(inst.q2)}${ratingCell(inst.q3)}
-    <td style="color:var(--muted);font-size:11px">${inst.wfQty?Math.round(inst.wfQty)+' boxes ':''} ${inst.wpRolls?Math.round(inst.wpRolls)+' rolls ':''} ${inst.wpSqft?Math.round(inst.wpSqft)+' sq.ft':''}</td>
+    <td style="font-size:11px">${inst.wfQty?`<span style="color:var(--muted)">${Math.round(inst.wfQty)} sq.ft flooring</span>`:''}${inst.wpSqft?`<span style="color:var(--muted)">${inst.wfQty?' · ':''}${Math.round(inst.wpSqft)} sq.ft wallpaper · </span><b style="color:var(--purple)">${inst.wpRolls} roll${inst.wpRolls===1?'':'s'}</b>`:''}${!inst.wfQty&&!inst.wpSqft?'<span style="color:var(--muted)">—</span>':''}</td>
   </tr>`).join('');
 
   const audRows=auditors.map(aud=>`<tr>
@@ -1548,7 +1552,7 @@ function drawAnalytics(m){
         <thead><tr>
           <th>Installer</th><th>Orders</th><th>Completed</th>
           <th>On-time Arrival %<small>from 2 Jul 2026</small></th>
-          <th>Q1 Overall</th><th>Q2 Installer</th><th>Q3 Cleanliness</th><th>Quantity</th>
+          <th>Q1 Overall</th><th>Q2 Installer</th><th>Q3 Cleanliness</th><th>Area / Rolls</th>
         </tr></thead>
         <tbody>${instRows}</tbody>
       </table></div>`:`<div class="an-na-note">No installer assignments in this date range.</div>`}

@@ -478,15 +478,12 @@ let AUDITORS=[];
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
-// Sundays are a company-wide day off — no site audits are bookable on that day.
-function isSunday(ds){return !!ds&&new Date(ds+'T00:00').getDay()===0;}
 
 // PER-AUDITOR, PER-DATE caps. CAPS[auditorId][yyyy-mm-dd] = number. Default applied if absent.
 const DEFAULT_CAP=3;
 const CAPS={};
 (function(){try{const c=localStorage.getItem('md_audit_caps');if(c)Object.assign(CAPS,JSON.parse(c));}catch(e){}}());
 function capFor(aid,ds){
-  if(isSunday(ds))return 0; // Sunday — day off, cannot be overridden via caps
   const a=AUDITORS.find(x=>x.id===aid);
   if(a&&a.activeFrom&&ds<a.activeFrom)return 0; // not yet active on this date
   const c=CAPS[aid];if(c&&c[ds]!==undefined)return c[ds];return DEFAULT_CAP;
@@ -846,9 +843,8 @@ function auditorsView(){
       :`<span class="chip c-pending" style="font-size:10px;padding:2px 8px">From ${fmtDate(a.activeFrom)}</span>`;
     const cells=days.map(d=>{
       const ds=dstr(d);
-      const sun=isSunday(ds);
-      const inactive=(a.activeFrom&&ds<a.activeFrom)||sun;
-      return `<td><input type="number" min="0" value="${capFor(a.id,ds)}" data-cap="${a.id}" data-date="${ds}"${inactive?` disabled style="opacity:.35;background:#f5f5f5" title="${sun?'Sunday — day off':'Not yet active'}"`:''}></td>`;
+      const inactive=a.activeFrom&&ds<a.activeFrom;
+      return `<td><input type="number" min="0" value="${capFor(a.id,ds)}" data-cap="${a.id}" data-date="${ds}"${inactive?' disabled style="opacity:.35;background:#f5f5f5"':''}></td>`;
     }).join("");
     return `<tr>
       <td class="audname" style="min-width:160px">
@@ -865,7 +861,7 @@ function auditorsView(){
   return `<div class="crumbs">Setup / Auditors &amp; caps</div>
   <div class="pagehead"><div><h1>Auditors &amp; daily caps</h1><p>Mark each auditor as active (with optional start date) and set their daily order cap.</p></div>
    <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button><button class="btn navy sm" id="saveCaps">Save</button></div></div>
-  <div class="note"><b>Active from</b>: leave blank = active now. Set a future date = auditor starts accepting orders from that date. <b>Daily cap</b>: max audit orders per day (default ${DEFAULT_CAP}). Set to 0 to make unavailable on a specific day. Greyed cells = before start date or Sunday (company-wide day off — cap is always 0 and can't be overridden).</div>
+  <div class="note"><b>Active from</b>: leave blank = active now. Set a future date = auditor starts accepting orders from that date. <b>Daily cap</b>: max audit orders per day (default ${DEFAULT_CAP}). Set to 0 to make unavailable on a specific day. Greyed cells = before start date.</div>
   <div class="tablecard capgrid"><table><thead><tr><th class="audname" style="min-width:160px">Auditor</th>${headDays}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1234,11 +1230,7 @@ function wireDrawer(o){
   };
 
   // ---- time booking ----
-  function updateBookBtn(){
-    const dEl=$("#bookDate");
-    if(dEl&&dEl.value&&isSunday(dEl.value)){toast("Sundays are a day off — pick another date");dEl.value='';}
-    draft.date=(dEl||{}).value||'';draft.slot=($("#bookTime")||{}).value||'';const b=$("#bookSlot");if(b)b.disabled=!draft.date||!draft.slot;
-  }
+  function updateBookBtn(){draft.date=($("#bookDate")||{}).value||'';draft.slot=($("#bookTime")||{}).value||'';const b=$("#bookSlot");if(b)b.disabled=!draft.date||!draft.slot;}
   if($("#bookDate"))$("#bookDate").onchange=updateBookBtn;
   if($("#bookTime"))$("#bookTime").oninput=updateBookBtn;
   if($("#bookDate")||$("#bookTime"))updateBookBtn();
@@ -1309,7 +1301,6 @@ function wireDrawer(o){
   if($("#saveSchSlot"))$("#saveSchSlot").onclick=async()=>{
     const nd=$("#schSlotDate").value,nt=$("#schSlotTime").value;
     if(!nd||!nt){toast("Pick a date and time");return;}
-    if(isSunday(nd)){toast("Sundays are a day off — pick another date");return;}
     o.date=nd;o.slot=nt;
     o.log.push({t:"Slot updated: "+fmtDate(nd)+" · "+slotLabel(nt),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{date:o.date,slot:o.slot,log:o.log});
@@ -1325,7 +1316,6 @@ function wireDrawer(o){
   if($("#saveInlineSlot"))$("#saveInlineSlot").onclick=async()=>{
     const nd=$("#inlineSlotDate").value,nt=$("#inlineSlotTime").value;
     if(!nd||!nt){toast("Pick a date and time");return;}
-    if(isSunday(nd)){toast("Sundays are a day off — pick another date");return;}
     o.date=nd;o.slot=nt;
     o.log.push({t:"Date/time updated: "+fmtDate(nd)+" · "+slotLabel(nt),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('audit_orders',o.id,{date:o.date,slot:o.slot,log:o.log});
