@@ -1483,25 +1483,49 @@ function wireDrawer(o){
   // manual status
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
+    let overrideReason='';
+    if(st==='completed'&&o.subjobs&&o.subjobs.length){
+      // A signed job card (sj.jobcard.sign) is the only proof an installer actually finished the
+      // work. This used to cascade Completed to EVERY open subjob on the order, not just the one
+      // being closed — silently fabricating "done" for work nobody confirmed (root-caused
+      // 2026-07-17: closing a genuinely-completed wallpaper subjob was also force-completing an
+      // untouched flooring subjob on the same order). Now it names exactly which subjob(s) lack
+      // proof and requires an explicit confirm + reason before touching them.
+      const noCard=o.subjobs.filter(sj=>sj.status!=='completed'&&!(sj.jobcard&&sj.jobcard.sign));
+      if(noCard.length){
+        const names=noCard.map(sj=>sj.type==='wallpaper'?'Wallpaper':'Flooring').join(', ');
+        const ok=confirm("The following sub-job(s) have NO signed job card yet — no photos, signature, or customer rating on file: "+names+".\n\nForcing Completed now will mark them done anyway with no proof of work. Only do this if you've confirmed with the installer/customer directly.\n\nContinue?");
+        if(!ok)return;
+        overrideReason=(prompt("Reason for overriding without a job card (required):")||'').trim();
+        if(!overrideReason){toast("Reason required — status not changed");return;}
+      }
+    }
     // Cascade field-level statuses down to subjobs + assignments so every dashboard stays in sync
     const FIELD_STATUSES=['callpending','onway','atsite','completed','reschedule'];
     const RANK={scheduled:0,assigned:0,callpending:1,onway:2,atsite:3};
     if(st==='created'&&o.subjobs&&o.subjobs.length){
       // Reverting to Service Created: wipe all slot bookings and installer assignments
       o.subjobs.forEach(sj=>{sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;});
+    } else if(st==='completed'&&o.subjobs&&o.subjobs.length){
+      o.subjobs.forEach(sj=>{
+        if(sj.status==='completed')return;
+        sj.status='completed';
+        (sj.assignments||[]).forEach(a=>{a.status='completed';});
+      });
     } else if(FIELD_STATUSES.includes(st)&&o.subjobs&&o.subjobs.length){
       const newRank=RANK[st]??99;
       o.subjobs.forEach(sj=>{
         if(sj.status==='completed')return;
         const curRank=RANK[sj.status]??-1;
-        if(st==='reschedule'||st==='completed'||curRank<newRank){
+        if(st==='reschedule'||curRank<newRank){
           sj.status=st;
           (sj.assignments||[]).forEach(a=>{a.status=st;});
         }
       });
     }
     o.status=st;
-    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const overrideNote=overrideReason?" · ⚠ forced Completed without job card: \""+overrideReason+"\" (SM override)":"";
+    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs||null,log:o.log});
     await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
   });

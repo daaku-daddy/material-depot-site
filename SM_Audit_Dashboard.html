@@ -1164,6 +1164,24 @@ function wireDrawer(o){
   // manual status override
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
+    let overrideReason='';
+    if(st==='completed'&&o.status!=='completed'){
+      // audit_ticked.sign is the only proof the audit actually happened — it's excluded from the
+      // bulk poll (see POLL NOTE), so fetch fresh rather than trusting a possibly-unloaded o.auditTicked.
+      // Forcing Completed without one used to silently discard the auditor's photos/measurements/
+      // signature/rating with zero trace (root-caused 2026-07-17 via live DB query — ~16% of
+      // "completed" audits had no signed job card, some abandoning a real in-progress draft).
+      let ticked=null;
+      if(o.id){try{const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');ticked=(Array.isArray(rows)&&rows[0])?rows[0].audit_ticked:null;}catch(e){}}
+      const hasSignedCard=ticked&&!Array.isArray(ticked)&&ticked.sign&&!ticked.draft;
+      if(!hasSignedCard){
+        const draftNote=(ticked&&!Array.isArray(ticked)&&ticked.draft)?" There is an unfinished draft with "+((ticked.rooms||[]).length)+" room(s) recorded — it will be left as-is, not signed.":"";
+        const ok=confirm("This audit has NO signed job card yet — no photos, measurements, or customer signature/rating on file."+draftNote+"\n\nForcing Completed now will close it out with no proof the audit happened. Only do this if you've confirmed with the auditor/customer directly.\n\nContinue?");
+        if(!ok)return;
+        overrideReason=(prompt("Reason for overriding without a signed job card (required):")||'').trim();
+        if(!overrideReason){toast("Reason required — status not changed");return;}
+      }
+    }
     // Determine effective positions for clearing forward data
     const tEff=(st==='reschedule'||st==='call_na')?FLOW.indexOf('created'):FLOW.indexOf(st);
     let curEff=FLOW.indexOf(o.status);
@@ -1171,7 +1189,8 @@ function wireDrawer(o){
     if(o.status==='completed')curEff=FLOW.length-1;
     if(o.status==='reschedule'||o.status==='call_na')curEff=FLOW.indexOf('created');
     o.status=st;
-    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const overrideNote=overrideReason?" · ⚠ forced Completed without signed job card: \""+overrideReason+"\" (SM override)":"";
+    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     const patch={status:o.status,log:o.log};
     // Clear forward data when moving backward
     if(tEff<curEff){
