@@ -1236,6 +1236,7 @@ function _anInstallAttempts(installs,from,to){
           items:sj.items||[],
           auditBy:o.service&&o.service.audit_by,
           hasDelay:!!(o.original_delivery_date&&o.delivery_date&&o.original_delivery_date!==o.delivery_date),
+          logDelay:(o.log||[]).some(l=>l.t&&/delay/i.test(l.t)),
           originalDelivery:o.original_delivery_date||null,
           currentDelivery:o.delivery_date||null,
           order:o,
@@ -1352,7 +1353,11 @@ function drawAnalytics(m){
 
   // Install calcs
   const iCompleted=iAttempts.filter(a=>['completed','partial'].includes(a.status)).length;
-  const iDelayed=iAttempts.filter(a=>a.hasDelay).length;
+  // Log-mention count is a distinct, looser signal from confirmedDelayed below (date-field mismatch) —
+  // it catches cases logged as delayed where nobody actually updated delivery_date, and vice versa.
+  // Previously this reused the exact same hasDelay/date-comparison boolean as confirmedDelayed, so
+  // both stats in the Delivery Date Tracking row always showed an identical number (2026-07-18 fix).
+  const iDelayed=iAttempts.filter(a=>a.logDelay).length;
   const auditPhones=new Set(audits.map(o=>o.phone).filter(Boolean));
   const iUniquePIs=new Set(iAttempts.map(a=>a.pi));
   const iMDaudit=[...iUniquePIs].filter(pi=>{const o=installs.find(r=>r.pi===pi);return o&&o.phone&&auditPhones.has(o.phone);}).length;
@@ -1384,7 +1389,7 @@ function drawAnalytics(m){
 
   // Delivery breakdown
   const origTracked=iAttempts.filter(a=>a.originalDelivery).length;
-  const confirmedDelayed=iAttempts.filter(a=>a.originalDelivery&&a.currentDelivery&&a.currentDelivery!==a.originalDelivery).length;
+  const confirmedDelayed=iAttempts.filter(a=>a.hasDelay).length;
 
   // Need action — live across all non-deleted install orders
   const naCount=installs.filter(o=>{
@@ -1529,11 +1534,11 @@ function drawAnalytics(m){
 
       <div class="an-sub-head">Delivery Date Tracking</div>
       <div class="an-deliv-row">
-        <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--red)">${iDelayed}</div><div class="an-deliv-lbl">Delay event in log</div></div>
-        <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--green)">${iTotal-iDelayed}</div><div class="an-deliv-lbl">No delay recorded</div></div>
+        <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--red)">${iDelayed}</div><div class="an-deliv-lbl">Delay mentioned in log</div></div>
+        <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--green)">${iTotal-iDelayed}</div><div class="an-deliv-lbl">No delay mentioned</div></div>
         <div style="width:1px;background:var(--line);margin:0 4px;align-self:stretch"></div>
         <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--blue)">${origTracked}</div><div class="an-deliv-lbl">With original date tracked</div></div>
-        <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--amber)">${confirmedDelayed}</div><div class="an-deliv-lbl">Confirmed delayed (new)</div></div>
+        <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--amber)">${confirmedDelayed}</div><div class="an-deliv-lbl">Confirmed delayed (date changed)</div></div>
         ${origTracked===0?`<div style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:8px">Original date tracking started 2 Jul 2026 — no data for this range yet.</div>`:''}
       </div>
 
