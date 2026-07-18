@@ -1509,10 +1509,9 @@ function drawAnalytics(m){
 
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
-        ${pctCard('Delivery Delay %',iDelayed,iTotal,'Attempts with a delay log entry','(any log entry mentioning "delay")')}
+        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed',iArrNote)}
         ${pctCard('Material Depot Audit %',iMDaudit,iUniquePIs.size,'Install customers who also had an MD site audit','(phone number match across audit + install orders)')}
         ${pctCard('Job Card &amp; Signature %',iJobCard,iCompleted,'Proxy: ratings written only after client signs','(completed attempts with rating)')}
-        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed',iArrNote)}
         ${npsCard('NPS Score',IR_nps,IR_prom,IR_det,IR.length)}
         ${ratingCard('Q1 — Overall Service',IR_q1,IR.length)}
         ${ratingCard('Q2 — Installer Rating',IR_q2,IR.length)}
