@@ -14,7 +14,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
-  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#5b6677;--line:#d8dee7;--bg:#f1f4f8;--card:#fff;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;}
+  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#5b6677;--line:#d8dee7;--bg:#f1f4f8;--card:#fff;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;--teal:#0f6e74;--tealbg:#e3f1f1;}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:17px;}
   .app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);}
@@ -34,14 +34,26 @@
   .day .dn{font-size:13px;font-weight:700;opacity:.85;}
   .day .dd{font-size:22px;font-weight:800;}
   .day .ct{font-size:12px;margin-top:2px;opacity:.8;}
-  .jobcard{background:#fff;border:2px solid var(--line);border-radius:18px;padding:18px;margin-bottom:16px;cursor:pointer;}
-  .jobcard:active{transform:scale(.99);}
-  .jobcard .time{font-size:14px;font-weight:800;color:var(--navy);}
-  .jobcard .nm{font-size:21px;font-weight:800;margin:6px 0 2px;}
-  .jobcard .ad{font-size:15px;color:var(--muted);line-height:1.35;}
-  .typetag{display:inline-block;font-size:13px;font-weight:800;border-radius:8px;padding:4px 11px;margin-top:10px;}
-  .typetag.fl{background:#fff4d6;color:#7a5800;} .typetag.wp{background:var(--purplebg);color:var(--purple);}
-  .statusrow{margin-top:12px;}
+  /* SHARED LIST-CARD DESIGN — keep in sync with other app */
+  .jcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,80,.04);cursor:pointer;}
+  .jcard:active{transform:scale(.99);}
+  .jcard.overdue{border-left-color:var(--red);}
+  .jcard.unsched{border-left-color:var(--amber);}
+  .jcard .top{display:flex;align-items:center;gap:8px;}
+  .jcard .nm{font-weight:800;font-size:16px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jcard .tag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted);margin-top:3px;}
+  .jcard .mr{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);margin-top:7px;}
+  .jcard .mr .ic{flex:0 0 auto;width:16px;text-align:center;opacity:.75;}
+  .jcard .mr .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jcard .svc{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;background:var(--tealbg);color:var(--teal);border-radius:6px;padding:3px 9px;}
+  .jcard .svc.fl{background:#fff4d6;color:#7a5800;}
+  .jcard .svc.wp{background:var(--purplebg);color:var(--purple);}
+  .jcard hr.div{border:0;border-top:1px solid var(--line);margin:10px 0;}
+  .jcard .when{font-size:12.5px;color:var(--muted);font-weight:700;}
+  .jcard .foot{display:flex;gap:8px;margin-top:10px;}
+  .jcard .foot a{flex:1;border-radius:10px;padding:9px;font-size:12.5px;font-weight:800;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;}
+  .jcard .foot a.call{color:var(--green);background:var(--greenbg);}
+  .jcard .foot a.dir{color:var(--teal);background:var(--tealbg);}
   .badge{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:800;border-radius:30px;padding:7px 14px;}
   .badge .dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
   .b-scheduled{background:#e4f0fb;color:var(--blue);} .b-callpending{background:var(--amberbg);color:var(--amber);}
@@ -51,6 +63,8 @@
   .empty{text-align:center;color:var(--muted);padding:50px 16px;font-size:16px;}
   /* full screens */
   .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
+  body.loc-banner-show .app{padding-top:46px;}
+  body.loc-banner-show .screen{top:46px;}
   .shead{background:var(--navy);color:#fff;padding:14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
   .shead .back{border:0;background:rgba(255,255,255,.16);color:#fff;width:40px;height:40px;border-radius:10px;font-size:22px;cursor:pointer;}
   .shead .ti{font-weight:800;font-size:18px;line-height:1.1;} .shead .su{font-size:12px;color:#9fb2cd;}
@@ -123,7 +137,7 @@
       <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br><span id="meType">Installer</span></div>
     </div>
   </header>
-  <div id="locDeniedBanner" style="display:none;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location so the office can track you.</div>
+  <div id="locDeniedBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:60;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.35)">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location so the office can track you. <button id="locRecheckBtn" style="margin-left:8px;background:#fff;color:#b3261e;border:0;border-radius:6px;padding:4px 10px;font-weight:800;font-size:12px;cursor:pointer">I've fixed it — Recheck</button></div>
   <div class="wrap" id="listView"></div>
 </div>
 
@@ -298,8 +312,8 @@ async function loadJobs(){
     renderList();
   }catch(e){console.error('loadJobs',e);renderList();}
 }
-setInterval(()=>{if(!document.hidden)loadJobs();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs();});
+setInterval(()=>{if(!document.hidden){loadJobs();_locPermTick();}},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadJobs();_locPermTick();}});
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
@@ -335,24 +349,32 @@ function listView(){
   const unscheduled=JOBS.filter(j=>!j.date&&!['completed','reschedule'].includes(j.status));
   // Past-date jobs that are still active — only shown as alert on today's view to avoid duplication
   const overdue=selDay===todayStr?JOBS.filter(j=>j.date&&j.date<todayStr&&!['completed','reschedule'].includes(j.status)):[];
-  const card=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}">
-    <div class="time">${slotsLabel(j)}</div>
-    <div class="nm">${j.name}</div>
-    <div class="ad">${j.addr}</div>
-    <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
-    <div class="statusrow">${badge(j.status)}</div></div>`;
-  const unschCard=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}" style="border-color:var(--amber);">
-    <div class="time" style="color:var(--amber)">No date set — tap to open</div>
-    <div class="nm">${j.name}</div>
-    <div class="ad">${j.addr}</div>
-    <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
-    <div class="statusrow">${badge(j.status)}</div></div>`;
-  const overdueCard=j=>`<div class="jobcard" data-key="${j.pi}|${j.sjId}" style="border-color:var(--red);">
-    <div class="time" style="color:var(--red)">Overdue — ${fmtDate(j.date)}</div>
-    <div class="nm">${j.name}</div>
-    <div class="ad">${j.addr}</div>
-    <span class="typetag ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>
-    <div class="statusrow">${badge(j.status)}</div></div>`;
+  const jcardFoot=j=>{const tel=(j.phone||'').replace(/\s/g,'');return `<div class="foot">
+      <a class="call" href="tel:${tel}" onclick="event.stopPropagation()">&#128222; Call</a>
+      <a class="dir" href="${mapUrl(j.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">&#128205; Directions</a>
+    </div>`;};
+  const svcTag=j=>`<span class="svc ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>`;
+  const card=j=>`<div class="jcard" data-key="${j.pi}|${j.sjId}">
+    <div class="top"><div class="nm">${j.name}</div>${badge(j.status)}</div>
+    <div class="mr"><span class="ic">&#128205;</span><span class="t">${j.addr}</span></div>
+    ${svcTag(j)}
+    <hr class="div">
+    <div class="when">${fmtDate(j.date)} · ${slotsLabel(j)}</div>
+    ${jcardFoot(j)}</div>`;
+  const unschCard=j=>`<div class="jcard unsched" data-key="${j.pi}|${j.sjId}">
+    <div class="top"><div class="nm">${j.name}</div>${badge(j.status)}</div>
+    <div class="mr"><span class="ic">&#128205;</span><span class="t">${j.addr}</span></div>
+    ${svcTag(j)}
+    <hr class="div">
+    <div class="when" style="color:var(--amber)">No date set — tap to open</div>
+    ${jcardFoot(j)}</div>`;
+  const overdueCard=j=>`<div class="jcard overdue" data-key="${j.pi}|${j.sjId}">
+    <div class="top"><div class="nm">${j.name}</div>${badge(j.status)}</div>
+    <div class="mr"><span class="ic">&#128205;</span><span class="t">${j.addr}</span></div>
+    ${svcTag(j)}
+    <hr class="div">
+    <div class="when" style="color:var(--red)">Overdue — ${fmtDate(j.date)}</div>
+    ${jcardFoot(j)}</div>`;
   const alertSection=(unscheduled.length||overdue.length)?`
     ${overdue.length?`<div class="sechead" style="color:var(--red)">Overdue — action needed</div>${overdue.map(overdueCard).join("")}`:''}
     ${unscheduled.length?`<div class="sechead" style="color:var(--amber)">Unscheduled — awaiting date from office</div>${unscheduled.map(unschCard).join("")}`:''}
@@ -364,7 +386,7 @@ function listView(){
 }
 function renderList(){$("#listView").innerHTML=listView();
   document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
-  document.querySelectorAll(".jobcard[data-key]").forEach(c=>c.onclick=()=>openDetail(c.dataset.key));
+  document.querySelectorAll(".jcard[data-key]").forEach(c=>c.onclick=e=>{if(e.target.closest("a"))return;openDetail(c.dataset.key);});
   const strip=document.querySelector('.days');const sel=strip&&strip.querySelector('.day.on');
   if(strip&&sel)strip.scrollLeft=Math.max(0,sel.offsetLeft-(strip.clientWidth/2)+(sel.offsetWidth/2));
 }
@@ -508,11 +530,12 @@ function wireDetail(j){
   }
   if($("#toCall"))$("#toCall").onclick=()=>showCommentThen("Starting pre-install call",c=>{adv("callpending","Pre-install call started"+(c?` — ${c}`:``));});
   if($("#yes"))$("#yes").onclick=()=>showCommentThen("Confirming on the way",c=>{adv("onway","Installer on the way · customer confirmed"+(c?` — ${c}`:``));});
-  if($("#reached"))$("#reached").onclick=()=>openArrivalModal(({photo,lat,lng})=>{
+  if($("#reached"))$("#reached").onclick=()=>openArrivalModal(({photo,lat,lng,locOverride})=>{
     const extra={};
     if(photo)extra.arrivalPhoto=photo;
     if(lat!=null&&lng!=null){extra.lat=lat;extra.lng=lng;}
-    adv("atsite","You are at the site",null,extra);
+    if(locOverride)extra.locOverride=true;
+    adv("atsite","You are at the site",locOverride?"Installer arrived at site ⚠ (no location — worker override)":null,extra);
   });
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(j);
   if($("#triggerReschedule"))$("#triggerReschedule").onclick=()=>showRescheduleForm();
@@ -1137,7 +1160,19 @@ function openArrivalModal(cb){
     snap.textContent='📷  Take Photo';
     startCam();snap.onclick=()=>{if(_arrStream&&vid.readyState>=2)doSnap();};
   };
-  confirm.onclick=async()=>{let ph=_photo;if(ph){try{ph=await _uploadPhoto(ph);}catch(e){}}closeArrivalModal();if(_arrConfirmCb)_arrConfirmCb({photo:ph,lat:capturedLat,lng:capturedLng});};
+  confirm.onclick=async()=>{
+    if(capturedLat===null&&navigator.geolocation&&_lastPermState!=='denied'){
+      await new Promise(res=>navigator.geolocation.getCurrentPosition(p=>{capturedLat=p.coords.latitude;capturedLng=p.coords.longitude;res();},()=>res(),{timeout:4000,enableHighAccuracy:true}));
+    }
+    let locOverride=false;
+    if(capturedLat===null){
+      if(!window.confirm("Location wasn't captured for this arrival — it's required for site verification.\n\nContinue without it anyway?"))return;
+      locOverride=true;
+    }
+    let ph=_photo;if(ph){try{ph=await _uploadPhoto(ph);}catch(e){}}
+    closeArrivalModal();
+    if(_arrConfirmCb)_arrConfirmCb({photo:ph,lat:capturedLat,lng:capturedLng,locOverride});
+  };
   document.getElementById('arrCancelBtn').onclick=closeArrivalModal;
   startCam();
 }
@@ -1330,7 +1365,38 @@ function _dsApply(){
 
 renderList();loadJobs();
 startLocationTracking(null);
-if(navigator.permissions){navigator.permissions.query({name:'geolocation'}).then(r=>{const b=document.getElementById('locDeniedBanner');const upd=()=>{if(b)b.style.display=r.state==='denied'?'block':'none';};upd();r.onchange=upd;}).catch(()=>{});}
+
+// ── Location permission monitor — periodically re-checks/re-prompts; "somewhat mandatory" ──
+let _geoPermStatus=null,_lastPermState=null;
+function _applyGeoPermState(state){
+  _lastPermState=state;
+  const denied=state==='denied';
+  const b=document.getElementById('locDeniedBanner');
+  if(b)b.style.display=denied?'block':'none';
+  document.body.classList.toggle('loc-banner-show',denied);
+  if(state==='prompt'&&navigator.geolocation){
+    // Only way to make the native dialog reappear once dismissed without a decision.
+    navigator.geolocation.getCurrentPosition(()=>{},()=>{},{timeout:8000,maximumAge:0});
+  }else if(state==='granted'&&_locWatchId===null&&navigator.geolocation){
+    startLocationTracking(_activeOrderPi); // self-heal if tracking never started while denied
+  }
+}
+function _locPermTick(){
+  if(_geoPermStatus){_applyGeoPermState(_geoPermStatus.state);return;}
+  if(!navigator.geolocation)return;
+  navigator.geolocation.getCurrentPosition(()=>_applyGeoPermState('granted'),err=>_applyGeoPermState(err.code===1?'denied':'prompt'),{timeout:8000,maximumAge:60000});
+}
+if(navigator.permissions){
+  navigator.permissions.query({name:'geolocation'}).then(r=>{
+    _geoPermStatus=r;
+    _applyGeoPermState(r.state);
+    r.onchange=()=>_applyGeoPermState(r.state);
+  }).catch(()=>{_applyGeoPermState('prompt');});
+}else{
+  _applyGeoPermState('prompt');
+}
+const _locRecheckBtn=document.getElementById('locRecheckBtn');
+if(_locRecheckBtn)_locRecheckBtn.onclick=()=>_locPermTick();
 </script>
 
 <div id="docScanOverlay" style="display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;font-family:inherit">

@@ -14,7 +14,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
-  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#67748a;--line:#dde3ec;--bg:#f4f6f9;--card:#fff;--lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;}
+  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#5b6677;--line:#d8dee7;--bg:#f4f6f9;--card:#fff;--lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;--teal:#0f6e74;--tealbg:#e3f1f1;}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;}
   .app{max-width:520px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative;}
@@ -34,16 +34,26 @@
   .daychip .dd{font-size:18px;font-weight:800;margin-top:1px;}
   .daychip .ct{font-size:10px;margin-top:2px;opacity:.75;}
   .sechead{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin:14px 2px 8px;}
-  .ocard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,80,.04);cursor:pointer;}
-  .ocard:active{transform:scale(.997);}
-  .ocard .top{display:flex;align-items:flex-start;gap:10px;}
-  .ocard .nm{font-weight:800;font-size:16px;color:var(--ink);}
-  .ocard .pi{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);margin-top:1px;}
-  .ocard .slot{margin-left:auto;text-align:right;}
-  .ocard .slot .w{font-weight:800;font-size:13px;color:var(--navy);}
-  .ocard .meta{margin-top:10px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:5px;}
-  .ocard .meta .r{display:flex;gap:7px;align-items:flex-start;}
-  .ocard .meta .ic{width:16px;text-align:center;opacity:.7;flex:0 0 auto;}
+  /* SHARED LIST-CARD DESIGN — keep in sync with other app */
+  .jcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,80,.04);cursor:pointer;}
+  .jcard:active{transform:scale(.99);}
+  .jcard.overdue{border-left-color:var(--red);}
+  .jcard.unsched{border-left-color:var(--amber);}
+  .jcard .top{display:flex;align-items:center;gap:8px;}
+  .jcard .nm{font-weight:800;font-size:16px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jcard .tag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted);margin-top:3px;}
+  .jcard .mr{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);margin-top:7px;}
+  .jcard .mr .ic{flex:0 0 auto;width:16px;text-align:center;opacity:.75;}
+  .jcard .mr .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jcard .svc{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;background:var(--tealbg);color:var(--teal);border-radius:6px;padding:3px 9px;}
+  .jcard .svc.fl{background:#fff4d6;color:#7a5800;}
+  .jcard .svc.wp{background:var(--purplebg);color:var(--purple);}
+  .jcard hr.div{border:0;border-top:1px solid var(--line);margin:10px 0;}
+  .jcard .when{font-size:12.5px;color:var(--muted);font-weight:700;}
+  .jcard .foot{display:flex;gap:8px;margin-top:10px;}
+  .jcard .foot a{flex:1;border-radius:10px;padding:9px;font-size:12.5px;font-weight:800;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;}
+  .jcard .foot a.call{color:var(--green);background:var(--greenbg);}
+  .jcard .foot a.dir{color:var(--teal);background:var(--tealbg);}
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
   .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
   .c-scheduled{background:#e4f0fb;color:var(--blue);}
@@ -59,6 +69,8 @@
   .empty{text-align:center;color:var(--muted);padding:46px 16px;}
   /* detail screen */
   .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:520px;margin:0 auto;}
+  body.loc-banner-show .app{padding-top:46px;}
+  body.loc-banner-show .screen{top:46px;}
   .shead{background:var(--navy);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
   .shead .back{border:0;background:rgba(255,255,255,.14);color:#fff;width:34px;height:34px;border-radius:9px;font-size:18px;cursor:pointer;}
   .shead .ti{font-weight:700;font-size:16px;} .shead .su{font-size:11px;color:#9fb2cd;}
@@ -122,7 +134,7 @@
       <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Auditor</div>
     </div>
   </header>
-  <div id="locDeniedBanner" style="display:none;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location so the office can track you.</div>
+  <div id="locDeniedBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:60;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.35)">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location so the office can track you. <button id="locRecheckBtn" style="margin-left:8px;background:#fff;color:#b3261e;border:0;border-radius:6px;padding:4px 10px;font-weight:800;font-size:12px;cursor:pointer">I've fixed it — Recheck</button></div>
   <div class="wrap" id="listView"></div>
 </div>
 
@@ -268,8 +280,8 @@ async function loadJobs(){
     renderList();
   }catch(e){console.error('loadJobs',e);renderList();}
 }
-setInterval(()=>{if(!document.hidden)loadJobs();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs();});
+setInterval(()=>{if(!document.hidden){loadJobs();_locPermTick();}},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadJobs();_locPermTick();}});
 
 /* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
 const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
@@ -317,25 +329,35 @@ function listView(){
   const done=list.filter(o=>o.status==="completed");
   const unscheduled=ORDERS.filter(o=>!o.date&&!['completed','reschedule'].includes(o.status));
   const card=o=>{
-    const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}</span>`).join("");
-    return `<div class="ocard" data-pi="${o.pi}">
-      <div class="top"><div><div class="nm">${o.name}</div><div class="pi">${o.pi} · BM ${o.bm}</div></div>
-        <div class="slot"><div class="w">${slotLabel(o.slot)}</div>${chip(o.status)}</div></div>
-      <div class="meta">
-        <div class="r"><span class="ic">&#128241;</span>${o.phone}</div>
-        <div class="r"><span class="ic">&#128205;</span><a class="maplink" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${o.addr}</a></div>
-        <div class="r"><span class="ic">&#128230;</span><span>${skus||'NA'}</span></div>
+    const skus=o.skus.filter(s=>!s.audit).map(s=>s.c).join(', ');
+    const tel=o.phone.replace(/\s/g,'');
+    return `<div class="jcard" data-pi="${o.pi}">
+      <div class="top"><div class="nm">${o.name}</div>${chip(o.status)}</div>
+      <div class="tag">${o.pi} · BM ${o.bm}</div>
+      <div class="mr"><span class="ic">&#128241;</span><span class="t">${o.phone}</span></div>
+      <div class="mr"><span class="ic">&#128205;</span><a class="maplink t" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${o.addr}</a></div>
+      ${skus?`<span class="svc">&#128230; ${skus}</span>`:''}
+      <hr class="div">
+      <div class="when">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
+      <div class="foot">
+        <a class="call" href="tel:${tel}" onclick="event.stopPropagation()">&#128222; Call</a>
+        <a class="dir" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">&#128205; Directions</a>
       </div></div>`;
   };
   const unschCard=o=>{
-    const skus=o.skus.filter(s=>!s.audit).map(s=>`<span class="skupill fl">${s.c}</span>`).join("");
-    return `<div class="ocard" data-pi="${o.pi}" style="border-color:#f4c20d">
-      <div class="top"><div><div class="nm">${o.name}</div><div class="pi">${o.pi} · BM ${o.bm}</div></div>
-        <div class="slot"><div class="w" style="color:#9a6200">Awaiting date from office</div>${chip(o.status)}</div></div>
-      <div class="meta">
-        <div class="r"><span class="ic">&#128241;</span>${o.phone}</div>
-        <div class="r"><span class="ic">&#128205;</span><a class="maplink" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${o.addr}</a></div>
-        <div class="r"><span class="ic">&#128230;</span><span>${skus||'NA'}</span></div>
+    const skus=o.skus.filter(s=>!s.audit).map(s=>s.c).join(', ');
+    const tel=o.phone.replace(/\s/g,'');
+    return `<div class="jcard unsched" data-pi="${o.pi}">
+      <div class="top"><div class="nm">${o.name}</div>${chip(o.status)}</div>
+      <div class="tag">${o.pi} · BM ${o.bm}</div>
+      <div class="mr"><span class="ic">&#128241;</span><span class="t">${o.phone}</span></div>
+      <div class="mr"><span class="ic">&#128205;</span><a class="maplink t" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${o.addr}</a></div>
+      ${skus?`<span class="svc">&#128230; ${skus}</span>`:''}
+      <hr class="div">
+      <div class="when" style="color:var(--amber)">Awaiting date from office</div>
+      <div class="foot">
+        <a class="call" href="tel:${tel}" onclick="event.stopPropagation()">&#128222; Call</a>
+        <a class="dir" href="${mapUrl(o.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">&#128205; Directions</a>
       </div></div>`;
   };
   return `<div class="daystrip">${strip}</div>
@@ -347,7 +369,7 @@ function listView(){
 function renderList(){$("#listView").innerHTML=listView();wireList();}
 function wireList(){
   document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
-  document.querySelectorAll(".ocard[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openDetail(c.dataset.pi);});
+  document.querySelectorAll(".jcard[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest("a"))return;openDetail(c.dataset.pi);});
   const strip=document.querySelector('.daystrip');const sel=strip&&strip.querySelector('.daychip.on');
   if(strip&&sel)strip.scrollLeft=Math.max(0,sel.offsetLeft-(strip.clientWidth/2)+(sel.offsetWidth/2));
 }
@@ -463,11 +485,12 @@ function wireDetail(o){
   }
   if($("#toCall"))$("#toCall").onclick=()=>showCommentThen("Starting pre-visit call",c=>{adv("callpending","Pre-visit call started"+(c?` — ${c}`:``));});
   if($("#custYes"))$("#custYes").onclick=()=>showCommentThen("Confirming on the way",c=>{adv("onway","Auditor on the way · customer confirmed"+(c?` — ${c}`:``));});
-  if($("#atSite"))$("#atSite").onclick=()=>openArrivalModal(({photo,lat,lng})=>{
+  if($("#atSite"))$("#atSite").onclick=()=>openArrivalModal(({photo,lat,lng,locOverride})=>{
     const extra={};
     if(photo)extra.arrivalPhoto=photo;
     if(lat!=null&&lng!=null){extra.lat=lat;extra.lng=lng;}
-    adv("atsite","At site — open the Job Card",null,extra);
+    if(locOverride)extra.locOverride=true;
+    adv("atsite","At site — open the Job Card",locOverride?"Auditor arrived at site ⚠ (no location — worker override)":null,extra);
   });
   if($("#openJC"))$("#openJC").onclick=()=>openJobCard(o);
   if($("#triggerReschedule"))$("#triggerReschedule").onclick=()=>showRescheduleForm();
@@ -1079,7 +1102,19 @@ function openArrivalModal(cb){
     snap.textContent='📷  Take Photo';
     startCam();snap.onclick=()=>{if(_arrStream&&vid.readyState>=2)doSnap();};
   };
-  confirm.onclick=async()=>{let ph=_photo;if(ph){try{ph=await _uploadPhoto(ph);}catch(e){}}closeArrivalModal();if(_arrConfirmCb)_arrConfirmCb({photo:ph,lat:capturedLat,lng:capturedLng});};
+  confirm.onclick=async()=>{
+    if(capturedLat===null&&navigator.geolocation&&_lastPermState!=='denied'){
+      await new Promise(res=>navigator.geolocation.getCurrentPosition(p=>{capturedLat=p.coords.latitude;capturedLng=p.coords.longitude;res();},()=>res(),{timeout:4000,enableHighAccuracy:true}));
+    }
+    let locOverride=false;
+    if(capturedLat===null){
+      if(!window.confirm("Location wasn't captured for this arrival — it's required for site verification.\n\nContinue without it anyway?"))return;
+      locOverride=true;
+    }
+    let ph=_photo;if(ph){try{ph=await _uploadPhoto(ph);}catch(e){}}
+    closeArrivalModal();
+    if(_arrConfirmCb)_arrConfirmCb({photo:ph,lat:capturedLat,lng:capturedLng,locOverride});
+  };
   document.getElementById('arrCancelBtn').onclick=closeArrivalModal;
   startCam();
 }
@@ -1273,7 +1308,38 @@ function _dsApply(){
 renderList();
 loadJobs();
 startLocationTracking(null);
-if(navigator.permissions){navigator.permissions.query({name:'geolocation'}).then(r=>{const b=document.getElementById('locDeniedBanner');const upd=()=>{if(b)b.style.display=r.state==='denied'?'block':'none';};upd();r.onchange=upd;}).catch(()=>{});}
+
+// ── Location permission monitor — periodically re-checks/re-prompts; "somewhat mandatory" ──
+let _geoPermStatus=null,_lastPermState=null;
+function _applyGeoPermState(state){
+  _lastPermState=state;
+  const denied=state==='denied';
+  const b=document.getElementById('locDeniedBanner');
+  if(b)b.style.display=denied?'block':'none';
+  document.body.classList.toggle('loc-banner-show',denied);
+  if(state==='prompt'&&navigator.geolocation){
+    // Only way to make the native dialog reappear once dismissed without a decision.
+    navigator.geolocation.getCurrentPosition(()=>{},()=>{},{timeout:8000,maximumAge:0});
+  }else if(state==='granted'&&_locWatchId===null&&navigator.geolocation){
+    startLocationTracking(_activeOrderPi); // self-heal if tracking never started while denied
+  }
+}
+function _locPermTick(){
+  if(_geoPermStatus){_applyGeoPermState(_geoPermStatus.state);return;}
+  if(!navigator.geolocation)return;
+  navigator.geolocation.getCurrentPosition(()=>_applyGeoPermState('granted'),err=>_applyGeoPermState(err.code===1?'denied':'prompt'),{timeout:8000,maximumAge:60000});
+}
+if(navigator.permissions){
+  navigator.permissions.query({name:'geolocation'}).then(r=>{
+    _geoPermStatus=r;
+    _applyGeoPermState(r.state);
+    r.onchange=()=>_applyGeoPermState(r.state);
+  }).catch(()=>{_applyGeoPermState('prompt');});
+}else{
+  _applyGeoPermState('prompt');
+}
+const _locRecheckBtn=document.getElementById('locRecheckBtn');
+if(_locRecheckBtn)_locRecheckBtn.onclick=()=>_locPermTick();
 </script>
 
 <div id="docScanOverlay" style="display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;font-family:inherit">

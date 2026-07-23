@@ -22,6 +22,7 @@
     --shadow:0 1px 2px rgba(20,40,80,.06),0 4px 14px rgba(20,40,80,.06);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+  html,body{overflow-x:hidden;max-width:100%;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;min-height:100vh;}
 
   header{background:var(--navy);color:#fff;padding:0 20px;display:flex;align-items:center;gap:14px;height:56px;position:sticky;top:0;z-index:50;box-shadow:0 2px 8px rgba(0,0,0,.2);}
@@ -34,6 +35,8 @@
   .user-pill b{color:#fff;}
   .signout-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#cdd8e8;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;}
   .signout-btn:hover{background:rgba(255,255,255,.2);}
+  .menu-toggle{display:none;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;width:34px;height:34px;border-radius:8px;font-size:17px;cursor:pointer;flex:0 0 auto;}
+  .rail-overlay{display:none;position:fixed;inset:0;background:rgba(10,15,25,.45);z-index:59;}
 
   .layout{display:flex;min-height:calc(100vh - 56px);}
 
@@ -52,7 +55,7 @@
   .page-head p{color:var(--muted);font-size:13px;margin-top:3px;}
 
   .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;margin-bottom:20px;}
-  .stat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
+  .stat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);min-width:0;overflow:hidden;}
   .stat-card .val{font-size:28px;font-weight:800;color:var(--navy);letter-spacing:-.5px;}
   .stat-card .lbl{font-size:12px;color:var(--muted);font-weight:700;margin-top:2px;}
   .stat-card .bar{height:3px;border-radius:3px;margin-top:10px;background:var(--line);overflow:hidden;}
@@ -221,6 +224,20 @@
     .an-grid4 .an-card:nth-child(2n){border-right:none;}
   }
 
+  /* ── Mobile shell: sidebar becomes a slide-out drawer instead of squeezing content ── */
+  @media(max-width:900px){
+    .menu-toggle{display:block;}
+    .brand-text .h{font-size:14px;}
+    .brand-text .t{display:none;}
+    .user-pill{display:none;}
+    header{padding:0 12px;gap:10px;}
+    .rail{position:fixed;top:56px;left:0;bottom:0;z-index:60;width:230px;max-width:80vw;
+      transform:translateX(-100%);transition:transform .22s ease;box-shadow:2px 0 16px rgba(0,0,0,.18);overflow-y:auto;}
+    .rail.open{transform:translateX(0);}
+    .rail-overlay.show{display:block;}
+    main{padding:16px 14px 60px;}
+  }
+
   #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:10px;padding:10px 18px;font-size:13.5px;font-weight:600;opacity:0;transition:all .25s;pointer-events:none;z-index:200;white-space:nowrap;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
@@ -233,6 +250,7 @@
 
 <div id="app" hidden>
   <header>
+    <button class="menu-toggle" id="menuToggle" aria-label="Open menu">☰</button>
     <div class="logo">MD</div>
     <div class="brand-text">
       <div class="t">MATERIAL DEPOT</div>
@@ -244,6 +262,8 @@
       <button class="signout-btn" onclick="signOut()">Sign out</button>
     </div>
   </header>
+
+  <div class="rail-overlay" id="railOverlay"></div>
 
   <div class="layout">
     <nav class="rail">
@@ -338,7 +358,10 @@ function navigate(view){
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   renderView(view);
 }
-document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.view)));
+function closeMobileNav(){document.querySelector('.rail').classList.remove('open');document.getElementById('railOverlay').classList.remove('show');}
+document.getElementById('menuToggle').onclick=()=>{document.querySelector('.rail').classList.toggle('open');document.getElementById('railOverlay').classList.toggle('show');};
+document.getElementById('railOverlay').onclick=closeMobileNav;
+document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>{navigate(b.dataset.view);closeMobileNav();}));
 
 async function renderView(v){
   const m=document.getElementById('main');
@@ -666,24 +689,30 @@ function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'
 let jobsFilter='all',jobsDateFilter='',jobsSearch='';
 function setJobDateFilter(d){jobsDateFilter=d;drawJobs(document.getElementById('main'));}
 
+let _realJobsAudit=[], _realJobsInstall=[], _jobsAuditFailed=false, _jobsInstallFailed=false;
 async function _loadJobsData(m){
   const [auditRes,installRes,profileRes]=await Promise.all([
     sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&status=not.in.(deleted,slot_reserved,slot_converted)&order=created_at.desc'),
-    sbGet('install_orders?select=pi,customer_name,addr,subjobs,status,delivery_date&status=neq.deleted&order=created_at.desc'),
+    sbGetLong('install_orders_slim?select=pi,customer_name,addr,subjobs,status,delivery_date&status=neq.deleted&order=created_at.desc'),
     sbGet('profiles?select=name,email&role=neq.admin'),
   ]);
   if(Array.isArray(profileRes)) profileRes.forEach(p=>{_jobsNameMap[p.email]=p.name;});
-  realJobs=[];
+
   if(Array.isArray(auditRes)){
-    auditRes.forEach(r=>realJobs.push({
+    _realJobsAudit=auditRes.map(r=>({
       id:r.pi||'—', type:'audit',
       customer:r.customer_name||'—', addr:r.addr||'—',
       assignee:r.auditor_name||(r.auditor_email?_jobsNameMap[r.auditor_email]:null),
       status:r.status||'pending', date:r.date||null,
     }));
+    _jobsAuditFailed=false;
+  }else{
+    console.error('[_loadJobsData] audit_orders fetch failed (non-array response) — keeping last known audit jobs',auditRes);
+    if(!_jobsAuditFailed){toast('⚠ Could not refresh site audit jobs — showing last known data');_jobsAuditFailed=true;}
   }
+
   if(Array.isArray(installRes)){
-    installRes.forEach(r=>{
+    _realJobsInstall=installRes.map(r=>{
       const emails=[...new Set((r.subjobs||[]).flatMap(sj=>{
         if(sj.assignments&&sj.assignments.length)return sj.assignments.map(a=>a.installer_email).filter(Boolean);
         return sj.installer_email?[sj.installer_email]:[];
@@ -692,15 +721,21 @@ async function _loadJobsData(m){
         const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{date:sj.date,mode:'standard',dates:[]}]:[]);
         return asgns.flatMap(a=>a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]));
       }))];
-      realJobs.push({
+      return {
         id:r.pi||'—', type:'install',
         customer:r.customer_name||'—', addr:r.addr||'—',
         assignee:emails.length?emails.map(e=>_jobsNameMap[e]||e.split('@')[0]).join(', '):null,
         status:r.status||'pending', date:r.delivery_date||null,
         installDates,
-      });
+      };
     });
+    _jobsInstallFailed=false;
+  }else{
+    console.error('[_loadJobsData] install_orders_slim fetch failed (non-array response) — keeping last known install jobs',installRes);
+    if(!_jobsInstallFailed){toast('⚠ Could not refresh installation jobs — showing last known data');_jobsInstallFailed=true;}
   }
+
+  realJobs=_realJobsAudit.concat(_realJobsInstall);
   if(m)drawJobs(m);
 }
 
@@ -737,7 +772,7 @@ function drawJobs(m){
 
   m.innerHTML=`
     <div class="page-head"><h1>Jobs Overview</h1><p>All audit and installation jobs across your team.</p></div>
-    <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
       <div class="stat-card"><div class="val">${jc.total}</div><div class="lbl">Total Jobs</div></div>
       <div class="stat-card"><div class="val">${jc.active}</div><div class="lbl">Active Now</div></div>
       <div class="stat-card"><div class="val">${jc.done}</div><div class="lbl">Completed</div></div>
@@ -799,6 +834,45 @@ function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>{
   const photo=l.arrivalPhoto?`<img src="${l.arrivalPhoto}" style="width:56px;height:42px;object-fit:cover;border-radius:5px;margin-top:5px;display:block;cursor:pointer" onclick="window.open(this.src)" alt="Arrival photo">`:'';
   return `<div class="jd-tl"><div class="jd-tl-t">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t+mapLink}</div><div class="jd-tl-d">${fmtLog(l.d)}${l.by==='auto'?' · installer/auditor':l.by==='manual'?' · SM':''}</div>${photo}</div>`;
 }).join('');}
+// Read-only mirror of SM_Install_Dashboard.html's custom wallpaper production stepper (note 62).
+// Admin never advances stages — view only — so this only needs to render, not wire buttons.
+const CWP_STAGES_RO=[
+  {k:"placed",l:"Order Placement"},{k:"draft",l:"Draft Generation"},
+  {k:"approval",l:"Customer Approval"},{k:"warehouse",l:"At Warehouse"},
+  {k:"delivsched",l:"Delivery Schedule"},{k:"deliv",l:"Delivery"},{k:"install",l:"Installation"}
+];
+const CWP_STAGE_RANK_RO={draft:1,approval:2,warehouse:3};
+function adminCwpSection(o){
+  const stage=o.custom_wp_stage||'draft';const meta=o.custom_wp_meta||{};
+  const subjobs=o.subjobs||[];
+  const terminal=stage==='warehouse'&&!!meta.warehouseReceivedAt;
+  const backHalfDone=k=>{
+    if(k==='delivsched')return !!o.delivery_date;
+    if(k==='deliv')return !['pending','call_na','deliv_delayed'].includes(o.status);
+    if(k==='install')return !!(subjobs.length&&subjobs.every(sj=>sj.status==='completed'));
+    return false;
+  };
+  const nodes=CWP_STAGES_RO.map(s=>{
+    let state='';
+    if(s.k==='placed')state='done';
+    else if(CWP_STAGE_RANK_RO[s.k]){
+      if(terminal)state='done';
+      else if(CWP_STAGE_RANK_RO[stage]>CWP_STAGE_RANK_RO[s.k])state='done';
+      else if(stage===s.k)state='cur';
+    } else state=backHalfDone(s.k)?'done':'';
+    return {...s,state};
+  });
+  const dotStyle=(st)=>st==='done'?'background:var(--green,#1f7a3f);color:#fff':st==='cur'?'background:var(--navy,#1F3A5F);color:#fff':'background:#e4e8f0;color:#67748a';
+  const track=nodes.map((n,i)=>`${i>0?`<div style="flex:0 0 16px;height:2px;margin-top:9px;background:${nodes[i-1].state==='done'?'var(--green,#1f7a3f)':'#e4e8f0'}"></div>`:''}<div style="display:flex;flex-direction:column;align-items:center;flex:0 0 74px;font-size:9.5px;text-align:center;font-weight:700;color:${n.state==='done'?'var(--green,#1f7a3f)':n.state==='cur'?'var(--navy,#1F3A5F)':'#67748a'}"><div style="width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;margin-bottom:5px;${dotStyle(n.state)}">${n.state==='done'?'&#10003;':i+1}</div>${n.l}</div>`).join('');
+  const renderPreview=meta.renderUrl?(meta.renderIsImage?`<img src="${meta.renderUrl}" style="max-width:160px;border-radius:8px;margin-top:8px;display:block">`:`<a href="${meta.renderUrl}" target="_blank" rel="noopener" style="font-size:12px">View render link</a>`):'';
+  return `<div class="jd-section"><div class="jd-sec-head">Custom Wallpaper Journey</div>
+    <div style="display:flex;align-items:flex-start;gap:0;margin:8px 0;overflow-x:auto">${track}</div>
+    <div class="jd-row"><span class="jd-label">Vendor</span><span>${meta.vendor||'—'}</span></div>
+    <div class="jd-row"><span class="jd-label">Revisions</span><span>${meta.revisionCount||0}</span></div>
+    ${renderPreview}
+    ${terminal?`<div style="font-size:12px;color:var(--green,#1f7a3f);margin-top:6px">&#10003; Received at warehouse on ${fmtLog(meta.warehouseReceivedAt)}</div>`:''}
+  </div>`;
+}
 async function openJobDetail(pi,type){
   const m=document.getElementById('modal');m.className='modal wide';
   showModal('<div class="loading-row" style="padding:40px 0"><span class="spinner"></span></div>');
@@ -866,6 +940,7 @@ async function openJobDetail(pi,type){
           <div class="jd-row"><span class="jd-label">BM</span><span>${o.bm||'—'}</span></div>
           <div class="jd-row"><span class="jd-label">Delivery</span><span>${fdt(o.delivery_date)}</span></div>
         </div>
+        ${o.custom_wp?adminCwpSection(o):''}
         ${sjsHtml}
         <div class="jd-btns"><button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button></div>
         ${o.log&&o.log.length?`<div class="jd-section"><div class="jd-sec-head">Activity</div><div class="jd-log">${jdLog(o.log)}</div></div>`:''}`;
@@ -1164,16 +1239,16 @@ async function renderAnalytics(m){
   let installRes,auditRes,ratingsRes;
   try{
     [installRes,auditRes,ratingsRes]=await Promise.all([
-      sbGetLong('install_orders_slim?select=pi,status,subjobs,service,delivery_date,created_at&status=neq.deleted'),
-      sbGetLong('audit_orders?select=pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at&status=not.in.(deleted,slot_reserved,slot_converted)'),
-      sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
+      sbGetLong('install_orders_slim?select=id,pi,status,subjobs,service,delivery_date,created_at&status=neq.deleted'),
+      sbGetLong('audit_orders?select=id,pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at&status=not.in.(deleted,slot_reserved,slot_converted)'),
+      sbGetLong('ratings?select=order_type,pi,order_id,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
     m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load analytics data — network timeout. Please try again.</div>`;
     return;
   }
   // Fallback for q3_score column not yet in DB
-  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGetLong('ratings?select=order_type,pi,q1_score,q2_score,created_at,staff_name,staff_email').catch(()=>[]);
+  if(!Array.isArray(ratingsRes)) ratingsRes=await sbGetLong('ratings?select=order_type,pi,order_id,q1_score,q2_score,created_at,staff_name,staff_email').catch(()=>[]);
   // Merge original_delivery_date from a lightweight separate query
   const delivMeta=await sbGetLong('install_orders?select=pi,original_delivery_date&status=neq.deleted').catch(()=>[]);
   if(Array.isArray(installRes)&&Array.isArray(delivMeta)){
@@ -1195,137 +1270,221 @@ async function renderAnalytics(m){
   }
 }
 
-// Returns flat list of attempts (one per subjob) within [from,to].
-// Completed/partial: counted on actual completion date (from log). In-progress: counted on scheduled date.
-function _anInstallAttempts(installs,from,to){
+// Returns one canonical row per subjob within [from,to] — never more than one, regardless of
+// reschedule history or multi-day span. Completed/partial: keyed on completion-log date (or latest
+// known scheduled date if no log match). Not-done: keyed on current scheduled date(s) — membership
+// is "any of its current dates overlaps the range", but only ONE row is ever emitted per subjob.
+function _anInstallCanon(installs,from,to){
   const out=[];
   for(const o of installs){
     for(const sj of (o.subjobs||[])){
-      const isCompleted=['completed','partial'].includes(sj.status);
-      const dates=new Set();
-      if(isCompleted){
-        // Use actual completion date from installer log entry
+      const isDone=['completed','partial'].includes(sj.status);
+      let repDate=null,matched=false;
+
+      // Scheduled date candidate(s) — always computed, regardless of completion status. Used for
+      // display/status/delivery-tracking date (repDate) when not yet done, and separately as the
+      // arrival-matching date for done jobs (arrival can land a day before the completion log is
+      // written on a multi-day job, so it must not require an exact match against the completion date).
+      const schedCand=[];
+      if(sj.date) schedCand.push(sj.date);
+      for(const a of (sj.assignments||[])){
+        if(a.mode==='custom')(a.dates||[]).forEach(d=>schedCand.push(d));
+        else if(a.date) schedCand.push(a.date);
+      }
+
+      if(isDone){
         const complKey=(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' installation completed';
+        let cd=null;
         for(const l of (o.log||[])){
-          if(l.t&&l.d&&l.t.startsWith(complKey)){const cd=_anDateIST(l.d);if(cd)dates.add(cd);}
+          if(l.t&&l.d&&l.t.startsWith(complKey)){const d=_anDateIST(l.d);if(!cd||d>cd)cd=d;}
         }
-        // Fall back to scheduled date if no completion log found
-        if(!dates.size){
-          if(sj.date) dates.add(sj.date);
-          for(const a of (sj.assignments||[])){
-            if(a.mode==='custom')(a.dates||[]).forEach(d=>dates.add(d));
-            else if(a.date) dates.add(a.date);
-          }
-        }
-      } else {
-        // Not yet completed: use scheduled date
-        if(sj.date) dates.add(sj.date);
-        for(const a of (sj.assignments||[])){
-          if(a.mode==='custom')(a.dates||[]).forEach(d=>dates.add(d));
-          else if(a.date) dates.add(a.date);
+        if(!cd) cd=schedCand.length?schedCand.sort().slice(-1)[0]:null;
+        repDate=cd;
+        matched=!!repDate&&repDate>=from&&repDate<=to;
+      }else{
+        if(schedCand.length){
+          matched=schedCand.some(d=>d>=from&&d<=to);
+          const inRange=schedCand.filter(d=>d>=from&&d<=to).sort();
+          repDate=inRange.length?inRange[0]:schedCand.sort()[0];
         }
       }
-      for(const d of dates){
-        if(d<from||d>to) continue;
-        const asgns=(sj.assignments||[]).filter(a=>a.mode==='custom'?(a.dates||[]).includes(d):a.date===d);
-        const primary=asgns.find(a=>a.primary)||asgns[0]||null;
-        out.push({
-          pi:o.pi, type:sj.type, status:sj.status, date:d,
-          slot:primary?(primary.slots&&primary.slots[0])||'':sj.slot||'',
-          installers:asgns.length?asgns:(sj.assignments||[]),
-          items:sj.items||[],
-          auditBy:o.service&&o.service.audit_by,
-          hasDelay:!!(o.original_delivery_date&&o.delivery_date&&o.original_delivery_date!==o.delivery_date),
-          logDelay:(o.log||[]).some(l=>l.t&&/delay/i.test(l.t)),
-          originalDelivery:o.original_delivery_date||null,
-          currentDelivery:o.delivery_date||null,
-          order:o,
-        });
-      }
+      if(!matched) continue;
+
+      const asgns=(sj.assignments||[]).filter(a=>a.mode==='custom'?(a.dates||[]).includes(repDate):a.date===repDate);
+      const useAsgns=asgns.length?asgns:(sj.assignments||[]);
+      const primary=useAsgns.find(a=>a.primary)||useAsgns[0]||null;
+
+      out.push({
+        pi:o.pi, orderId:o.id, sjId:sj.id, type:sj.type, status:sj.status, date:repDate,
+        schedDates:schedCand,
+        slot:primary?(primary.slots&&primary.slots[0])||'':sj.slot||'',
+        installers:useAsgns, items:sj.items||[],
+        hasDelay:!!(o.original_delivery_date&&o.delivery_date&&o.original_delivery_date!==o.delivery_date),
+        logDelay:(o.log||[]).some(l=>l.t&&/delay/i.test(l.t)),
+        originalDelivery:o.original_delivery_date||null,
+        currentDelivery:o.delivery_date||null,
+        order:o,
+      });
     }
   }
   return out;
 }
 
-// Arrival on time stats keyed by actor name. Only dates >= trackFrom and <= trackTo.
-function _anArrivalStats(orders,trackFrom,trackTo,isInstall){
-  const map={};
-  for(const o of orders){
+// Row-level "did this specific job's assigned actor(s) arrive on time?" resolver.
+// Matches an "arrived at site" log entry to THIS row only (same date, name among this row's actors) —
+// not an independent scan of the whole raw array, so results can never drift from the canonical total.
+function _anArrivalBucket(slot,logIso){
+  if(!slot||!/^\d{1,2}:\d{2}$/.test(slot)) return null;
+  const [sh,sm]=slot.split(':').map(Number);
+  return (_anMinsIST(logIso)-(sh*60+sm))>3?'late':'onTime';
+}
+// rows: canonical install rows (already narrowed to "reached site" subset by caller).
+// Returns {agg:{onTime,late}, byName:{name:{onTime,late}}} — every assigned installer on a row is
+// credited (not just primary), matching this table's pre-existing per-person crediting behavior.
+function _anInstallArrivalStats(rows){
+  const byName={};let onTime=0,late=0;
+  for(const row of rows){
+    const names=new Set((row.installers||[]).map(a=>a.installer_name).filter(Boolean));
+    if(!names.size) continue;
+    let bucket=null;
+    for(const l of (row.order.log||[])){
+      if(!l.t||!l.d||!l.who) continue;
+      if(!l.t.toLowerCase().includes('arrived at site')) continue;
+      const logDate=_anDateIST(l.d);
+      // Accept a match against the row's display date OR any of its scheduled date(s) — arrival can
+      // land a day before the completion log is written on a multi-day job.
+      if(logDate!==row.date&&!(row.schedDates||[]).includes(logDate)) continue;
+      if(!names.has(l.who)) continue;
+      bucket=_anArrivalBucket(row.slot,l.d);
+      break;
+    }
+    if(!bucket) continue;
+    if(bucket==='late')late++;else onTime++;
+    for(const n of names){ if(!byName[n])byName[n]={onTime:0,late:0}; byName[n][bucket]++; }
+  }
+  return {agg:{onTime,late},byName};
+}
+// rows: audit orders (already narrowed to "reached site" — status==='completed' — subset by caller).
+function _anAuditArrivalStats(rows){
+  const byName={};let onTime=0,late=0;
+  for(const o of rows){
+    if(!o.auditor_name) continue;
+    let bucket=null;
     for(const l of (o.log||[])){
       if(!l.t||!l.d||!l.who) continue;
       if(!l.t.toLowerCase().includes('arrived at site')) continue;
-      const dateIST=_anDateIST(l.d);
-      if(dateIST<trackFrom||dateIST>trackTo) continue;
-      let slot='';
-      if(isInstall){
-        for(const sj of (o.subjobs||[])){
-          const sjDate=sj.date||(sj.assignments&&sj.assignments[0]&&sj.assignments[0].date)||'';
-          if(sjDate===dateIST){
-            const a=(sj.assignments||[]).find(a=>a.installer_name===l.who);
-            slot=a?(a.slots&&a.slots[0])||'':sj.slot||'';
-            break;
-          }
-        }
-      } else {
-        if(o.date===dateIST) slot=o.slot||'';
-      }
-      if(!slot||!/^\d{1,2}:\d{2}$/.test(slot)) continue;
-      const [sh,sm2]=slot.split(':').map(Number);
-      const diff=_anMinsIST(l.d)-(sh*60+sm2);
-      if(!map[l.who]) map[l.who]={onTime:0,late:0};
-      if(diff>3) map[l.who].late++; else map[l.who].onTime++;
+      if(l.who!==o.auditor_name) continue;
+      if(_anDateIST(l.d)!==o.date) continue;
+      bucket=_anArrivalBucket(o.slot,l.d);
+      break;
     }
+    if(!bucket) continue;
+    if(bucket==='late')late++;else onTime++;
+    if(!byName[o.auditor_name])byName[o.auditor_name]={onTime:0,late:0};
+    byName[o.auditor_name][bucket]++;
+  }
+  return {agg:{onTime,late},byName};
+}
+
+// Ratings join — audit: unambiguous via order_id (1 audit order = 1 rating max).
+// Returns a Map from audit-order-row -> rating (only for rows that actually have one).
+function _anAttachAuditRatings(completedRows,ratings){
+  const byOrder={};
+  for(const r of ratings){ if(r.order_type==='audit'&&r.order_id) byOrder[r.order_id]=r; }
+  const byPi={}; // legacy fallback for rating rows written before order_id existed
+  for(const r of ratings){ if(r.order_type==='audit'&&!r.order_id) byPi[r.pi]=r; }
+  const map=new Map();
+  for(const o of completedRows){
+    const r=byOrder[o.id]||byPi[o.pi];
+    if(r) map.set(o,r);
   }
   return map;
 }
+// Ratings join — install: order_id on a rating is the PARENT order id, shared by every subjob on
+// that order, so it does NOT disambiguate which subjob a rating belongs to when 2+ are completed on
+// the same order. Disambiguate by matching the rating's staff_email against the row's assigned
+// installer emails first; if that's still ambiguous (same installer completed 2 subjobs on one
+// order), fall back to nearest completion-timestamp. Known limitation, documented in the footer.
+function _anAttachInstallRatings(canonRows,ratings){
+  const doneRows=canonRows.filter(r=>['completed','partial'].includes(r.status));
+  const byOrder={};
+  for(const r of ratings){ if(r.order_type==='install'){ const k=r.order_id||('pi:'+r.pi); (byOrder[k]=byOrder[k]||[]).push(r); } }
+  const byOrderRows={};
+  for(const row of doneRows){ (byOrderRows[row.orderId]=byOrderRows[row.orderId]||[]).push(row); }
+  const attached=new Map();
+  for(const orderId of Object.keys(byOrderRows)){
+    const rows=byOrderRows[orderId];
+    const cands=(byOrder[orderId]||[]).slice();
+    if(!cands.length) continue;
+    if(rows.length===1){
+      attached.set(rows[0],cands.sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''))[0]);
+      continue;
+    }
+    for(const row of rows){
+      const emails=new Set((row.installers||[]).map(a=>a.installer_email).filter(Boolean));
+      const idx=cands.findIndex(c=>emails.has(c.staff_email));
+      if(idx>=0) attached.set(row,cands.splice(idx,1)[0]);
+    }
+    for(const row of rows.filter(r=>!attached.has(r))){
+      if(!cands.length) break;
+      let bestI=-1,bestDiff=Infinity;
+      cands.forEach((c,i)=>{const d=Math.abs(new Date(c.created_at)-new Date(row.date));if(d<bestDiff){bestDiff=d;bestI=i;}});
+      if(bestI>=0) attached.set(row,cands.splice(bestI,1)[0]);
+    }
+  }
+  return attached;
+}
 
-function _anInstallerMap(attempts,iRatings,arrMap){
+function _anInstallerMap(canonRows,ratingMap,arrByName){
   const map={};
-  for(const att of attempts){
-    for(const inst of att.installers){
+  for(const row of canonRows){
+    for(const inst of row.installers){
       const k=inst.installer_email||inst.installer_name;
       if(!k) continue;
       if(!map[k]) map[k]={name:inst.installer_name||k,email:inst.installer_email||'',orders:0,completed:0,wfQty:0,wpRolls:0,wpSqft:0,q1:[],q2:[],q3:[]};
       map[k].orders++;
-      if(['completed','partial'].includes(att.status)) map[k].completed++;
-      for(const it of att.items){
+      if(['completed','partial'].includes(row.status)) map[k].completed++;
+      for(const it of row.items){
         // SKU items now carry a single sqft measurement (no separate flooring qty / wallpaper rolls field).
         // Roll count is always derived: ceil(sqft/57). parseFloat guards against stray legacy non-numeric values.
         const sqft=parseFloat(it.sqft)||0;
-        if(att.type==='flooring') map[k].wfQty+=sqft;
+        if(row.type==='flooring') map[k].wfQty+=sqft;
         else{map[k].wpSqft+=sqft;map[k].wpRolls+=sqft?Math.ceil(sqft/SQFT_PER_ROLL):0;}
       }
     }
-  }
-  for(const r of iRatings){
-    const k=r.staff_email;if(!k||!map[k]) continue;
-    if(r.q1_score) map[k].q1.push(+r.q1_score);
-    if(r.q2_score) map[k].q2.push(+r.q2_score);
-    if(r.q3_score) map[k].q3.push(+r.q3_score);
+    const r=ratingMap.get(row);
+    if(r){
+      for(const inst of row.installers){
+        const k=inst.installer_email||inst.installer_name;if(!k||!map[k])continue;
+        if(r.q1_score)map[k].q1.push(+r.q1_score);
+        if(r.q2_score)map[k].q2.push(+r.q2_score);
+        if(r.q3_score)map[k].q3.push(+r.q3_score);
+      }
+    }
   }
   for(const k of Object.keys(map)){
-    const ar=arrMap[map[k].name]||{onTime:0,late:0};
+    const ar=arrByName[map[k].name]||{onTime:0,late:0};
     map[k].arrOnTime=ar.onTime; map[k].arrLate=ar.late;
   }
   return Object.values(map).sort((a,b)=>b.orders-a.orders);
 }
 
-function _anAuditorMap(auditFiltered,aRatings,arrMap){
+function _anAuditorMap(auditFiltered,ratingMap,arrByName){
   const map={};
   for(const o of auditFiltered){
     const k=o.auditor_email||o.auditor_name;if(!k) continue;
     if(!map[k]) map[k]={name:o.auditor_name||k,email:o.auditor_email||'',orders:0,completed:0,q1:[],q2:[],q3:[]};
     map[k].orders++;
     if(o.status==='completed') map[k].completed++;
-  }
-  for(const r of aRatings){
-    const k=r.staff_email;if(!k||!map[k]) continue;
-    if(r.q1_score) map[k].q1.push(+r.q1_score);
-    if(r.q2_score) map[k].q2.push(+r.q2_score);
-    if(r.q3_score) map[k].q3.push(+r.q3_score);
+    const r=ratingMap.get(o);
+    if(r){
+      if(r.q1_score)map[k].q1.push(+r.q1_score);
+      if(r.q2_score)map[k].q2.push(+r.q2_score);
+      if(r.q3_score)map[k].q3.push(+r.q3_score);
+    }
   }
   for(const k of Object.keys(map)){
-    const ar=arrMap[map[k].name]||{onTime:0,late:0};
+    const ar=arrByName[map[k].name]||{onTime:0,late:0};
     map[k].arrOnTime=ar.onTime; map[k].arrLate=ar.late;
   }
   return Object.values(map).sort((a,b)=>b.orders-a.orders);
@@ -1337,59 +1496,65 @@ function drawAnalytics(m){
   const todayStr=_anDstr(new Date());
   const TRACK_FROM='2026-07-02'; // arrival on time tracking start date
 
-  // Install: flat attempts in range
-  const iAttempts=_anInstallAttempts(installs,from,to);
-  const iTotal=iAttempts.length;
+  // Install: one canonical row per subjob in range (no reschedule/multi-day double-counting)
+  const iCanon=_anInstallCanon(installs,from,to);
+  const iTotal=iCanon.length;
 
   // Audit: completed orders by actual completion date; pending/in-progress by scheduled date
   const aFiltered=audits.filter(o=>o.date&&o.date>=from&&o.date<=to);
   const aTotal=aFiltered.length;
 
-  // Ratings — filtered by date range
-  const IR=ratings.filter(r=>r.order_type==='install'&&_anDateIST(r.created_at)>=from&&_anDateIST(r.created_at)<=to);
-  const AR=ratings.filter(r=>r.order_type==='audit'&&_anDateIST(r.created_at)>=from&&_anDateIST(r.created_at)<=to);
-  const iRatedPIs=new Set(IR.map(r=>r.pi));
-  const aRatedPIs=new Set(AR.map(r=>r.pi));
-
   // Install calcs
-  const iCompleted=iAttempts.filter(a=>['completed','partial'].includes(a.status)).length;
+  const iDone=iCanon.filter(a=>['completed','partial'].includes(a.status)); // "reached site & started work"
   // Log-mention count is a distinct, looser signal from confirmedDelayed below (date-field mismatch) —
   // it catches cases logged as delayed where nobody actually updated delivery_date, and vice versa.
   // Previously this reused the exact same hasDelay/date-comparison boolean as confirmedDelayed, so
   // both stats in the Delivery Date Tracking row always showed an identical number (2026-07-18 fix).
-  const iDelayed=iAttempts.filter(a=>a.logDelay).length;
+  const iDelayed=iCanon.filter(a=>a.logDelay).length;
+  // Material Depot Audit % — fully automated phone-number match (no manual "audit_by" input is
+  // consulted); denominator is the full canonical total, not a distinct-PI count.
   const auditPhones=new Set(audits.map(o=>o.phone).filter(Boolean));
-  const iUniquePIs=new Set(iAttempts.map(a=>a.pi));
-  const iMDaudit=[...iUniquePIs].filter(pi=>{const o=installs.find(r=>r.pi===pi);return o&&o.phone&&auditPhones.has(o.phone);}).length;
-  const iJobCard=iAttempts.filter(a=>iRatedPIs.has(a.pi)).length;
+  const iMDaudit=iCanon.filter(r=>r.order.phone&&auditPhones.has(r.order.phone)).length;
   const avgA=(arr,k)=>{const vs=arr.filter(r=>r[k]!=null).map(r=>+r[k]);return vs.length?+(vs.reduce((s,v)=>s+v,0)/vs.length).toFixed(1):null;};
-  const IR_q1=avgA(IR,'q1_score'),IR_q2=avgA(IR,'q2_score'),IR_q3=avgA(IR,'q3_score');
-  const IR_prom=IR.filter(r=>r.q1_score>=9).length,IR_det=IR.filter(r=>r.q1_score<=7).length;
-  const IR_nps=IR.length?Math.round((IR_prom-IR_det)/IR.length*100):null;
 
   // Audit calcs
   const aCompleted=aFiltered.filter(o=>o.status==='completed').length;
-  const aJobCard=aFiltered.filter(o=>aRatedPIs.has(o.pi)).length;
   const aRescheduled=aFiltered.filter(o=>o.status==='reschedule').length;
+  // Site Audit → Order Conversion %: distinct audit customers (by phone) in this range who
+  // eventually placed an install order, any time — even after the range end.
+  const aPhonesInRange=new Set(aFiltered.map(o=>o.phone).filter(Boolean));
+  const aConvertedPhones=[...aPhonesInRange].filter(p=>installs.some(io=>io.phone===p));
+
+  // Ratings — attached via completion-derived lookup (order_id / installer-email join), not an
+  // independently-scoped ratings.created_at date filter. Count is always ⊆ the completed set.
+  const aRatingMap=_anAttachAuditRatings(aFiltered.filter(o=>o.status==='completed'),ratings);
+  const iRatingMap=_anAttachInstallRatings(iCanon,ratings);
+  const AR=[...aRatingMap.values()];
+  const IR=[...iRatingMap.values()];
+  const IR_q1=avgA(IR,'q1_score'),IR_q2=avgA(IR,'q2_score'),IR_q3=avgA(IR,'q3_score');
+  const IR_prom=IR.filter(r=>r.q1_score>=9).length,IR_det=IR.filter(r=>r.q1_score<=7).length;
+  const IR_nps=IR.length?Math.round((IR_prom-IR_det)/IR.length*100):null;
   const AR_q1=avgA(AR,'q1_score'),AR_q2=avgA(AR,'q2_score'),AR_q3=avgA(AR,'q3_score');
   const AR_prom=AR.filter(r=>r.q1_score>=9).length,AR_det=AR.filter(r=>r.q1_score<=7).length;
   const AR_nps=AR.length?Math.round((AR_prom-AR_det)/AR.length*100):null;
 
-  // Arrival on time: filtered by [max(from,TRACK_FROM), to] so it's scoped to the selected range
+  // Arrival on time — denominator is the "reached site" subset of the SAME canonical/filtered set
+  // used everywhere else in this section (not an independently-scoped scan of the raw arrays).
   const iTrackFrom=from>TRACK_FROM?from:TRACK_FROM;
   const aTrackFrom=from>TRACK_FROM?from:TRACK_FROM;
-  const iArrMap=_anArrivalStats(installs,iTrackFrom,to,true);
-  const aArrMap=_anArrivalStats(audits,aTrackFrom,to,false);
-  const sumArr=map=>Object.values(map).reduce((s,v)=>({onTime:s.onTime+v.onTime,late:s.late+v.late}),{onTime:0,late:0});
-  const iArrTot=sumArr(iArrMap), aArrTot=sumArr(aArrMap);
+  const iReached=iDone.filter(r=>r.date>=iTrackFrom);
+  const aReached=aFiltered.filter(o=>o.status==='completed'&&o.date>=aTrackFrom);
+  const iArr=_anInstallArrivalStats(iReached);
+  const aArr=_anAuditArrivalStats(aReached);
+  const iArrTot=iArr.agg, aArrTot=aArr.agg;
 
   // Per-installer / per-auditor
-  const installers=_anInstallerMap(iAttempts,IR,iArrMap);
-  const auditors=_anAuditorMap(aFiltered,AR,aArrMap);
+  const installers=_anInstallerMap(iCanon,iRatingMap,iArr.byName);
+  const auditors=_anAuditorMap(aFiltered,aRatingMap,aArr.byName);
 
   // Delivery breakdown
-  const origTracked=iAttempts.filter(a=>a.originalDelivery).length;
-  const confirmedDelayed=iAttempts.filter(a=>a.hasDelay).length;
+  const origTracked=iCanon.filter(a=>a.originalDelivery).length;
+  const confirmedDelayed=iCanon.filter(a=>a.hasDelay).length;
 
   // Need action — live across all non-deleted install orders
   const naCount=installs.filter(o=>{
@@ -1475,7 +1640,7 @@ function drawAnalytics(m){
   const aArrNote=aArrTot.onTime+aArrTot.late===0?'Tracking started 2 Jul 2026':'';
 
   const iByStatus={};
-  iAttempts.forEach(a=>{iByStatus[a.status]=(iByStatus[a.status]||0)+1;});
+  iCanon.forEach(a=>{iByStatus[a.status]=(iByStatus[a.status]||0)+1;});
   const statusDefs=[
     {k:'completed',l:'Completed',c:'var(--green)'},
     {k:'partial',l:'Partially Completed',c:'var(--teal)'},
@@ -1488,7 +1653,7 @@ function drawAnalytics(m){
   ];
 
   m.innerHTML=`
-    <div class="page-head"><h1>Analytics</h1><p>Operational metrics. Each scheduling attempt counted separately — a rescheduled order appears twice if both dates fall in the range.</p></div>
+    <div class="page-head"><h1>Analytics</h1><p>Operational metrics. Each subjob counted exactly once per range, using its current status and most relevant date — reschedule history and multi-day spans never duplicate a row.</p></div>
 
     <div class="an-date-row">
       <span class="an-date-label">Date range</span>
@@ -1501,22 +1666,58 @@ function drawAnalytics(m){
       <button class="filt-btn" onclick="(function(){const t=new Date();analyticsTo=_anDstr(t);t.setDate(t.getDate()-89);analyticsFrom=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 90 days</button>
     </div>
 
+    <!-- ══ SITE AUDIT ════════════════════════════════════════════════════ -->
+    <div class="an-section">
+      <div class="an-section-head">
+        <span class="an-section-ico">🔍</span>
+        <div>
+          <div class="an-section-title">Site Audit</div>
+          <div class="an-section-sub">One row per audit · ${from} to ${to}</div>
+        </div>
+        <div class="an-hero"><div class="an-hero-val">${aTotal}</div><div class="an-hero-label">Total Audits in Range</div></div>
+      </div>
+
+      <div class="an-sub-head">Overview</div>
+      <div class="an-grid4">
+        ${pctCard('Completion %',aCompleted,aTotal,'Audits that reached completed status','')}
+        ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote)}
+        ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','')}
+        ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','(phone match against all-time install orders; only install orders from 1 Jul 2026 onward have phone data — see footer)')}
+        ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length)}
+        ${ratingCard('Q1 — Overall Service',AR_q1,AR.length)}
+        ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length)}
+        ${ratingCard('Q3 — Site Cleanliness',AR_q3,AR.length)}
+      </div>
+
+      <div style="font-size:11.5px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line)">Note: Rescheduled audits originally scheduled in range but moved to a future date appear under the original date AND the new date. Reschedule Rate counts audits currently in reschedule status within the selected range.</div>
+
+      <div class="an-sub-head">Per-Auditor Breakdown</div>
+      ${auditors.length?`<div style="overflow-x:auto"><table class="an-inst-table">
+        <thead><tr>
+          <th>Auditor</th><th>Orders</th><th>Completed</th>
+          <th>On-time Arrival %<small>from 2 Jul 2026</small></th>
+          <th>Q1 Overall</th><th>Q2 Auditor</th><th>Q3 Cleanliness</th>
+        </tr></thead>
+        <tbody>${audRows}</tbody>
+      </table></div>`:`<div class="an-na-note">No audits in this date range.</div>`}
+    </div>
+
     <!-- ══ SITE INSTALLATION ══════════════════════════════════════════════ -->
     <div class="an-section">
       <div class="an-section-head">
         <span class="an-section-ico">🔧</span>
         <div>
           <div class="an-section-title">Site Installation</div>
-          <div class="an-section-sub">Per scheduling attempt · ${from} to ${to}</div>
+          <div class="an-section-sub">One row per subjob · ${from} to ${to}</div>
         </div>
-        <div class="an-hero"><div class="an-hero-val">${iTotal}</div><div class="an-hero-label">Total Attempts in Range</div></div>
+        <div class="an-hero"><div class="an-hero-val">${iTotal}</div><div class="an-hero-label">Total Subjobs in Range</div></div>
       </div>
 
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
-        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed',iArrNote)}
-        ${pctCard('Material Depot Audit %',iMDaudit,iUniquePIs.size,'Install customers who also had an MD site audit','(phone number match across audit + install orders)')}
-        ${pctCard('Job Card &amp; Signature %',iJobCard,iCompleted,'Proxy: ratings written only after client signs','(completed attempts with rating)')}
+        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed — only counted among jobs that reached site',iArrNote)}
+        ${pctCard('Material Depot Audit %',iMDaudit,iTotal,'Install customers who also had an MD site audit','Fully automated — phone-number match, no manual input used')}
+        ${pctCard('Completion %',iDone.length,iTotal,'Completed or partially completed, out of all subjobs in range','')}
         ${npsCard('NPS Score',IR_nps,IR_prom,IR_det,IR.length)}
         ${ratingCard('Q1 — Overall Service',IR_q1,IR.length)}
         ${ratingCard('Q2 — Installer Rating',IR_q2,IR.length)}
@@ -1562,48 +1763,14 @@ function drawAnalytics(m){
       </table></div>`:`<div class="an-na-note">No installer assignments in this date range.</div>`}
     </div>
 
-    <!-- ══ SITE AUDIT ════════════════════════════════════════════════════ -->
-    <div class="an-section">
-      <div class="an-section-head">
-        <span class="an-section-ico">🔍</span>
-        <div>
-          <div class="an-section-title">Site Audit</div>
-          <div class="an-section-sub">Filtered by scheduled audit date · ${from} to ${to}</div>
-        </div>
-        <div class="an-hero"><div class="an-hero-val">${aTotal}</div><div class="an-hero-label">Total Audits in Range</div></div>
-      </div>
-
-      <div class="an-sub-head">Overview</div>
-      <div class="an-grid4">
-        ${pctCard('Job Card &amp; Signature %',aJobCard,aCompleted,'Proxy: ratings written only after client signs','(completed audits with rating)')}
-        ${pctCard('Completion Rate %',aCompleted,aTotal,'Audits that reached completed status','')}
-        ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote)}
-        ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','')}
-        ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length)}
-        ${ratingCard('Q1 — Overall Service',AR_q1,AR.length)}
-        ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length)}
-        ${ratingCard('Q3 — Site Cleanliness',AR_q3,AR.length)}
-      </div>
-
-      <div style="font-size:11.5px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line)">Note: Rescheduled audits originally scheduled in range but moved to a future date appear under the original date AND the new date. Reschedule Rate counts audits currently in reschedule status within the selected range.</div>
-
-      <div class="an-sub-head">Per-Auditor Breakdown</div>
-      ${auditors.length?`<div style="overflow-x:auto"><table class="an-inst-table">
-        <thead><tr>
-          <th>Auditor</th><th>Orders</th><th>Completed</th>
-          <th>On-time Arrival %<small>from 2 Jul 2026</small></th>
-          <th>Q1 Overall</th><th>Q2 Auditor</th><th>Q3 Cleanliness</th>
-        </tr></thead>
-        <tbody>${audRows}</tbody>
-      </table></div>`:`<div class="an-na-note">No audits in this date range.</div>`}
-    </div>
-
     <div class="an-footer">
-      <b>Job Card &amp; Signature %:</b> Uses ratings table as proxy — a rating entry is created only after the client signs, confirming both card filled and signature.<br>
-      <b>Arrival on time:</b> Filtered by selected date range, floor 2 Jul 2026 (when tracking began). &gt;3 min late = delayed. N/T = no tracked data in range.<br>
+      <b>Completion %:</b> Audit — completed ÷ total audits in range. Install — (completed + partially completed) ÷ total subjobs in range. Replaces the old separate "Job Card &amp; Signature %" metric.<br>
+      <b>Ratings (NPS / Q1 / Q2 / Q3):</b> Attached to each completed order via its own ID (audit: unambiguous; install: matched by assigned-installer email, with a nearest-completion-time fallback) — not an independent date filter on the ratings table. Count is always a subset of that section's completed total. Known limitation: if the same installer completes two subjobs on one order, the rating may occasionally be attributed to the wrong one of the two.<br>
+      <b>Arrival on time:</b> Only counted among jobs that actually reached site (audit: completed; install: completed or partially completed), floor 2 Jul 2026 (when tracking began). &gt;3 min late = delayed. N/T = no tracked data in range.<br>
+      <b>Material Depot Audit %:</b> Fully automated — phone-number match between install and site-audit orders, no manual "audit type" input is used. Install order phone numbers are only available from 1 Jul 2026 onward, same limitation as Site Audit → Order Conversion %.<br>
+      <b>Site Audit → Order Conversion %:</b> Of the distinct customers (by phone) audited in this range, the % who placed an install order at any time — including after the range ends.<br>
       <b>Delivery delay (log-based):</b> Any log entry mentioning "delay". <b>Confirmed delayed (new):</b> compares original_delivery_date vs current delivery_date — set for orders created from 2 Jul 2026.<br>
-      <b>Multi-attempt counting:</b> Each subjob date = one attempt. Rescheduled orders appear once per scheduled date found in the date range (log parsing used for post-July 2026 data).<br>
-      <b>NPS, ratings &amp; Job Card %:</b> Filtered by selected date range.<br>
+      <b>One row per subjob:</b> reschedule history and multi-day custom installs never produce more than one row per subjob in this section's counts.<br>
       <b>NPS:</b> Promoters Q1 ≥ 9, Detractors Q1 ≤ 7. Range −100 to +100.
     </div>`;
 }

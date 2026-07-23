@@ -267,6 +267,15 @@
   .step-hd.done{background:#f0faf4;border-bottom-color:#c8e6d4;}
   .step-num-badge{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;flex-shrink:0;}
   .step-hd.done .step-num-badge{background:var(--green);}
+  .cwp-track{display:flex;align-items:flex-start;gap:0;margin:10px 0 16px;overflow-x:auto;padding-bottom:4px;}
+  .cwp-node{display:flex;flex-direction:column;align-items:center;flex:0 0 76px;font-size:9.5px;text-align:center;color:var(--muted);font-weight:700;line-height:1.25;}
+  .cwp-dot{width:20px;height:20px;border-radius:50%;background:#e4e8f0;color:var(--muted);display:grid;place-items:center;font-size:11px;font-weight:800;margin-bottom:5px;}
+  .cwp-node.done .cwp-dot{background:var(--green);color:#fff;}
+  .cwp-node.cur .cwp-dot{background:var(--navy);color:#fff;}
+  .cwp-node.done{color:var(--green);}
+  .cwp-node.cur{color:var(--navy);}
+  .cwp-line{flex:0 0 18px;height:2px;background:#e4e8f0;margin-top:9px;}
+  .cwp-line.done{background:var(--green);}
   .step-title{font-weight:700;font-size:13px;color:var(--navy);}
   .step-hd.done .step-title{color:var(--green);}
   .step-bd{padding:12px 13px;display:flex;flex-direction:column;gap:10px;}
@@ -482,6 +491,17 @@ const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'applic
 async function sbGet(q){const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ctrl.signal});return r.json();}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json();if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+async function _uploadRenderImage(dataURL){
+  const blob=await(await fetch(dataURL)).blob();
+  const fname='render_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.jpg';
+  const r=await fetch(SB_URL+'/storage/v1/object/job-photos/'+fname,{
+    method:'POST',
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
+    body:blob
+  });
+  if(!r.ok)throw new Error('upload failed');
+  return SB_URL+'/storage/v1/object/public/job-photos/'+fname;
+}
 async function sbDel(t,id){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H,signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
@@ -530,6 +550,24 @@ const STATUS={
   completed:{l:"Site Installation Completed",c:"c-completed"},
 };
 const AUTO_STATUSES=["onway","atsite","completed"];
+
+// Custom wallpaper production tracker (custom_wp orders only) — tracks the pre-delivery
+// journey (draft render -> customer approval, with a revision loop -> warehouse arrival)
+// that today has no representation at all; the back half (Delivery Schedule/Delivery/
+// Installation) is derived read-only from fields that already exist and drive the rest
+// of this dashboard. custom_wp_stage stored values: draft (default) -> approval -> warehouse.
+// "Order Placement" has no stored value — it's always shown done since the order exists.
+const CWP_STAGES=[
+  {k:"placed",l:"Order Placement"},
+  {k:"draft",l:"Draft Generation"},
+  {k:"approval",l:"Customer Approval"},
+  {k:"warehouse",l:"At Warehouse"},
+  {k:"delivsched",l:"Delivery Schedule"},
+  {k:"deliv",l:"Delivery"},
+  {k:"install",l:"Installation"}
+];
+const CWP_STAGE_RANK={draft:1,approval:2,warehouse:3};
+const CWP_VENDORS=["Macro Media","Life N Colors","Other"];
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
 let ORDERS=[],DELETED=[];
@@ -557,6 +595,8 @@ const mapInstallRow=r=>({
   auditBy:(r.service&&r.service.audit_by)||null,
   deliveryDate:r.delivery_date||null,
   customWp:r.custom_wp||false,
+  customWpStage:r.custom_wp_stage||'draft',
+  customWpMeta:r.custom_wp_meta||{},
   status:r.status||'pending',
   subjobs:r.subjobs||null,
   service:r.service||null,
@@ -1028,6 +1068,72 @@ function openOrder(pi){
 }
 function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;render();}
 
+// ---- Custom wallpaper production tracker (custom_wp orders only) ----
+function cwpBackHalfDone(o,key){
+  if(key==='delivsched')return !!o.deliveryDate;
+  if(key==='deliv')return !['pending','call_na','deliv_delayed'].includes(o.status);
+  if(key==='install')return !!(o.subjobs&&o.subjobs.length&&o.subjobs.every(sj=>sj.status==='completed'));
+  return false;
+}
+function cwpTrackHtml(o){
+  const stage=o.customWpStage||'draft';
+  const meta=o.customWpMeta||{};
+  const terminal=stage==='warehouse'&&!!meta.warehouseReceivedAt;
+  const nodes=CWP_STAGES.map((s,i)=>{
+    let state='';
+    if(s.k==='placed'){
+      state='done';
+    } else if(CWP_STAGE_RANK[s.k]){
+      if(terminal)state='done';
+      else if(CWP_STAGE_RANK[stage]>CWP_STAGE_RANK[s.k])state='done';
+      else if(stage===s.k)state='cur';
+    } else {
+      state=cwpBackHalfDone(o,s.k)?'done':'';
+    }
+    return {...s,state};
+  });
+  let html=`<div class="cwp-track">`;
+  nodes.forEach((n,i)=>{
+    if(i>0)html+=`<div class="cwp-line ${nodes[i-1].state==='done'?'done':''}"></div>`;
+    html+=`<div class="cwp-node ${n.state}"><div class="cwp-dot">${n.state==='done'?'&#10003;':(i+1)}</div>${n.l}</div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
+function customWpProductionSection(o){
+  const stage=o.customWpStage||'draft';
+  const meta=o.customWpMeta||{};
+  const terminal=stage==='warehouse'&&!!meta.warehouseReceivedAt;
+  let html=`<div class="sec"><h3>Custom Wallpaper Journey</h3>`;
+  html+=cwpTrackHtml(o);
+  if(terminal){
+    html+=`<div class="note green">&#10003; Production complete — received at warehouse on ${fmtLog(meta.warehouseReceivedAt)}. Proceed with delivery scheduling below.</div>`;
+  } else if(stage==='draft'){
+    const knownVendor=CWP_VENDORS.includes(meta.vendor)?meta.vendor:(meta.vendor?'Other':'Macro Media');
+    html+=`<div class="field"><label>Vendor</label>
+        <select id="cwpVendor">${CWP_VENDORS.map(v=>`<option value="${v}" ${knownVendor===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="field" id="cwpVendorOtherWrap" style="${knownVendor==='Other'?'':'display:none'}">
+        <label>Vendor name</label><input id="cwpVendorOther" placeholder="Vendor name" value="${knownVendor==='Other'&&meta.vendor?meta.vendor:''}"></div>
+      <div class="note" id="cwpSlaNote" style="${knownVendor==='Macro Media'?'':'display:none'}">Macro Media: approval before 1 PM &rarr; printing starts same day; after 1 PM &rarr; next day.</div>
+      <div class="field"><label>Render — paste a link</label><input id="cwpRenderUrl" placeholder="https://..." value="${meta.renderUrl&&!meta.renderIsImage?meta.renderUrl:''}"></div>
+      <div class="field"><label>...or upload an image</label><input type="file" accept="image/*" id="cwpRenderFile"></div>
+      ${meta.renderUrl?`<div style="margin:8px 0">${meta.renderIsImage?`<img src="${meta.renderUrl}" style="max-width:160px;border-radius:8px;border:1px solid var(--line)">`:`<a href="${meta.renderUrl}" target="_blank" rel="noopener">View current render link</a>`}</div>`:''}
+      <button class="btn navy sm" id="cwpMarkDraftReady">Mark render ready — send for approval</button>`;
+  } else if(stage==='approval'){
+    html+=`<div class="kv"><div class="k">Vendor</div><div class="v">${meta.vendor||'—'}</div>
+        <div class="k">Revisions so far</div><div class="v">${meta.revisionCount||0}</div></div>
+      ${meta.renderUrl?`<div style="margin:8px 0">${meta.renderIsImage?`<img src="${meta.renderUrl}" style="max-width:200px;border-radius:8px;border:1px solid var(--line)">`:`<a href="${meta.renderUrl}" target="_blank" rel="noopener">View render</a>`}</div>`:`<div class="note amber">No render on file.</div>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn green sm" id="cwpApprove">&#9989; Approved by customer</button>
+        <button class="btn amber sm" id="cwpRevision">&#128260; Revision requested</button>
+      </div>`;
+  } else if(stage==='warehouse'){
+    html+=`<div class="note">Printed material dispatched by vendor — confirm once it physically arrives at the Material Depot warehouse.</div>
+      <button class="btn navy sm" id="cwpWarehouseReceived">&#128230; Received at warehouse</button>`;
+  }
+  html+=`</div>`;
+  return html;
+}
 function drawerBody(o){
   let html="";
   const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c} · ${s.n}</span>`).join(" ");
@@ -1052,6 +1158,9 @@ function drawerBody(o){
       <button class="btn ${o.auditBy==='material_depot'?'navy':'gray'}" id="auditByMD">Material Depot audit</button>
       <button class="btn ${o.auditBy==='customer'?'primary':'gray'}" id="auditByCust">Customer self-audit</button>
     </div></div>`;
+
+  // ---- CUSTOM WALLPAPER PRODUCTION TRACKER (before delivery — happens earlier in the lifecycle) ----
+  if(o.customWp)html+=customWpProductionSection(o);
 
   // ---- DELIVERY stage (first) ----
   const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
@@ -1534,6 +1643,58 @@ function wireDrawer(o){
   if($("#markOnTime"))$("#markOnTime").onclick=async()=>{o.status="deliv_ontime";o.log.push({t:"Operations confirmed delivery on time",d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,log:o.log});await loadOrders();toast("Delivery on time — create service next");openOrder(o.pi);};
   if($("#markDelayed"))$("#markDelayed").onclick=async()=>{const nd=$("#newDeliv")?$("#newDeliv").value:o.deliveryDate;const wasDelayed=o.status==="deliv_delayed";o.deliveryDate=nd;o.status="deliv_delayed";o.log.push({t:(wasDelayed?"Delivery further delayed":"Delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:new Date().toISOString(),by:"manual",who:SESSION.name});if(o.id)await sbPatch('install_orders',o.id,{status:o.status,delivery_date:o.deliveryDate,log:o.log});await loadOrders();toast(wasDelayed?"Delivery date updated":"Marked delivery delayed");openOrder(o.pi);};
 
+  // custom wallpaper production tracker
+  if($("#cwpVendor"))$("#cwpVendor").onchange=()=>{
+    const v=$("#cwpVendor").value;
+    if($("#cwpVendorOtherWrap"))$("#cwpVendorOtherWrap").style.display=v==='Other'?'':'none';
+    if($("#cwpSlaNote"))$("#cwpSlaNote").style.display=v==='Macro Media'?'':'none';
+  };
+  if($("#cwpMarkDraftReady"))$("#cwpMarkDraftReady").onclick=async()=>{
+    const vSel=$("#cwpVendor").value;
+    const vendor=vSel==='Other'?(($("#cwpVendorOther")&&$("#cwpVendorOther").value.trim())||'Other'):vSel;
+    const url=$("#cwpRenderUrl")?$("#cwpRenderUrl").value.trim():'';
+    const file=$("#cwpRenderFile")?$("#cwpRenderFile").files[0]:null;
+    if(!url&&!file){toast("Add a render link or upload an image first");return;}
+    const btn=$("#cwpMarkDraftReady");btn.disabled=true;const origTxt=btn.textContent;btn.textContent="Saving...";
+    try{
+      let renderUrl=url,renderIsImage=false;
+      if(file){
+        const dataUrl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(file);});
+        renderUrl=await _uploadRenderImage(dataUrl);renderIsImage=true;
+      }
+      o.customWpMeta={...(o.customWpMeta||{}),vendor,renderUrl,renderIsImage,revisionCount:(o.customWpMeta&&o.customWpMeta.revisionCount)||0,revisionNotes:(o.customWpMeta&&o.customWpMeta.revisionNotes)||[]};
+      o.customWpStage='approval';
+      o.log.push({t:"Custom wallpaper: draft render received"+(vendor?" (Vendor: "+vendor+")":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+      if(o.id)await sbPatch('install_orders',o.id,{custom_wp_stage:o.customWpStage,custom_wp_meta:o.customWpMeta,log:o.log});
+      await loadOrders();toast("Sent for customer approval");openOrder(o.pi);
+    }catch(e){toast("Save failed: "+e.message);btn.disabled=false;btn.textContent=origTxt;}
+  };
+  if($("#cwpApprove"))$("#cwpApprove").onclick=async()=>{
+    o.customWpStage='warehouse';
+    o.log.push({t:"Custom wallpaper: approved by customer",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{custom_wp_stage:o.customWpStage,log:o.log});
+    await loadOrders();toast("Approved — awaiting warehouse arrival");openOrder(o.pi);
+  };
+  if($("#cwpRevision"))$("#cwpRevision").onclick=async()=>{
+    const note=(prompt("What changes did the customer request?")||'').trim();
+    if(!note){toast("Revision note required — status not changed");return;}
+    const meta={...(o.customWpMeta||{})};
+    meta.revisionCount=(meta.revisionCount||0)+1;
+    meta.revisionNotes=[...(meta.revisionNotes||[]),{note,d:new Date().toISOString()}];
+    meta.renderUrl='';meta.renderIsImage=false;
+    o.customWpMeta=meta;o.customWpStage='draft';
+    o.log.push({t:"Custom wallpaper: customer requested revision — \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{custom_wp_stage:o.customWpStage,custom_wp_meta:o.customWpMeta,log:o.log});
+    await loadOrders();toast("Sent back for a new render");openOrder(o.pi);
+  };
+  if($("#cwpWarehouseReceived"))$("#cwpWarehouseReceived").onclick=async()=>{
+    const meta={...(o.customWpMeta||{}),warehouseReceivedAt:new Date().toISOString()};
+    o.customWpMeta=meta;
+    o.log.push({t:"Custom wallpaper: received at warehouse",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{custom_wp_meta:o.customWpMeta,log:o.log});
+    await loadOrders();toast("Marked received at warehouse");openOrder(o.pi);
+  };
+
   // service creation
   function renderSkuRows(grp){
     const box=document.querySelector(`[data-rows="${grp}"]`);if(!box)return;
@@ -1791,6 +1952,8 @@ async function submitAddOrder(){
     delivery_date:delivery||null,
     original_delivery_date:delivery||null,
     custom_wp:customWp,
+    custom_wp_stage:'draft',
+    custom_wp_meta:{},
     status:'pending',
     log:[logEntry],
     created_by_email:SESSION.email
@@ -1815,6 +1978,8 @@ async function submitAddOrder(){
       matchedAudit:false,
       deliveryDate:delivery||null,
       customWp,
+      customWpStage:'draft',
+      customWpMeta:{},
       status:"pending",
       subjobs:null,service:null,
       log:[logEntry]

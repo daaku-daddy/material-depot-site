@@ -15,7 +15,8 @@
 CREATE OR REPLACE VIEW install_orders_slim AS
 SELECT
   id, created_at, pi, po, skus, bm, customer_name, phone, addr,
-  matched_audit, delivery_date, custom_wp, status, service, log, created_by_email,
+  matched_audit, delivery_date, custom_wp, custom_wp_stage, custom_wp_meta,
+  status, service, log, created_by_email,
   CASE
     WHEN subjobs IS NULL THEN NULL::jsonb
     ELSE (
