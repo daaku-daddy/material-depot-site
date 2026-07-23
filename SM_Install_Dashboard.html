@@ -581,6 +581,19 @@ async function loadInstallers(){
     INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:''}));
   }catch(e){console.error('loadInstallers',e);}
 }
+// Auto-detects site audit type by exact phone match against audit_orders — same signal
+// already used (read-only, for reporting) by Admin.html's "Material Depot Audit %" metric.
+// Exact string match, no normalization: verified against live data that normalizing phone
+// formats doesn't change the match count (CLAUDE.md note 56). Returns null (leave unset,
+// don't guess) if the lookup itself fails rather than the phone simply having no match.
+async function detectAuditBy(phone){
+  if(!phone)return null;
+  try{
+    const rows=await sbGet('audit_orders?select=id&phone=eq.'+encodeURIComponent(phone)+'&status=neq.deleted&limit=1');
+    if(!Array.isArray(rows))return null;
+    return rows.length?'material_depot':'customer';
+  }catch(e){console.error('detectAuditBy',e);return null;}
+}
 
 const mapInstallRow=r=>({
   id:r.id,
@@ -1942,9 +1955,17 @@ async function submitAddOrder(){
     .map(s=>({c:s.c,n:s.n||s.c,type:s.type,audit:false}));
   skus.push({c:INSTALL_SKU,n:"Installation",type:"install",audit:false});
 
-  const logEntry={t:"Order added manually by "+SESSION.name,d:new Date().toISOString()};
+  const logEntries=[{t:"Order added manually by "+SESSION.name,d:new Date().toISOString()}];
 
   document.getElementById("ao-submit").disabled=true;
+  // Auto-detect site audit type by phone match against audit_orders — see detectAuditBy().
+  // A live lookup at creation time (rather than a locally-cached phone set) so it's always
+  // accurate to the moment, and doesn't need refreshing.
+  const auditBy=await detectAuditBy(phone);
+  if(auditBy){
+    logEntries.push({t:"Site audit type auto-detected: "+(auditBy==='material_depot'?"Material Depot audit (phone match)":"Customer self-audit (no matching site audit found)"),d:new Date().toISOString(),by:"auto",who:SESSION.name});
+  }
+  const service=auditBy?{audit_by:auditBy}:null;
   const payload={
     pi, po:po.join(','), skus, bm,
     customer_name:name, phone, addr,
@@ -1955,7 +1976,8 @@ async function submitAddOrder(){
     custom_wp_stage:'draft',
     custom_wp_meta:{},
     status:'pending',
-    log:[logEntry],
+    service,
+    log:logEntries,
     created_by_email:SESSION.email
   };
   try{
@@ -1976,13 +1998,14 @@ async function submitAddOrder(){
       id:savedId,
       pi,po,skus,bm,name,phone,addr,
       matchedAudit:false,
+      auditBy,
       deliveryDate:delivery||null,
       customWp,
       customWpStage:'draft',
       customWpMeta:{},
       status:"pending",
-      subjobs:null,service:null,
-      log:[logEntry]
+      subjobs:null,service,
+      log:logEntries
     });
     closeAddOrder();render();
     toast("✓ Installation order "+pi+" saved");
