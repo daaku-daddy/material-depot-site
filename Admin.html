@@ -1297,10 +1297,26 @@ async function renderAnalytics(m){
     const dm={};for(const r of delivMeta)dm[r.pi]=r.original_delivery_date||null;
     for(const o of installRes)o.original_delivery_date=dm[o.pi]||null;
   }
-  const installLogRes=await sbGetLong('install_orders?select=pi,phone,log&status=neq.deleted&created_at=gte.2026-07-01').catch(()=>[]);
+  // phone is a plain short text column on every install order (verified live 2026-07-25 — 0 of
+  // 190 non-deleted install orders have a null phone, including ones from 2026-06-11) — fetched
+  // for ALL orders, no date restriction. It used to be merged in from the SAME date-restricted
+  // query as `log` below under the mistaken assumption that phone was only populated from
+  // 1 Jul 2026 onward; that assumption was never true and silently broke Material Depot Audit %
+  // and Site Audit → Order Conversion % for every install order created before that date (found
+  // via a live customer report — Anusha's install order, created 2026-06-30, has always had a
+  // valid phone but was never being matched). See CLAUDE.md note 67.
+  const installPhoneRes=await sbGetLong('install_orders?select=pi,phone&status=neq.deleted').catch(()=>[]);
+  if(Array.isArray(installPhoneRes)){
+    const pm={};for(const r of installPhoneRes)pm[r.pi]=r.phone||null;
+    for(const o of installRes)o.phone=pm[o.pi]||null;
+  }
+  // `log` is the real timeout risk (pre-storage-migration entries can embed multi-MB base64
+  // photos in old log entries) — this one genuinely needs to stay date-restricted. Only used for
+  // the log-based "delay mentioned" metric, which is documented as a distinct, narrower limitation.
+  const installLogRes=await sbGetLong('install_orders?select=pi,log&status=neq.deleted&created_at=gte.2026-07-01').catch(()=>[]);
   if(Array.isArray(installLogRes)){
-    const lm={};for(const r of installLogRes)lm[r.pi]={phone:r.phone||null,log:r.log||[]};
-    for(const o of installRes){o.phone=lm[o.pi]?.phone||null;o.log=lm[o.pi]?.log||[];}
+    const lm={};for(const r of installLogRes)lm[r.pi]=r.log||[];
+    for(const o of installRes)o.log=lm[o.pi]||[];
   }
   window._anData={
     installs:Array.isArray(installRes)?installRes:[],
@@ -1815,7 +1831,7 @@ function drawAnalytics(m){
         ${pctCard('Completion %',aCompleted,aTotal,'Audits that reached completed status','','aCompletion')}
         ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote,'aArrival')}
         ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','','aReschedule')}
-        ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','(phone match against all-time install orders; only install orders from 1 Jul 2026 onward have phone data — see footer)','aConversion')}
+        ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','','aConversion')}
         ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length,'aRatings')}
         ${ratingCard('Q1 — Overall Service',AR_q1,AR.length,'aRatings')}
         ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length,'aRatings')}
@@ -1900,7 +1916,7 @@ function drawAnalytics(m){
       <b>Completion %:</b> Audit — completed ÷ total audits in range. Install — (completed + partially completed) ÷ total subjobs in range. Replaces the old separate "Job Card &amp; Signature %" metric.<br>
       <b>Ratings (NPS / Q1 / Q2 / Q3):</b> Attached to each completed order via its own ID (audit: unambiguous; install: matched by assigned-installer email, with a nearest-completion-time fallback) — not an independent date filter on the ratings table. Count is always a subset of that section's completed total. Known limitation: if the same installer completes two subjobs on one order, the rating may occasionally be attributed to the wrong one of the two.<br>
       <b>Arrival on time:</b> Only counted among jobs that actually reached site (audit: completed; install: completed or partially completed), floor 2 Jul 2026 (when tracking began). &gt;3 min late = delayed. N/T = no tracked data in range.<br>
-      <b>Material Depot Audit %:</b> Fully automated — phone-number match between install and site-audit orders, no manual "audit type" input is used. Install order phone numbers are only available from 1 Jul 2026 onward, same limitation as Site Audit → Order Conversion %.<br>
+      <b>Material Depot Audit %:</b> Fully automated — phone-number match between install and site-audit orders, no manual "audit type" input is used. Matched against phone numbers for all non-deleted install orders, regardless of creation date.<br>
       <b>Site Audit → Order Conversion %:</b> Of the distinct customers (by phone) audited in this range, the % who placed an install order at any time — including after the range ends.<br>
       <b>Delivery delay (log-based):</b> Any log entry mentioning "delay". <b>Confirmed delayed (new):</b> compares original_delivery_date vs current delivery_date — set for orders created from 2 Jul 2026.<br>
       <b>One row per subjob:</b> reschedule history and multi-day custom installs never produce more than one row per subjob in this section's counts.<br>
