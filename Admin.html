@@ -686,8 +686,10 @@ function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'
 function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'));}
 
 /* ---- JOBS OVERVIEW ---- */
-let jobsFilter='all',jobsDateFilter='',jobsSearch='';
-function setJobDateFilter(d){jobsDateFilter=d;drawJobs(document.getElementById('main'));}
+let jobsFilter='all',jobsDateFrom='',jobsDateTo='',jobsSearch='';
+function setJobDateFrom(d){jobsDateFrom=d;drawJobs(document.getElementById('main'));}
+function setJobDateTo(d){jobsDateTo=d;drawJobs(document.getElementById('main'));}
+function clearJobDateRange(){jobsDateFrom='';jobsDateTo='';drawJobs(document.getElementById('main'));}
 
 let _realJobsAudit=[], _realJobsInstall=[], _jobsAuditFailed=false, _jobsInstallFailed=false;
 async function _loadJobsData(m){
@@ -748,6 +750,39 @@ async function renderJobs(m){
   },30000);
 }
 
+function getFilteredJobs(){
+  return realJobs.filter(j=>{
+    if(jobsFilter==='audit')return j.type==='audit';
+    if(jobsFilter==='install')return j.type==='install';
+    if(JOB_STATUS[jobsFilter])return j.status===jobsFilter;
+    return true;
+  }).filter(j=>{
+    if(!jobsDateFrom&&!jobsDateTo)return true;
+    const dates=j.type==='audit'?(j.date?[j.date]:[]):(j.installDates||[]);
+    if(!dates.length)return false;
+    return dates.some(d=>(!jobsDateFrom||d>=jobsDateFrom)&&(!jobsDateTo||d<=jobsDateTo));
+  }).filter(j=>{
+    if(!jobsSearch)return true;
+    const q=jobsSearch.toLowerCase();
+    return j.id.toLowerCase().includes(q)||j.customer.toLowerCase().includes(q);
+  });
+}
+function _csvEscape(v){const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function downloadJobsCSV(){
+  const rows=getFilteredJobs();
+  if(!rows.length){toast('No jobs to export for the current filters');return;}
+  const header=['Job ID','Type','Customer','Location','Assigned To','Status','Date'];
+  const lines=[header.join(',')].concat(rows.map(j=>[
+    j.id,j.type==='audit'?'Audit':'Install',j.customer,j.addr,j.assignee||'Unassigned',JOB_STATUS[j.status]?.l||j.status,j.date||''
+  ].map(_csvEscape).join(',')));
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='job-overview'+(jobsDateFrom||jobsDateTo?`_${jobsDateFrom||'start'}_to_${jobsDateTo||'end'}`:'')+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
 function drawJobs(m){
   const jc={total:realJobs.length,active:0,done:0,unassigned:0};
   realJobs.forEach(j=>{
@@ -755,20 +790,7 @@ function drawJobs(m){
     if(j.status==='completed')jc.done++;
     if(!j.assignee)jc.unassigned++;
   });
-  const filtered=realJobs.filter(j=>{
-    if(jobsFilter==='audit')return j.type==='audit';
-    if(jobsFilter==='install')return j.type==='install';
-    if(JOB_STATUS[jobsFilter])return j.status===jobsFilter;
-    return true;
-  }).filter(j=>{
-    if(!jobsDateFilter)return true;
-    if(j.type==='audit')return j.date===jobsDateFilter;
-    return (j.installDates||[]).includes(jobsDateFilter);
-  }).filter(j=>{
-    if(!jobsSearch)return true;
-    const q=jobsSearch.toLowerCase();
-    return j.id.toLowerCase().includes(q)||j.customer.toLowerCase().includes(q);
-  });
+  const filtered=getFilteredJobs();
 
   m.innerHTML=`
     <div class="page-head"><h1>Jobs Overview</h1><p>All audit and installation jobs across your team.</p></div>
@@ -791,9 +813,12 @@ function drawJobs(m){
               ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':JOB_STATUS[f]?.l||f}
             </button>`).join('')}
         </div>
-        <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
-          <input type="date" value="${jobsDateFilter}" title="Filter by scheduled date" onchange="setJobDateFilter(this.value)" style="border:1.5px solid ${jobsDateFilter?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${jobsDateFilter?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
-          ${jobsDateFilter?`<button onclick="setJobDateFilter('')" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear date</button>`:''}
+        <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;flex-wrap:wrap">
+          <input type="date" value="${jobsDateFrom}" title="From date" onchange="setJobDateFrom(this.value)" style="border:1.5px solid ${jobsDateFrom?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${jobsDateFrom?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
+          <span style="color:var(--muted);font-size:12px">to</span>
+          <input type="date" value="${jobsDateTo}" title="To date" onchange="setJobDateTo(this.value)" style="border:1.5px solid ${jobsDateTo?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${jobsDateTo?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
+          ${(jobsDateFrom||jobsDateTo)?`<button onclick="clearJobDateRange()" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear</button>`:''}
+          <button onclick="downloadJobsCSV()" style="border:0;background:var(--navy);color:#fff;border-radius:7px;padding:6px 12px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">⬇ Download CSV</button>
         </div>
       </div>
       <table>
@@ -1342,10 +1367,10 @@ function _anArrivalBucket(slot,logIso){
 // Returns {agg:{onTime,late}, byName:{name:{onTime,late}}} — every assigned installer on a row is
 // credited (not just primary), matching this table's pre-existing per-person crediting behavior.
 function _anInstallArrivalStats(rows){
-  const byName={};let onTime=0,late=0;
+  const byName={};let onTime=0,late=0;const tagged=[];
   for(const row of rows){
     const names=new Set((row.installers||[]).map(a=>a.installer_name).filter(Boolean));
-    if(!names.size) continue;
+    if(!names.size){tagged.push({row,bucket:null});continue;}
     let bucket=null;
     for(const l of (row.order.log||[])){
       if(!l.t||!l.d||!l.who) continue;
@@ -1358,17 +1383,18 @@ function _anInstallArrivalStats(rows){
       bucket=_anArrivalBucket(row.slot,l.d);
       break;
     }
+    tagged.push({row,bucket});
     if(!bucket) continue;
     if(bucket==='late')late++;else onTime++;
     for(const n of names){ if(!byName[n])byName[n]={onTime:0,late:0}; byName[n][bucket]++; }
   }
-  return {agg:{onTime,late},byName};
+  return {agg:{onTime,late},byName,tagged};
 }
 // rows: audit orders (already narrowed to "reached site" — status==='completed' — subset by caller).
 function _anAuditArrivalStats(rows){
-  const byName={};let onTime=0,late=0;
+  const byName={};let onTime=0,late=0;const tagged=[];
   for(const o of rows){
-    if(!o.auditor_name) continue;
+    if(!o.auditor_name){tagged.push({o,bucket:null});continue;}
     let bucket=null;
     for(const l of (o.log||[])){
       if(!l.t||!l.d||!l.who) continue;
@@ -1378,12 +1404,13 @@ function _anAuditArrivalStats(rows){
       bucket=_anArrivalBucket(o.slot,l.d);
       break;
     }
+    tagged.push({o,bucket});
     if(!bucket) continue;
     if(bucket==='late')late++;else onTime++;
     if(!byName[o.auditor_name])byName[o.auditor_name]={onTime:0,late:0};
     byName[o.auditor_name][bucket]++;
   }
-  return {agg:{onTime,late},byName};
+  return {agg:{onTime,late},byName,tagged};
 }
 
 // Ratings join — audit: unambiguous via order_id (1 audit order = 1 rating max).
@@ -1490,7 +1517,67 @@ function _anAuditorMap(auditFiltered,ratingMap,arrByName){
   return Object.values(map).sort((a,b)=>b.orders-a.orders);
 }
 
+/* ---- Analytics metric drill-down (which rows make up a metric's numerator/denominator) ---- */
+window._anDrill={};
+function _anSetDrill(key,title,note,entityType,rows){
+  window._anDrill[key]={title,note:note||'',entityType,rows,_resolved:false};
+}
+async function openAnalyticsDrill(key){
+  const d=window._anDrill&&window._anDrill[key];
+  if(!d){toast('No detail available for this metric');return;}
+  showModal(`<div class="modal-head"><h3>${d.title}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div style="padding:16px 20px;max-height:65vh;overflow:auto" id="anDrillBody"><div class="loading-row"><span class="spinner"></span></div></div>
+    <div style="padding:12px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end">
+      <button class="btn-primary" onclick="downloadDrillCSV('${key}')">⬇ Download CSV</button>
+    </div>`);
+  document.getElementById('modal').className='modal wide';
+  if(!d._resolved){
+    const pis=[...new Set(d.rows.map(r=>r.pi).filter(Boolean))];
+    if(pis.length){
+      const table=d.entityType==='audit'?'audit_orders':'install_orders';
+      const inList=pis.map(p=>`"${p}"`).join(',');
+      try{
+        const res=await sbGet(`${table}?pi=in.(${inList})&select=pi,customer_name`);
+        if(Array.isArray(res)){
+          const nameMap={};res.forEach(r=>{nameMap[r.pi]=r.customer_name||'';});
+          d.rows.forEach(r=>{r.customer=nameMap[r.pi]||'';});
+        }
+      }catch(e){}
+    }
+    d._resolved=true;
+  }
+  const body=document.getElementById('anDrillBody');
+  if(!body)return; // modal was closed before the name lookup resolved
+  const countedN=d.rows.filter(r=>/^✓/.test(r.result)).length;
+  body.innerHTML=`
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${d.note}${d.note?'<br>':''}<b>${countedN}</b> of <b>${d.rows.length}</b> row(s) shown count toward this metric.</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+        <th style="padding:6px 8px">Enquiry ID</th><th style="padding:6px 8px">Customer</th><th style="padding:6px 8px">Date</th><th style="padding:6px 8px">Result</th>
+      </tr></thead>
+      <tbody>${d.rows.length?d.rows.map(r=>`<tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:6px 8px;font-family:monospace;font-size:12px">${r.pi||'—'}</td>
+        <td style="padding:6px 8px">${r.customer||'—'}</td>
+        <td style="padding:6px 8px;color:var(--muted)">${r.date||'—'}</td>
+        <td style="padding:6px 8px;font-weight:${/^✓/.test(r.result)?'700':'400'};color:${/^✓/.test(r.result)?'var(--green)':/^✗/.test(r.result)?'var(--red)':'var(--muted)'}">${r.result}</td>
+      </tr>`).join(''):'<tr><td colspan="4" style="padding:12px;color:var(--muted)">No rows</td></tr>'}</tbody>
+    </table>`;
+}
+function downloadDrillCSV(key){
+  const d=window._anDrill&&window._anDrill[key];
+  if(!d||!d.rows.length){toast('Nothing to export');return;}
+  const header=['Enquiry ID','Customer','Date','Result'];
+  const lines=[header.join(',')].concat(d.rows.map(r=>[r.pi||'',r.customer||'',r.date||'',r.result].map(_csvEscape).join(',')));
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(d.title||'metric').replace(/[^a-z0-9]+/gi,'_').toLowerCase()+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
 function drawAnalytics(m){
+  window._anDrill={};
   const {installs,audits,ratings}=window._anData||{installs:[],audits:[],ratings:[]};
   const from=analyticsFrom, to=analyticsTo;
   const todayStr=_anDstr(new Date());
@@ -1568,33 +1655,41 @@ function drawAnalytics(m){
   const pc=(n,d)=>d>0?Math.round(n/d*100):null;
   const pcc=p=>p===null?'var(--muted)':p>=80?'var(--green)':p>=50?'var(--amber)':'var(--red)';
 
-  function pctCard(label,n,d,sub,note){
+  function _anDrillAttrs(drillKey){
+    return (drillKey&&window._anDrill&&window._anDrill[drillKey])?` style="cursor:pointer" onclick="openAnalyticsDrill('${drillKey}')"`:'';
+  }
+  function _anDrillHint(drillKey){
+    return (drillKey&&window._anDrill&&window._anDrill[drillKey])?`<div style="font-size:11px;color:var(--blue);font-weight:700;margin-top:6px">⤢ View &amp; export rows</div>`:'';
+  }
+  function pctCard(label,n,d,sub,note,drillKey){
     const p=pc(n,d);const c=pcc(p);
-    return `<div class="an-card">
+    return `<div class="an-card"${_anDrillAttrs(drillKey)}>
       <div class="an-label">${label}</div>
       <div class="an-val" style="color:${p===null?'var(--muted)':c}">${p!==null?p+'%':'—'}</div>
       ${p!==null?`<div class="an-bar"><div class="an-bar-fill" style="width:${p}%;background:${c}"></div></div>`:''}
       <div class="an-sub">${d>0?n+' of '+d:'No data'}</div>
       ${sub?`<div class="an-sub2">${sub}</div>`:''}
       ${note?`<div class="an-sub2" style="color:var(--amber)">${note}</div>`:''}
+      ${_anDrillHint(drillKey)}
     </div>`;
   }
-  function ratingCard(label,avg,cnt){
+  function ratingCard(label,avg,cnt,drillKey){
     if(avg===null) return `<div class="an-card an-card-na"><div class="an-label">${label}</div><div class="an-val" style="color:var(--muted)">—</div><div class="an-sub">No ratings yet</div></div>`;
     const c=avg>=8?'var(--green)':avg>=6?'var(--amber)':'var(--red)';
     const s=Math.min(5,Math.round(avg/2));
-    return `<div class="an-card">
+    return `<div class="an-card"${_anDrillAttrs(drillKey)}>
       <div class="an-label">${label}</div>
       <div class="an-val" style="color:${c}">${avg}<span style="font-size:14px;color:var(--muted)">/10</span></div>
       <div class="an-stars">${'★'.repeat(s)+'☆'.repeat(5-s)}</div>
       <div class="an-sub">${cnt} rating${cnt!==1?'s':''} · in range</div>
+      ${_anDrillHint(drillKey)}
     </div>`;
   }
-  function npsCard(label,nps,prom,det,total){
+  function npsCard(label,nps,prom,det,total,drillKey){
     if(nps===null) return `<div class="an-card an-card-na"><div class="an-label">${label}</div><div class="an-val" style="color:var(--muted)">—</div><div class="an-sub">No ratings yet</div></div>`;
     const c=nps>=50?'var(--green)':nps>=0?'var(--amber)':'var(--red)';
     const pass=total-prom-det;
-    return `<div class="an-card">
+    return `<div class="an-card"${_anDrillAttrs(drillKey)}>
       <div class="an-label">${label}</div>
       <div class="an-val" style="color:${c}">${nps>=0?'+':''}${nps}</div>
       <div class="an-nps-row">
@@ -1603,6 +1698,7 @@ function drawAnalytics(m){
         <span class="an-nps-d">▼ ${total?Math.round(det/total*100):0}% Detractors (Q1 ≤ 7)</span>
       </div>
       <div class="an-sub">${total} rating${total!==1?'s':''} · in range</div>
+      ${_anDrillHint(drillKey)}
     </div>`;
   }
 
@@ -1638,6 +1734,26 @@ function drawAnalytics(m){
 
   const iArrNote=iArrTot.onTime+iArrTot.late===0?'Tracking started 2 Jul 2026':'';
   const aArrNote=aArrTot.onTime+aArrTot.late===0?'Tracking started 2 Jul 2026':'';
+
+  /* ---- Register drill-down data for clickable metric cards ---- */
+  _anSetDrill('aCompletion','Site Audit — Completion %','Every audit scheduled in this date range.','audit',
+    aFiltered.map(o=>({pi:o.pi,date:o.date,result:o.status==='completed'?'✓ Completed':'✗ Not completed ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
+  _anSetDrill('aArrival','Site Audit — Auditor Arrival On Time %','Audits that reached completed status and are on/after 2 Jul 2026 (when arrival tracking began). Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','audit',
+    aArr.tagged.map(t=>({pi:t.o.pi,date:t.o.date,result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
+  _anSetDrill('aReschedule','Site Audit — Reschedule Rate %','Every audit scheduled in this date range.','audit',
+    aFiltered.map(o=>({pi:o.pi,date:o.date,result:o.status==='reschedule'?'✓ In reschedule status':'✗ Not in reschedule ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
+  _anSetDrill('aConversion','Site Audit → Order Conversion %','One row per distinct customer phone audited in this range. "Converted" = that phone placed an install order at any time, even after the range ends.','audit',
+    [...aPhonesInRange].map(p=>{const rep=aFiltered.find(o=>o.phone===p);return {pi:rep?rep.pi:'',date:rep?rep.date:'',result:aConvertedPhones.includes(p)?'✓ Converted to install order':'✗ Not converted yet'};}));
+  _anSetDrill('aRatings','Site Audit — Client Ratings','Every audit with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','audit',
+    [...aRatingMap.entries()].map(([o,r])=>({pi:o.pi,date:o.date,result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
+  _anSetDrill('iArrival','Site Installation — Installer Arrival On Time %','Subjobs that reached completed/partial status and are on/after 2 Jul 2026 (when arrival tracking began). Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','install',
+    iArr.tagged.map(t=>({pi:t.row.pi,date:t.row.date,result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
+  _anSetDrill('iMDaudit','Site Installation — Material Depot Audit %','Every subjob in range, phone-matched against all-time site audit orders.','install',
+    iCanon.map(r=>({pi:r.pi,date:r.date,result:(r.order.phone&&auditPhones.has(r.order.phone))?'✓ Matched a Material Depot site audit':'✗ No matching site audit'})));
+  _anSetDrill('iCompletion','Site Installation — Completion %','Every subjob in this date range.','install',
+    iCanon.map(r=>({pi:r.pi,date:r.date,result:['completed','partial'].includes(r.status)?'✓ '+(JOB_STATUS[r.status]?.l||r.status):'✗ Not yet completed ('+(JOB_STATUS[r.status]?.l||r.status)+')'})));
+  _anSetDrill('iRatings','Site Installation — Client Ratings','Every subjob with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','install',
+    [...iRatingMap.entries()].map(([row,r])=>({pi:row.pi,date:row.date,result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
 
   const iByStatus={};
   iCanon.forEach(a=>{iByStatus[a.status]=(iByStatus[a.status]||0)+1;});
@@ -1679,14 +1795,14 @@ function drawAnalytics(m){
 
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
-        ${pctCard('Completion %',aCompleted,aTotal,'Audits that reached completed status','')}
-        ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote)}
-        ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','')}
-        ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','(phone match against all-time install orders; only install orders from 1 Jul 2026 onward have phone data — see footer)')}
-        ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length)}
-        ${ratingCard('Q1 — Overall Service',AR_q1,AR.length)}
-        ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length)}
-        ${ratingCard('Q3 — Site Cleanliness',AR_q3,AR.length)}
+        ${pctCard('Completion %',aCompleted,aTotal,'Audits that reached completed status','','aCompletion')}
+        ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote,'aArrival')}
+        ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','','aReschedule')}
+        ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','(phone match against all-time install orders; only install orders from 1 Jul 2026 onward have phone data — see footer)','aConversion')}
+        ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length,'aRatings')}
+        ${ratingCard('Q1 — Overall Service',AR_q1,AR.length,'aRatings')}
+        ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length,'aRatings')}
+        ${ratingCard('Q3 — Site Cleanliness',AR_q3,AR.length,'aRatings')}
       </div>
 
       <div style="font-size:11.5px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line)">Note: Rescheduled audits originally scheduled in range but moved to a future date appear under the original date AND the new date. Reschedule Rate counts audits currently in reschedule status within the selected range.</div>
@@ -1715,13 +1831,13 @@ function drawAnalytics(m){
 
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
-        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed — only counted among jobs that reached site',iArrNote)}
-        ${pctCard('Material Depot Audit %',iMDaudit,iTotal,'Install customers who also had an MD site audit','Fully automated — phone-number match, no manual input used')}
-        ${pctCard('Completion %',iDone.length,iTotal,'Completed or partially completed, out of all subjobs in range','')}
-        ${npsCard('NPS Score',IR_nps,IR_prom,IR_det,IR.length)}
-        ${ratingCard('Q1 — Overall Service',IR_q1,IR.length)}
-        ${ratingCard('Q2 — Installer Rating',IR_q2,IR.length)}
-        ${ratingCard('Q3 — Site Cleanliness',IR_q3,IR.length)}
+        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed — only counted among jobs that reached site',iArrNote,'iArrival')}
+        ${pctCard('Material Depot Audit %',iMDaudit,iTotal,'Install customers who also had an MD site audit','Fully automated — phone-number match, no manual input used','iMDaudit')}
+        ${pctCard('Completion %',iDone.length,iTotal,'Completed or partially completed, out of all subjobs in range','','iCompletion')}
+        ${npsCard('NPS Score',IR_nps,IR_prom,IR_det,IR.length,'iRatings')}
+        ${ratingCard('Q1 — Overall Service',IR_q1,IR.length,'iRatings')}
+        ${ratingCard('Q2 — Installer Rating',IR_q2,IR.length,'iRatings')}
+        ${ratingCard('Q3 — Site Cleanliness',IR_q3,IR.length,'iRatings')}
       </div>
 
       <div class="an-sub-head">Status Breakdown</div>

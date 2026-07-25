@@ -542,22 +542,42 @@ class SignPad{
   export(){const W=900,H=Math.round(900*((this.h/this.w)||0.3));const o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.strokeStyle='#13294a';x.lineWidth=3;x.lineJoin='round';x.lineCap='round';for(const st of this.strokes){if(st.length<1)continue;x.beginPath();st.forEach((p,i)=>{const X=p.x*W,Y=p.y*H;i?x.lineTo(X,Y):x.moveTo(X,Y);});x.stroke();}return o.toDataURL('image/jpeg',0.9);}
 }
 
+let jcHadSign=false;
 async function openJobCard(o){
-  jcOrder=o; jcRooms=[]; jcSeq=0; jcSign=null;
+  jcOrder=o; jcRooms=[]; jcSeq=0; jcSign=null; jcHadSign=false;
   $("#jcSub").textContent=`${o.pi} · ${o.name}`;
   $("#jcScreen").classList.remove("hide");
   $("#jcFooter").classList.remove("hide");
   renderJCHeader();
-  // restore from localStorage draft first, then DB jobcard (fetched on demand — not in poll)
-  let rooms=null;
-  try{const d=JSON.parse(localStorage.getItem('md_audit_'+o.pi)||'null');if(d&&d.rooms&&d.rooms.length)rooms=d.rooms;}catch(e){}
-  if(!rooms&&!o.jobcard&&o.id){
+  // Always check the server for an existing SIGNED job card — it is authoritative and must
+  // never be silently clobbered by a stale local/DB draft. Reopening a signed card (e.g. via
+  // "Edit / Add Rooms", or after an SM/admin moves the order back to an earlier status) used to
+  // destroy the signature the instant autosave fired, because autosave unconditionally replaced
+  // the whole audit_ticked object with {draft:true, rooms}. Root-caused live on ENQ2026072381434.
+  let rooms=null, signedTicked=null;
+  if(o.id){
     try{const r=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
-      if(Array.isArray(r)&&r[0]&&r[0].audit_ticked&&!Array.isArray(r[0].audit_ticked))
+      if(Array.isArray(r)&&r[0]&&r[0].audit_ticked&&!Array.isArray(r[0].audit_ticked)){
         o.jobcard={rooms:r[0].audit_ticked.rooms||[],sign:r[0].audit_ticked.sign||null};
+        if(r[0].audit_ticked.sign&&!r[0].audit_ticked.draft)signedTicked=r[0].audit_ticked;
+      }
     }catch(e){}
   }
-  if(!rooms&&o.jobcard&&o.jobcard.rooms&&o.jobcard.rooms.length)rooms=o.jobcard.rooms;
+  if(signedTicked){
+    jcHadSign=true;
+    rooms=signedTicked.rooms;
+    o.log=o.log||[];o.log.push({t:"Reopened signed job card for edit — signature kept on file until re-signed",d:new Date().toISOString(),by:"manual",who:ME.name});
+    if(o.id){try{await sbPatch('audit_orders',o.id,{log:o.log});}catch(e){}}
+  }else{
+    // restore from localStorage draft first, then DB jobcard (fetched on demand — not in poll)
+    try{const d=JSON.parse(localStorage.getItem('md_audit_'+o.pi)||'null');if(d&&d.rooms&&d.rooms.length)rooms=d.rooms;}catch(e){}
+    if(!rooms&&o.jobcard&&o.jobcard.rooms&&o.jobcard.rooms.length)rooms=o.jobcard.rooms;
+  }
+  if(jcHadSign){
+    const banner=el('div',null,'This job card was already signed &amp; completed. Your edits are saved on this device only — the signed record on file is kept safe until you finish and capture a new signature below.');
+    banner.style.cssText='background:#fff4e0;border:1px solid #f0c674;color:#7a5200;padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;font-weight:600;';
+    $("#jcBody").prepend(banner);
+  }
   if(rooms&&rooms.length)rooms.forEach(r=>addRoom(r));else addRoom();
   $("#jcBack").onclick=()=>{o.jobcard={rooms:collectRooms()};autosave();$("#jcScreen").classList.add("hide");openDetail(o.pi);};
   $("#jcAddRoom").onclick=()=>{addRoom();autosave();};
@@ -668,6 +688,9 @@ function autosave(){
     // Never overwrite a completed job card with a draft
     if(_completionWrite){showSaveStatus('saved');return;}
     if(!jcOrder||!jcOrder.id){showSaveStatus('local');return;}
+    // A job card that was already signed must never have its signature wiped by a draft
+    // autosave — edits stay on-device only until the redo flow captures a fresh signature.
+    if(jcHadSign){showSaveStatus('local');return;}
     try{
       const draftRooms=collectRooms().map(({photos,...rest})=>rest);
       if(_autosaveSeq!==mySeq||_completionWrite)return;

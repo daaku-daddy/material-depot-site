@@ -1182,6 +1182,21 @@ function wireDrawer(o){
         if(!overrideReason){toast("Reason required — status not changed");return;}
       }
     }
+    if(o.status==='completed'&&st!=='completed'){
+      // Moving a completed audit BACKWARD re-opens it in the auditor's app (whichever status
+      // it lands on shows up as an active job again). The field app now protects a signed
+      // audit_ticked from being silently overwritten by autosave (see Site_Auditor_App.html —
+      // root-caused 2026-07-25 on ENQ2026072381434, where this exact backward move led to the
+      // signature being wiped) — but the auditor can still deliberately redo/re-sign, so make
+      // sure the SM knows a signed record already exists before doing this.
+      let ticked=null;
+      if(o.id){try{const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');ticked=(Array.isArray(rows)&&rows[0])?rows[0].audit_ticked:null;}catch(e){}}
+      const hasSignedCard=ticked&&!Array.isArray(ticked)&&ticked.sign&&!ticked.draft;
+      if(hasSignedCard){
+        const ok=confirm("This audit already has a signed job card on file (client signature + ratings).\n\nMoving it back to \""+STATUS[st].l+"\" will let the auditor reopen and redo it — the existing signed record is kept safe unless they explicitly capture a new signature.\n\nContinue?");
+        if(!ok)return;
+      }
+    }
     // Determine effective positions for clearing forward data
     const tEff=(st==='reschedule'||st==='call_na')?FLOW.indexOf('created'):FLOW.indexOf(st);
     let curEff=FLOW.indexOf(o.status);

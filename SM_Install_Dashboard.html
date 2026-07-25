@@ -1626,8 +1626,21 @@ function wireDrawer(o){
     const FIELD_STATUSES=['callpending','onway','atsite','completed','reschedule'];
     const RANK={scheduled:0,assigned:0,callpending:1,onway:2,atsite:3};
     if(st==='created'&&o.subjobs&&o.subjobs.length){
-      // Reverting to Service Created: wipe all slot bookings and installer assignments
-      o.subjobs.forEach(sj=>{sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;});
+      // Reverting to Service Created: wipe all slot bookings and installer assignments — but
+      // never wipe a subjob that already has a signed job card (client signature + ratings on
+      // file). The installer app protects a signed jobcard from being silently overwritten by
+      // autosave, but resetting status/assignments here would still disconnect it from its
+      // installer with no warning. Ask first, same spirit as the forced-Completed guard above.
+      const signedSubjobs=o.subjobs.filter(sj=>sj.jobcard&&sj.jobcard.sign);
+      let skipSigned=false;
+      if(signedSubjobs.length){
+        const names=signedSubjobs.map(sj=>sj.type==='wallpaper'?'Wallpaper':'Flooring').join(', ');
+        skipSigned=confirm("The following sub-job(s) already have a signed job card on file: "+names+".\n\nReverting to Service Created will normally wipe every sub-job's slot/assignment. Keep the signed sub-job(s) untouched?\n\nOK = keep them untouched · Cancel = reset everything including signed sub-jobs");
+      }
+      o.subjobs.forEach(sj=>{
+        if(skipSigned&&sj.jobcard&&sj.jobcard.sign)return;
+        sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;
+      });
     } else if(st==='completed'&&o.subjobs&&o.subjobs.length){
       o.subjobs.forEach(sj=>{
         if(sj.status==='completed')return;
