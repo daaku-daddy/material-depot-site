@@ -911,13 +911,24 @@ async function openJobDetail(pi,type){
       const hasSign=at&&at.sign&&at.sign.img;
       const isDraft=at&&!Array.isArray(at)&&at.draft&&!hasSign;
       const hasCard=rooms.length||hasSign;
+      const history=Array.isArray(o.audit_ticked_history)?o.audit_ticked_history:[];
       window._jdAudit={order:o,ticked:at};
+      window._jdAuditHistory=history;
       const roomsHtml=rooms.map((r,i)=>jdRoomCard(r,i)).join('');
       const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${at.sign.name||'—'}</b>${at.sign.ratings?` · ⭐ ${at.sign.ratings.q1}/10 · 👤 ${at.sign.ratings.q2}/10 · 🧹 ${at.sign.ratings.q3||'—'}/10`:''}</div>`:'';
       const jcSection=isDraft
-        ?`<div class="jd-section"><div class="jd-sec-head" style="color:var(--amber)">⚠️ Job Card Draft — ${rooms.length} room${rooms.length!==1?'s':''} recorded, client sign-off not yet completed</div>${roomsHtml}</div>`
+        ?`<div class="jd-section"><div class="jd-sec-head" style="color:var(--amber)">⚠️ Job Card Draft — ${rooms.length} room${rooms.length!==1?'s':''} recorded, client sign-off not yet completed</div>${history.length?`<div style="font-size:12.5px;color:var(--amber);margin-bottom:8px">This order was previously completed and signed — see Completed Job Card History below.</div>`:''}${roomsHtml}</div>`
         :rooms.length?`<div class="jd-section"><div class="jd-sec-head">Job Card — ${rooms.length} room${rooms.length!==1?'s':''} audited</div>${roomsHtml}${signHtml}</div>`
         :'<div class="jd-section" style="color:var(--muted);font-size:13px">No job card data found for this order.</div>';
+      const historyHtml=history.length?`<div class="jd-section"><div class="jd-sec-head">📜 Completed Job Card History (${history.length})</div>
+        ${history.map((h,i)=>i).reverse().map(idx=>{const h=history[idx];const dt=h.archivedAt?new Date(h.archivedAt).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+          return `<div class="jd-row" style="align-items:center">
+            <span class="jd-label">${dt}</span>
+            <span>Signed by <b>${(h.sign&&h.sign.name)||'—'}</b> · ${(h.rooms||[]).length} room(s)${h.sign&&h.sign.ratings?` · ⭐ ${h.sign.ratings.q1}/10`:''}
+              <button class="btn-ghost" style="font-size:11px;padding:4px 8px;margin-left:8px" onclick="downloadHistoricalPDF(${idx})">📥 PDF</button>
+            </span>
+          </div>`;}).join('')}
+        </div>`:'';
       document.getElementById('modal').innerHTML=`
         <div class="jd-head"><div class="jd-pi">${o.pi} · Site Audit</div>${jobChip(o.status)}</div>
         <div class="jd-info">
@@ -928,6 +939,7 @@ async function openJobDetail(pi,type){
           <div class="jd-row"><span class="jd-label">Auditor</span><span>${o.auditor_name||'—'}</span></div>
         </div>
         ${jcSection}
+        ${historyHtml}
         <div class="jd-btns">
           ${hasCard?`<button class="btn-primary" onclick="window._jdAudit&&genAuditPDF(window._jdAudit.order,window._jdAudit.ticked)">${isDraft?'📥 Download Draft PDF (missing signature)':'📥 Download Job Card PDF'}</button>`:''}
           <button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button>
@@ -978,6 +990,11 @@ function adminDlInstall(sjIdx){
   const asgns=sj.assignments&&sj.assignments.length?sj.assignments:[];
   const primary=asgns.find(a=>a.primary)||asgns[0]||{};
   genInstallPDF(d.order,sj,sj.jobcard,primary.installer_name||sj.installer_email||'—');
+}
+function downloadHistoricalPDF(idx){
+  const d=window._jdAudit;const h=(window._jdAuditHistory||[])[idx];
+  if(!d||!h){toast('History entry not available');return;}
+  genAuditPDF(d.order,h);
 }
 
 /* ---- PERFORMANCE ---- */

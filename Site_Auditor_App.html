@@ -247,6 +247,23 @@ function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+enc
 let ORDERS=[];
 
 const AUDITOR_COLS='id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log';
+
+// Permanent completion history: every time a job card is actually signed, this snapshot is
+// appended to audit_ticked_history (jsonb array column — see CLAUDE.md note 66) so a later
+// status change / redo can never erase the record that this audit was once completed and signed,
+// even though the live audit_ticked field itself is still a single mutable slot. Best-effort and
+// deduped by sign.img — must never throw or block the real completion/reopen flow it's called from.
+async function _archiveAuditTicked(orderId,ticked,reason){
+  if(!orderId||!ticked||!ticked.sign)return;
+  try{
+    const rows=await sbGet('audit_orders?id=eq.'+orderId+'&select=audit_ticked_history');
+    const hist=(Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].audit_ticked_history))?rows[0].audit_ticked_history:[];
+    if(hist.some(h=>h&&h.sign&&ticked.sign&&h.sign.img===ticked.sign.img))return;
+    hist.push(Object.assign({},ticked,{archivedAt:new Date().toISOString(),archivedReason:reason||'completed'}));
+    await sbPatch('audit_orders',orderId,{audit_ticked_history:hist});
+  }catch(e){/* history is best-effort — never block on this */}
+}
+
 let _retryingCompletion=false;
 async function _retryPendingCompletions(){
   if(_retryingCompletion)return;_retryingCompletion=true;
@@ -254,7 +271,7 @@ async function _retryPendingCompletions(){
     const pKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_ps_'));
     for(const k of pKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatch('audit_orders',d.id,{status:'completed',log:d.log});localStorage.removeItem(k);}catch(e){}}
     const jcKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_pjc_'));
-    for(const k of jcKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatchLong('audit_orders',d.id,{audit_ticked:d.ticked});localStorage.removeItem(k);}catch(e){}}
+    for(const k of jcKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatchLong('audit_orders',d.id,{audit_ticked:d.ticked});localStorage.removeItem(k);_archiveAuditTicked(d.id,d.ticked,'completed');}catch(e){}}
   }finally{_retryingCompletion=false;}
 }
 async function loadJobs(){
@@ -566,6 +583,9 @@ async function openJobCard(o){
   if(signedTicked){
     jcHadSign=true;
     rooms=signedTicked.rooms;
+    // Backfill safety net: covers orders completed before audit_ticked_history existed, or any
+    // completion whose archive write (above, at signAndComplete time) itself failed.
+    _archiveAuditTicked(o.id,signedTicked,'backfill-on-reopen');
     o.log=o.log||[];o.log.push({t:"Reopened signed job card for edit — signature kept on file until re-signed",d:new Date().toISOString(),by:"manual",who:ME.name});
     if(o.id){try{await sbPatch('audit_orders',o.id,{log:o.log});}catch(e){}}
   }else{
@@ -899,6 +919,7 @@ function showAuditSignature(o,ratings){
         await sbPatchLong('audit_orders',o.id,jcPatch);
         try{localStorage.removeItem('md_audit_'+o.pi);}catch(e){}
         try{localStorage.removeItem('md_audit_pjc_'+o.pi);}catch(e){}
+        _archiveAuditTicked(o.id,ticked,'completed');
       }catch(e){
         toast("Job card save failed — will retry automatically on next open");
         try{localStorage.setItem('md_audit_pjc_'+o.pi,JSON.stringify({id:o.id,ticked}));}catch(e2){}

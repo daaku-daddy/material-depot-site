@@ -1195,6 +1195,18 @@ function wireDrawer(o){
       if(hasSignedCard){
         const ok=confirm("This audit already has a signed job card on file (client signature + ratings).\n\nMoving it back to \""+STATUS[st].l+"\" will let the auditor reopen and redo it — the existing signed record is kept safe unless they explicitly capture a new signature.\n\nContinue?");
         if(!ok)return;
+        // Archive this signed snapshot into audit_ticked_history (jsonb array, see CLAUDE.md
+        // note 66) at the moment of the backward move itself — the field app also backfills this
+        // on reopen, but archiving here too means the record exists even if the auditor never
+        // reopens the job card again. Best-effort, deduped by sign.img, never blocks the status change.
+        try{
+          const histRows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked_history');
+          const hist=(Array.isArray(histRows)&&histRows[0]&&Array.isArray(histRows[0].audit_ticked_history))?histRows[0].audit_ticked_history:[];
+          if(!hist.some(h=>h&&h.sign&&h.sign.img===ticked.sign.img)){
+            hist.push(Object.assign({},ticked,{archivedAt:new Date().toISOString(),archivedReason:'status-changed-to-'+st}));
+            await sbPatch('audit_orders',o.id,{audit_ticked_history:hist});
+          }
+        }catch(e){/* history is best-effort — never block the status change on this */}
       }
     }
     // Determine effective positions for clearing forward data
