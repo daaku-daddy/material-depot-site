@@ -1281,8 +1281,13 @@ async function renderAnalytics(m){
   let installRes,auditRes,ratingsRes;
   try{
     [installRes,auditRes,ratingsRes]=await Promise.all([
-      sbGetLong('install_orders_slim?select=id,pi,status,subjobs,service,delivery_date,created_at&status=neq.deleted'),
-      sbGetLong('audit_orders?select=id,pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at&status=not.in.(deleted,slot_reserved,slot_converted)'),
+      // bm, customer_name, phone are all plain short text columns already exposed by
+      // install_orders_slim (see docs/supabase_slim_views.sql) — safe to select directly, no
+      // separate query needed. Fixed 2026-07-25 (CLAUDE.md note 67) after phone-matching was
+      // found to silently exclude install orders created before 1 Jul 2026 — that restriction
+      // was only ever needed for `log` below, not for these fields.
+      sbGetLong('install_orders_slim?select=id,pi,status,subjobs,service,delivery_date,created_at,bm,customer_name,phone&status=neq.deleted'),
+      sbGetLong('audit_orders?select=id,pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at,bm,customer_name&status=not.in.(deleted,slot_reserved,slot_converted)'),
       sbGetLong('ratings?select=order_type,pi,order_id,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
@@ -1296,19 +1301,6 @@ async function renderAnalytics(m){
   if(Array.isArray(installRes)&&Array.isArray(delivMeta)){
     const dm={};for(const r of delivMeta)dm[r.pi]=r.original_delivery_date||null;
     for(const o of installRes)o.original_delivery_date=dm[o.pi]||null;
-  }
-  // phone is a plain short text column on every install order (verified live 2026-07-25 — 0 of
-  // 190 non-deleted install orders have a null phone, including ones from 2026-06-11) — fetched
-  // for ALL orders, no date restriction. It used to be merged in from the SAME date-restricted
-  // query as `log` below under the mistaken assumption that phone was only populated from
-  // 1 Jul 2026 onward; that assumption was never true and silently broke Material Depot Audit %
-  // and Site Audit → Order Conversion % for every install order created before that date (found
-  // via a live customer report — Anusha's install order, created 2026-06-30, has always had a
-  // valid phone but was never being matched). See CLAUDE.md note 67.
-  const installPhoneRes=await sbGetLong('install_orders?select=pi,phone&status=neq.deleted').catch(()=>[]);
-  if(Array.isArray(installPhoneRes)){
-    const pm={};for(const r of installPhoneRes)pm[r.pi]=r.phone||null;
-    for(const o of installRes)o.phone=pm[o.pi]||null;
   }
   // `log` is the real timeout risk (pre-storage-migration entries can embed multi-MB base64
   // photos in old log entries) — this one genuinely needs to stay date-restricted. Only used for
@@ -1553,54 +1545,40 @@ function _anAuditorMap(auditFiltered,ratingMap,arrByName){
 /* ---- Analytics metric drill-down (which rows make up a metric's numerator/denominator) ---- */
 window._anDrill={};
 function _anSetDrill(key,title,note,entityType,rows){
-  window._anDrill[key]={title,note:note||'',entityType,rows,_resolved:false};
+  window._anDrill[key]={title,note:note||'',entityType,rows};
 }
-async function openAnalyticsDrill(key){
+function openAnalyticsDrill(key){
   const d=window._anDrill&&window._anDrill[key];
   if(!d){toast('No detail available for this metric');return;}
   showModal(`<div class="modal-head"><h3>${d.title}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div style="padding:16px 20px;max-height:65vh;overflow:auto" id="anDrillBody"><div class="loading-row"><span class="spinner"></span></div></div>
+    <div style="padding:16px 20px;max-height:65vh;overflow:auto" id="anDrillBody"></div>
     <div style="padding:12px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end">
       <button class="btn-primary" onclick="downloadDrillCSV('${key}')">⬇ Download CSV</button>
     </div>`);
   document.getElementById('modal').className='modal wide';
-  if(!d._resolved){
-    const pis=[...new Set(d.rows.map(r=>r.pi).filter(Boolean))];
-    if(pis.length){
-      const table=d.entityType==='audit'?'audit_orders':'install_orders';
-      const inList=pis.map(p=>`"${p}"`).join(',');
-      try{
-        const res=await sbGet(`${table}?pi=in.(${inList})&select=pi,customer_name`);
-        if(Array.isArray(res)){
-          const nameMap={};res.forEach(r=>{nameMap[r.pi]=r.customer_name||'';});
-          d.rows.forEach(r=>{r.customer=nameMap[r.pi]||'';});
-        }
-      }catch(e){}
-    }
-    d._resolved=true;
-  }
   const body=document.getElementById('anDrillBody');
-  if(!body)return; // modal was closed before the name lookup resolved
   const countedN=d.rows.filter(r=>/^✓/.test(r.result)).length;
   body.innerHTML=`
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${d.note}${d.note?'<br>':''}<b>${countedN}</b> of <b>${d.rows.length}</b> row(s) shown count toward this metric.</div>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
-        <th style="padding:6px 8px">Enquiry ID</th><th style="padding:6px 8px">Customer</th><th style="padding:6px 8px">Date</th><th style="padding:6px 8px">Result</th>
+        <th style="padding:6px 8px">Enquiry ID</th><th style="padding:6px 8px">Customer</th><th style="padding:6px 8px">Phone</th><th style="padding:6px 8px">BM</th><th style="padding:6px 8px">Date</th><th style="padding:6px 8px">Result</th>
       </tr></thead>
       <tbody>${d.rows.length?d.rows.map(r=>`<tr style="border-bottom:1px solid var(--line)">
         <td style="padding:6px 8px;font-family:monospace;font-size:12px">${r.pi||'—'}</td>
         <td style="padding:6px 8px">${r.customer||'—'}</td>
+        <td style="padding:6px 8px">${r.phone?`<a href="tel:${r.phone}">${r.phone}</a>`:'—'}</td>
+        <td style="padding:6px 8px">${r.bm||'—'}</td>
         <td style="padding:6px 8px;color:var(--muted)">${r.date||'—'}</td>
         <td style="padding:6px 8px;font-weight:${/^✓/.test(r.result)?'700':'400'};color:${/^✓/.test(r.result)?'var(--green)':/^✗/.test(r.result)?'var(--red)':'var(--muted)'}">${r.result}</td>
-      </tr>`).join(''):'<tr><td colspan="4" style="padding:12px;color:var(--muted)">No rows</td></tr>'}</tbody>
+      </tr>`).join(''):'<tr><td colspan="6" style="padding:12px;color:var(--muted)">No rows</td></tr>'}</tbody>
     </table>`;
 }
 function downloadDrillCSV(key){
   const d=window._anDrill&&window._anDrill[key];
   if(!d||!d.rows.length){toast('Nothing to export');return;}
-  const header=['Enquiry ID','Customer','Date','Result'];
-  const lines=[header.join(',')].concat(d.rows.map(r=>[r.pi||'',r.customer||'',r.date||'',r.result].map(_csvEscape).join(',')));
+  const header=['Enquiry ID','Customer','Phone','BM','Date','Result'];
+  const lines=[header.join(',')].concat(d.rows.map(r=>[r.pi||'',r.customer||'',r.phone||'',r.bm||'',r.date||'',r.result].map(_csvEscape).join(',')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -1769,24 +1747,28 @@ function drawAnalytics(m){
   const aArrNote=aArrTot.onTime+aArrTot.late===0?'Tracking started 2 Jul 2026':'';
 
   /* ---- Register drill-down data for clickable metric cards ---- */
+  // Every row also carries customer/phone/bm for display + CSV export (added 2026-07-25 per
+  // user request) — sourced directly from the audit/install order objects, no extra queries.
+  const _aRow=o=>({customer:o.customer_name||'',phone:o.phone||'',bm:o.bm||''});
+  const _iRow=o=>({customer:o.customer_name||'',phone:o.phone||'',bm:o.bm||''});
   _anSetDrill('aCompletion','Site Audit — Completion %','Every audit scheduled in this date range.','audit',
-    aFiltered.map(o=>({pi:o.pi,date:o.date,result:o.status==='completed'?'✓ Completed':'✗ Not completed ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
+    aFiltered.map(o=>({pi:o.pi,date:o.date,..._aRow(o),result:o.status==='completed'?'✓ Completed':'✗ Not completed ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
   _anSetDrill('aArrival','Site Audit — Auditor Arrival On Time %','Audits that reached completed status and are on/after 2 Jul 2026 (when arrival tracking began). Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','audit',
-    aArr.tagged.map(t=>({pi:t.o.pi,date:t.o.date,result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
+    aArr.tagged.map(t=>({pi:t.o.pi,date:t.o.date,..._aRow(t.o),result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
   _anSetDrill('aReschedule','Site Audit — Reschedule Rate %','Every audit scheduled in this date range.','audit',
-    aFiltered.map(o=>({pi:o.pi,date:o.date,result:o.status==='reschedule'?'✓ In reschedule status':'✗ Not in reschedule ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
+    aFiltered.map(o=>({pi:o.pi,date:o.date,..._aRow(o),result:o.status==='reschedule'?'✓ In reschedule status':'✗ Not in reschedule ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
   _anSetDrill('aConversion','Site Audit → Order Conversion %','One row per distinct customer phone audited in this range. "Converted" = that phone placed an install order at any time, even after the range ends.','audit',
-    [...aPhonesInRange].map(p=>{const rep=aFiltered.find(o=>o.phone===p);return {pi:rep?rep.pi:'',date:rep?rep.date:'',result:aConvertedPhones.includes(p)?'✓ Converted to install order':'✗ Not converted yet'};}));
+    [...aPhonesInRange].map(p=>{const rep=aFiltered.find(o=>o.phone===p);return {pi:rep?rep.pi:'',date:rep?rep.date:'',...(rep?_aRow(rep):{customer:'',phone:p,bm:''}),result:aConvertedPhones.includes(p)?'✓ Converted to install order':'✗ Not converted yet'};}));
   _anSetDrill('aRatings','Site Audit — Client Ratings','Every audit with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','audit',
-    [...aRatingMap.entries()].map(([o,r])=>({pi:o.pi,date:o.date,result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
+    [...aRatingMap.entries()].map(([o,r])=>({pi:o.pi,date:o.date,..._aRow(o),result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
   _anSetDrill('iArrival','Site Installation — Installer Arrival On Time %','Subjobs that reached completed/partial status and are on/after 2 Jul 2026 (when arrival tracking began). Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','install',
-    iArr.tagged.map(t=>({pi:t.row.pi,date:t.row.date,result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
+    iArr.tagged.map(t=>({pi:t.row.pi,date:t.row.date,..._iRow(t.row.order),result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
   _anSetDrill('iMDaudit','Site Installation — Material Depot Audit %','Every subjob in range, phone-matched against all-time site audit orders.','install',
-    iCanon.map(r=>({pi:r.pi,date:r.date,result:(r.order.phone&&auditPhones.has(r.order.phone))?'✓ Matched a Material Depot site audit':'✗ No matching site audit'})));
+    iCanon.map(r=>({pi:r.pi,date:r.date,..._iRow(r.order),result:(r.order.phone&&auditPhones.has(r.order.phone))?'✓ Matched a Material Depot site audit':'✗ No matching site audit'})));
   _anSetDrill('iCompletion','Site Installation — Completion %','Every subjob in this date range.','install',
-    iCanon.map(r=>({pi:r.pi,date:r.date,result:['completed','partial'].includes(r.status)?'✓ '+(JOB_STATUS[r.status]?.l||r.status):'✗ Not yet completed ('+(JOB_STATUS[r.status]?.l||r.status)+')'})));
+    iCanon.map(r=>({pi:r.pi,date:r.date,..._iRow(r.order),result:['completed','partial'].includes(r.status)?'✓ '+(JOB_STATUS[r.status]?.l||r.status):'✗ Not yet completed ('+(JOB_STATUS[r.status]?.l||r.status)+')'})));
   _anSetDrill('iRatings','Site Installation — Client Ratings','Every subjob with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','install',
-    [...iRatingMap.entries()].map(([row,r])=>({pi:row.pi,date:row.date,result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
+    [...iRatingMap.entries()].map(([row,r])=>({pi:row.pi,date:row.date,..._iRow(row.order),result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
 
   const iByStatus={};
   iCanon.forEach(a=>{iByStatus[a.status]=(iByStatus[a.status]||0)+1;});
