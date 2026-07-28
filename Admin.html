@@ -1701,10 +1701,17 @@ function drawAnalytics(m){
 
   // Arrival on time — denominator is the "reached site" subset of the SAME canonical/filtered set
   // used everywhere else in this section (not an independently-scoped scan of the raw arrays).
+  // "Reached site" = completed/partial OR atsite — atsite jobs are still in progress but the
+  // "arrived at site" log entry (which is what this metric actually matches against) is written
+  // the moment status flips to atsite, so an in-progress atsite job already has real arrival data
+  // available. Deliberately broader than iDone/aCompleted (which stay completed/partial-only —
+  // those drive Completion %, where an in-progress job must NOT count as done).
   const iTrackFrom=from>TRACK_FROM?from:TRACK_FROM;
   const aTrackFrom=from>TRACK_FROM?from:TRACK_FROM;
-  const iReached=iDone.filter(r=>r.date>=iTrackFrom);
-  const aReached=aFiltered.filter(o=>o.status==='completed'&&o.date>=aTrackFrom);
+  const iArrivalEligible=iCanon.filter(a=>['completed','partial','atsite'].includes(a.status));
+  const aArrivalEligible=aFiltered.filter(o=>['completed','atsite'].includes(o.status));
+  const iReached=iArrivalEligible.filter(r=>r.date>=iTrackFrom);
+  const aReached=aArrivalEligible.filter(o=>o.date>=aTrackFrom);
   const iArr=_anInstallArrivalStats(iReached);
   const aArr=_anAuditArrivalStats(aReached);
   const iArrTot=iArr.agg, aArrTot=aArr.agg;
