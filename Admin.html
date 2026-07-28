@@ -355,6 +355,7 @@ function navigate(view){
   currentView=view;
   if(view!=='live'&&_liveLocTimer){clearInterval(_liveLocTimer);_liveLocTimer=null;}
   if(view!=='jobs'&&_jobsPollTid){clearInterval(_jobsPollTid);_jobsPollTid=null;}
+  if(view!=='analytics'&&_anPollTid){clearInterval(_anPollTid);_anPollTid=null;}
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   renderView(view);
 }
@@ -691,10 +692,12 @@ function setJobDateFrom(d){jobsDateFrom=d;drawJobs(document.getElementById('main
 function setJobDateTo(d){jobsDateTo=d;drawJobs(document.getElementById('main'));}
 function clearJobDateRange(){jobsDateFrom='';jobsDateTo='';drawJobs(document.getElementById('main'));}
 
+function _hhmmVal(s){if(!s)return 9999;const r=String(s).match(/^(\d{1,2}):(\d{2})$/);return r?(+r[1])*60+(+r[2]):9999;}
+function fmtJobTime(s){if(!s)return '—';const r=String(s).match(/^(\d{1,2}):(\d{2})$/);if(!r)return s;const h=+r[1],mn=+r[2],ap=h>=12?'PM':'AM',h12=h%12||12;return h12+':'+(mn<10?'0':'')+mn+' '+ap;}
 let _realJobsAudit=[], _realJobsInstall=[], _jobsAuditFailed=false, _jobsInstallFailed=false;
 async function _loadJobsData(m){
   const [auditRes,installRes,profileRes]=await Promise.all([
-    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date&status=not.in.(deleted,slot_reserved,slot_converted)&order=created_at.desc'),
+    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date,slot&status=not.in.(deleted,slot_reserved,slot_converted)&order=created_at.desc'),
     sbGetLong('install_orders_slim?select=pi,customer_name,addr,subjobs,status,delivery_date&status=neq.deleted&order=created_at.desc'),
     sbGet('profiles?select=name,email&role=neq.admin'),
   ]);
@@ -705,7 +708,7 @@ async function _loadJobsData(m){
       id:r.pi||'—', type:'audit',
       customer:r.customer_name||'—', addr:r.addr||'—',
       assignee:r.auditor_name||(r.auditor_email?_jobsNameMap[r.auditor_email]:null),
-      status:r.status||'pending', date:r.date||null,
+      status:r.status||'pending', date:r.date||null, time:r.slot||null,
     }));
     _jobsAuditFailed=false;
   }else{
@@ -723,11 +726,16 @@ async function _loadJobsData(m){
         const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{date:sj.date,mode:'standard',dates:[]}]:[]);
         return asgns.flatMap(a=>a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]));
       }))];
+      const times=[...new Set((r.subjobs||[]).flatMap(sj=>{
+        const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.slot?[{slots:[sj.slot]}]:[]);
+        return asgns.flatMap(a=>a.slots||[]);
+      }))];
+      const time=times.length?times.reduce((min,t)=>_hhmmVal(t)<_hhmmVal(min)?t:min):null;
       return {
         id:r.pi||'—', type:'install',
         customer:r.customer_name||'—', addr:r.addr||'—',
         assignee:emails.length?emails.map(e=>_jobsNameMap[e]||e.split('@')[0]).join(', '):null,
-        status:r.status||'pending', date:r.delivery_date||null,
+        status:r.status||'pending', date:r.delivery_date||null, time,
         installDates,
       };
     });
@@ -765,15 +773,15 @@ function getFilteredJobs(){
     if(!jobsSearch)return true;
     const q=jobsSearch.toLowerCase();
     return j.id.toLowerCase().includes(q)||j.customer.toLowerCase().includes(q);
-  });
+  }).sort((a,b)=>_hhmmVal(a.time)-_hhmmVal(b.time));
 }
 function _csvEscape(v){const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
 function downloadJobsCSV(){
   const rows=getFilteredJobs();
   if(!rows.length){toast('No jobs to export for the current filters');return;}
-  const header=['Job ID','Type','Customer','Location','Assigned To','Status','Date'];
+  const header=['Job ID','Type','Customer','Location','Assigned To','Status','Time','Date'];
   const lines=[header.join(',')].concat(rows.map(j=>[
-    j.id,j.type==='audit'?'Audit':'Install',j.customer,j.addr,j.assignee||'Unassigned',JOB_STATUS[j.status]?.l||j.status,j.date||''
+    j.id,j.type==='audit'?'Audit':'Install',j.customer,j.addr,j.assignee||'Unassigned',JOB_STATUS[j.status]?.l||j.status,fmtJobTime(j.time),j.date||''
   ].map(_csvEscape).join(',')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
@@ -822,7 +830,7 @@ function drawJobs(m){
         </div>
       </div>
       <table>
-        <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th><th>Location</th><th>Assigned To</th><th>Status</th><th>Date</th></tr></thead>
+        <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th><th>Location</th><th>Assigned To</th><th>Status</th><th>Time</th><th>Date</th></tr></thead>
         <tbody>
           ${filtered.length?filtered.map(j=>`
             <tr style="cursor:pointer" onclick="openJobDetail('${j.id}','${j.type}')">
@@ -832,9 +840,10 @@ function drawJobs(m){
               <td style="color:var(--muted);font-size:12px">${j.addr}</td>
               <td>${j.assignee||'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
               <td>${jobChip(j.status)}</td>
+              <td style="color:var(--muted)">${fmtJobTime(j.time)}</td>
               <td style="color:var(--muted)">${j.date||'—'}</td>
             </tr>`).join('')
-          :'<tr><td colspan="7"><div class="empty"><div class="e-ico">🔍</div><div class="e-msg">No jobs match this filter</div></div></td></tr>'}
+          :'<tr><td colspan="8"><div class="empty"><div class="e-ico">🔍</div><div class="e-msg">No jobs match this filter</div></div></td></tr>'}
         </tbody>
       </table>
     </div>`}`;
@@ -953,6 +962,7 @@ async function openJobDetail(pi,type){
       const sjsHtml=subjobs.map((sj,si)=>{
         const jc=sj.jobcard;const rooms=(jc&&jc.rooms)||[];const hasSign=jc&&jc.sign&&jc.sign.img;
         const hasCard=rooms.length||hasSign;
+        const isDraft=jc&&jc.draft&&!hasSign;
         const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer_email?[{installer_email:sj.installer_email,installer_name:'—'}]:[]);
         const names=asgns.map(a=>a.installer_name||a.installer_email||'—').join(', ');
         const typeLabel=sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring';
@@ -962,11 +972,26 @@ async function openJobDetail(pi,type){
           return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'}${r.sku?` · SKU: ${r.sku}`:''}${r.qty?` · ${r.qty}`:''}</div>${photoHtml}${r.comments?`<div style="font-size:12px;color:var(--muted);margin-top:4px">${r.comments}</div>`:''}</div>`;
         }).join('');
         const signHtml=hasSign?`<div style="font-size:13px;margin-top:6px">Signed by <b>${jc.sign.name||'—'}</b>${jc.sign.ratings?` · ⭐ ${jc.sign.ratings.q1}/10 · 👤 ${jc.sign.ratings.q2}/10 · 🧹 ${jc.sign.ratings.q3||'—'}/10`:''}</div>`:'';
+        const history=Array.isArray(sj.jobcard_history)?sj.jobcard_history:[];
+        const historyHtml=history.length?`<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+          <div class="jd-sec-head" style="font-size:12.5px">📜 Completed Job Card History (${history.length})</div>
+          ${history.map((h,i)=>i).reverse().map(idx=>{const h=history[idx];const dt=h.archivedAt?new Date(h.archivedAt).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+            return `<div class="jd-row" style="align-items:center">
+              <span class="jd-label">${dt}</span>
+              <span>Signed by <b>${(h.sign&&h.sign.name)||'—'}</b> · ${(h.rooms||[]).length} room(s)${h.sign&&h.sign.ratings?` · ⭐ ${h.sign.ratings.q1}/10`:''}
+                <button class="btn-ghost" style="font-size:11px;padding:4px 8px;margin-left:8px" onclick="downloadInstallHistoricalPDF(${si},${idx})">📥 PDF</button>
+              </span>
+            </div>`;}).join('')}
+          </div>`:'';
         return `<div class="jd-section">
           <div class="jd-sec-head">${typeLabel} · ${jobChip(sj.status)}</div>
           <div class="jd-row"><span class="jd-label">Installer(s)</span><span>${names}</span></div>
-          ${rooms.length?`<div style="margin-top:10px">${roomsHtml}${signHtml}</div>`:(!hasCard?'<div style="color:var(--muted);font-size:12px;margin-top:8px">No job card data yet.</div>':'<div style="color:var(--amber);font-size:12px;margin-top:8px">⚠️ Job card draft — not yet completed</div>')}
+          ${isDraft
+            ?`<div style="color:var(--amber);font-size:12px;margin-top:8px">⚠️ Job card draft — client sign-off not yet completed${history.length?' (this sub-job was previously completed and signed — see Completed Job Card History below)':''}</div>${rooms.length?`<div style="margin-top:10px">${roomsHtml}</div>`:''}`
+            :rooms.length?`<div style="margin-top:10px">${roomsHtml}${signHtml}</div>`
+            :(!hasCard?`<div style="color:var(--muted);font-size:12px;margin-top:8px">No job card data yet.${history.length?' This sub-job was previously completed and signed — see Completed Job Card History below.':''}</div>`:'<div style="color:var(--amber);font-size:12px;margin-top:8px">⚠️ Job card draft — not yet completed</div>')}
           ${hasCard?`<div style="margin-top:12px"><button class="btn-primary" style="font-size:12px;padding:8px 14px" onclick="adminDlInstall(${si})">📥 Download Job Card PDF</button></div>`:''}
+          ${historyHtml}
         </div>`;
       }).join('')||(subjobs.length===0?'<div class="jd-section" style="color:var(--muted);font-size:13px">No sub-jobs created yet.</div>':'');
       document.getElementById('modal').innerHTML=`
@@ -995,6 +1020,15 @@ function downloadHistoricalPDF(idx){
   const d=window._jdAudit;const h=(window._jdAuditHistory||[])[idx];
   if(!d||!h){toast('History entry not available');return;}
   genAuditPDF(d.order,h);
+}
+function downloadInstallHistoricalPDF(sjIdx,histIdx){
+  const d=window._jdInstall;if(!d)return;
+  const sj=(d.order.subjobs||[])[sjIdx];if(!sj){toast('Sub-job not available');return;}
+  const h=(sj.jobcard_history||[])[histIdx];
+  if(!h){toast('History entry not available');return;}
+  const asgns=sj.assignments&&sj.assignments.length?sj.assignments:[];
+  const primary=asgns.find(a=>a.primary)||asgns[0]||{};
+  genInstallPDF(d.order,sj,h,primary.installer_name||sj.installer_email||'—');
 }
 
 /* ---- PERFORMANCE ---- */
@@ -1254,7 +1288,7 @@ async function dlJobCard(i,btn){
 }
 
 /* ---- ANALYTICS V2 ---- */
-let analyticsFrom='', analyticsTo='';
+let analyticsFrom='', analyticsTo='', _anPollTid=null;
 
 function _anDstr(d){const z=n=>n<10?'0'+n:n;return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());}
 function _anToIST(iso){return new Date(new Date(iso).getTime()+19800000);}
@@ -1267,14 +1301,13 @@ function _anParseDateText(text){
   return _anDstr(new Date(+m[3],mn[m[2].toLowerCase()],+m[1]));
 }
 
-async function renderAnalytics(m){
-  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
-  if(!analyticsFrom){
-    const t=new Date();
-    analyticsTo=_anDstr(t);
-    t.setDate(t.getDate()-6);
-    analyticsFrom=_anDstr(t);
-  }
+// Fetches fresh analytics data into window._anData. Returns true on success, false on failure —
+// never touches the DOM itself, so it's safe to call silently from the background poll below as
+// well as from the initial renderAnalytics load. All-time arrays (installs/audits) are always
+// fetched in full regardless of the selected date range, since several metrics (Material Depot
+// Audit %, Site Audit → Order Conversion %) intentionally phone-match against all-time data —
+// re-running this later is what lets a conversion that only happens days after the audit show up.
+async function _anFetchData(){
   // Use install_orders_slim (no photos in subjobs) to avoid MB-scale payload timeouts.
   // original_delivery_date is not in the slim view — fetch it separately (tiny query).
   // log columns are excluded — pre-July arrival photos were stored as base64 in log, causing MB-scale payloads.
@@ -1291,8 +1324,7 @@ async function renderAnalytics(m){
       sbGetLong('ratings?select=order_type,pi,order_id,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
-    m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load analytics data — network timeout. Please try again.</div>`;
-    return;
+    return false;
   }
   // Fallback for q3_score column not yet in DB
   if(!Array.isArray(ratingsRes)) ratingsRes=await sbGetLong('ratings?select=order_type,pi,order_id,q1_score,q2_score,created_at,staff_name,staff_email').catch(()=>[]);
@@ -1306,7 +1338,7 @@ async function renderAnalytics(m){
   // photos in old log entries) — this one genuinely needs to stay date-restricted. Only used for
   // the log-based "delay mentioned" metric, which is documented as a distinct, narrower limitation.
   const installLogRes=await sbGetLong('install_orders?select=pi,log&status=neq.deleted&created_at=gte.2026-07-01').catch(()=>[]);
-  if(Array.isArray(installLogRes)){
+  if(Array.isArray(installLogRes)&&Array.isArray(installRes)){
     const lm={};for(const r of installLogRes)lm[r.pi]=r.log||[];
     for(const o of installRes)o.log=lm[o.pi]||[];
   }
@@ -1315,9 +1347,39 @@ async function renderAnalytics(m){
     audits:Array.isArray(auditRes)?auditRes:[],
     ratings:Array.isArray(ratingsRes)?ratingsRes:[],
   };
+  window._anLastFetch=Date.now();
+  return true;
+}
+
+async function renderAnalytics(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  if(!analyticsFrom){
+    const t=new Date();
+    analyticsTo=_anDstr(t);
+    t.setDate(t.getDate()-6);
+    analyticsFrom=_anDstr(t);
+  }
+  const ok=await _anFetchData();
+  if(!ok){
+    m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load analytics data — network timeout. Please try again.</div>`;
+    return;
+  }
   try{drawAnalytics(m);}catch(e){
     m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Analytics render error: ${e.message}. Please reload.</div>`;
   }
+  // Auto-refresh: re-fetch every 60s while this tab is active and visible, so a metric like
+  // Site Audit → Order Conversion % picks up conversions that happen days after the audit
+  // without the admin needing to leave and re-enter the Analytics view. Silent — no spinner —
+  // so it doesn't interrupt someone mid-read; skipped while a date-range input is focused so it
+  // never clobbers an in-progress (not-yet-applied) edit.
+  if(_anPollTid)clearInterval(_anPollTid);
+  _anPollTid=setInterval(async()=>{
+    if(currentView!=='analytics'||document.hidden)return;
+    const active=document.activeElement;
+    if(active&&(active.id==='anFrom'||active.id==='anTo'))return;
+    const fresh=await _anFetchData();
+    if(fresh&&currentView==='analytics')drawAnalytics(document.getElementById('main'));
+  },60000);
 }
 
 // Returns one canonical row per subjob within [from,to] — never more than one, regardless of
@@ -1796,6 +1858,7 @@ function drawAnalytics(m){
       <button class="filt-btn" onclick="(function(){const t=new Date();analyticsTo=_anDstr(t);t.setDate(t.getDate()-29);analyticsFrom=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 30 days</button>
       <button class="filt-btn" onclick="(function(){const t=new Date();analyticsTo=_anDstr(t);t.setDate(t.getDate()-89);analyticsFrom=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 90 days</button>
     </div>
+    <div style="color:var(--muted);font-size:11px;margin:-8px 0 12px">🔄 Auto-refreshing every 60s${window._anLastFetch?(' · Last updated '+new Date(window._anLastFetch).toLocaleTimeString()):''}</div>
 
     <!-- ══ SITE AUDIT ════════════════════════════════════════════════════ -->
     <div class="an-section">

@@ -97,6 +97,7 @@
   .c-atsite{background:#e9e3fb;color:#5b3aa6;}
   .c-completed{background:var(--greenbg);color:var(--green);}
   .c-partial{background:var(--tealbg);color:var(--teal);}
+  .c-mixed{background:#e4e9f2;color:var(--navy);}
   .autobadge{font-size:9px;font-weight:800;letter-spacing:.5px;background:#dfeafd;color:#2b54c2;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle;}
   .auditbadge{font-size:10px;font-weight:800;border-radius:5px;padding:2px 7px;}
   .auditbadge.ok{background:var(--greenbg);color:var(--green);} .auditbadge.miss{background:var(--redbg);color:var(--red);}
@@ -548,8 +549,35 @@ const STATUS={
   atsite:{l:"At Site",c:"c-atsite"},
   partial:{l:"Partially Completed",c:"c-partial"},
   completed:{l:"Site Installation Completed",c:"c-completed"},
+  // Synthetic, order-level-only — a computed rollup for mixed (flooring+wallpaper) orders whose
+  // sub-jobs have diverged in status. Never settable via the manual "Set status" menu (see
+  // syncParent()'s final else and the Object.keys(STATUS) filter that builds that menu).
+  mixed:{l:"Mixed — see details",c:"c-mixed"},
 };
 const AUTO_STATUSES=["onway","atsite","completed"];
+
+// A mixed order is one whose subjobs include BOTH a flooring and a wallpaper sub-job — the only
+// case where delivery/production tracking forks into independent per-category tracks. Single-
+// category orders (the vast majority) are entirely unaffected by any of the sj*/mixed logic below.
+function isMixedOrder(o){
+  if(!o.subjobs||o.subjobs.length<2)return false;
+  const types=new Set(o.subjobs.map(sj=>sj.type));
+  return types.has('flooring')&&types.has('wallpaper');
+}
+// Fallback accessors — a mixed-order sub-job's own field wins once an SM has diverged it; until
+// then (including the 4 legacy mixed orders that predate this feature) it falls back to the
+// order-level field, so nothing needs a backfill migration.
+function sjDeliveryDate(o,sj){return sj.deliveryDate!==undefined?sj.deliveryDate:o.deliveryDate;}
+function sjOriginalDeliveryDate(o,sj){return sj.originalDeliveryDate!==undefined?sj.originalDeliveryDate:o.originalDeliveryDate;}
+function sjCustomWp(o,sj){return sj.customWp!==undefined?sj.customWp:(sj.type==='wallpaper'?o.customWp:false);}
+function sjCustomWpStage(o,sj){return sj.customWpStage!==undefined?sj.customWpStage:o.customWpStage;}
+function sjCustomWpMeta(o,sj){return sj.customWpMeta!==undefined?sj.customWpMeta:(o.customWpMeta||{});}
+// Earliest of a mixed order's two independent delivery dates — used for the main table's
+// delivery-date column/sort, where a single order-level date is no longer meaningful.
+function mixedEarliestDelivery(o){
+  const dates=o.subjobs.map(sj=>sjDeliveryDate(o,sj)).filter(Boolean).sort();
+  return dates[0]||null;
+}
 
 // Custom wallpaper production tracker (custom_wp orders only) — tracks the pre-delivery
 // journey (draft render -> customer approval, with a revision loop -> warehouse arrival)
@@ -571,6 +599,27 @@ const CWP_VENDORS=["Macro Media","Life N Colors","Other"];
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
 let ORDERS=[],DELETED=[];
+
+// Permanent completion history for install job cards — mirrors the audit_ticked_history archive
+// in SM_Audit_Dashboard.html (see CLAUDE.md note 66/72). Lives as jobcard_history on the subjob
+// object itself. Does its own independent read-modify-write of subjobs; deduped by sign.img.
+// Best-effort — never throws or blocks the caller's real status-change write.
+async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
+  if(!orderId||!sjId||!jobcard||!jobcard.sign)return;
+  try{
+    const rows=await sbGet('install_orders?id=eq.'+orderId+'&select=subjobs');
+    if(!Array.isArray(rows)||!rows[0])return;
+    const subjobs=rows[0].subjobs||[];
+    const sj=subjobs.find(s=>s.id===sjId);
+    if(!sj)return;
+    const hist=Array.isArray(sj.jobcard_history)?sj.jobcard_history:[];
+    if(hist.some(h=>h&&h.sign&&h.sign.img===jobcard.sign.img))return;
+    hist.push(Object.assign({},jobcard,{archivedAt:new Date().toISOString(),archivedReason:reason||'completed'}));
+    sj.jobcard_history=hist;
+    await sbPatch('install_orders',orderId,{subjobs});
+  }catch(e){/* history is best-effort — never block on this */}
+}
+
 let _connErr=false,_retryTid=null;
 function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner');if(b)b.classList.toggle('show',v);}
 
@@ -646,7 +695,18 @@ function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()
 
 // Ops-call window: custom WP -> 3 days prior; else -> 1 day prior
 // Also fires for deliv_delayed so SM is reminded to re-confirm the new delivery date
+function subjobOpsCallDue(o,sj){
+  if(!['pending','deliv_delayed','call_na'].includes(sj.status))return false;
+  const dDate=sjDeliveryDate(o,sj);
+  if(!dDate)return false;
+  const dd=new Date(dDate+"T00:00");
+  const daysToDelivery=Math.round((dd-today)/(86400000));
+  return sjCustomWp(o,sj)? daysToDelivery<=3 : daysToDelivery<=1;
+}
+// Order-level aggregate used by counts/badges/list filters — mixed orders are due if ANY
+// sub-job individually needs a call; single-category orders keep today's exact order-level check.
 function opsCallDue(o){
+  if(isMixedOrder(o))return o.subjobs.some(sj=>subjobOpsCallDue(o,sj));
   if(!['pending','deliv_delayed','call_na'].includes(o.status))return false;
   if(!o.deliveryDate)return false;
   const dd=new Date(o.deliveryDate+"T00:00");
@@ -760,7 +820,7 @@ function ordersView(){
   const banner=opsDue?`<div class="callbanner"><div><div class="ttl">&#9742; ${opsDue} order${opsDue>1?'s':''} need an Operations call today</div>
     <div class="sub">Custom wallpaper: 3 days before delivery · everything else: 1 day before. Confirm delivery before creating the service.</div></div>
     <button class="btn amber" data-goto="calls">Review calls</button></div>`:"";
-  const filters=["all","followup","pending","deliv_delayed","created","scheduled","assigned","partial","completed"];
+  const filters=["all","followup","pending","deliv_delayed","created","scheduled","assigned","partial","mixed","completed"];
   const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
   const filteredOrders=ORDERS.filter(o=>{
     if(filterStatus!=="all"){
@@ -773,22 +833,25 @@ function ordersView(){
     if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
     return true;
   }).sort((a,b)=>{
-    const da=a.deliveryDate||'';const db=b.deliveryDate||'';
+    const da=(isMixedOrder(a)?mixedEarliestDelivery(a):a.deliveryDate)||'';
+    const db=(isMixedOrder(b)?mixedEarliestDelivery(b):b.deliveryDate)||'';
     return sortDelivery==="asc"?da.localeCompare(db):db.localeCompare(da);
   });
   const rows=filteredOrders.map(o=>{
     const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c}</span>`).join("");
-    const dd=new Date(o.deliveryDate+"T00:00");const delayed=o.status==="deliv_delayed";
-    const delivCls=delayed?"delayed":(o.status==="deliv_ontime"||["created","scheduled","assigned","partial","completed"].includes(o.status)?"ontime":"");
+    const mixed=isMixedOrder(o);
     const auditBadge=o.auditBy==='material_depot'?'<span class="auditbadge ok">MD Audit</span>':o.auditBy==='customer'?'<span class="auditbadge ok">Cust Audit</span>':'';
     const opsFlag=opsCallDue(o)?' <span class="auditbadge miss">Call Ops</span>':'';
+    const deliveryCell=mixed
+      ?`<span class="deliv" style="color:var(--navy)">${fmtDate(mixedEarliestDelivery(o))}</span><div style="font-size:10.5px;color:var(--muted);font-weight:700">2 dates — see details</div>`
+      :(()=>{const delayed=o.status==="deliv_delayed";const delivCls=delayed?"delayed":(o.status==="deliv_ontime"||["created","scheduled","assigned","partial","completed"].includes(o.status)?"ontime":"");return `<span class="deliv ${delivCls}">${fmtDate(o.deliveryDate)}</span>`;})();
     return `<tr data-pi="${o.pi}">
       <td><div class="pi">${o.pi}</div><div class="po">${o.po.join(" · ")}</div></td>
       <td><div class="pill-list">${skupills}</div><div style="margin-top:4px">${auditBadge}</div></td>
       <td>${orderCategoriesInstall(o)}</td>
       <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
       <td style="max-width:170px">${mapLink(o.addr)}</td>
-      <td><span class="deliv ${delivCls}">${fmtDate(o.deliveryDate)}</span>${opsFlag}</td>
+      <td>${deliveryCell}${opsFlag}</td>
       <td>${subjobSummary(o)}</td>
       <td>${chip(o.status)}${o.service&&o.service.rectification_raised?`<span class="autobadge" style="background:var(--amberbg);color:var(--amber);margin-left:4px">RECT</span>`:''}${(()=>{const fu=o.service&&o.service.follow_up_date;return fu?`<div style="margin-top:4px"><span class="chip" style="background:${fu<=dstr(today)?'var(--amberbg)':'#fefce8'};color:${fu<=dstr(today)?'var(--amber)':'#7a6200'};font-size:10px">📅 ${fu===dstr(today)?'Follow-up today':fu<dstr(today)?'Follow-up overdue':fmtDate(fu)}</span></div>`:'';})()}</td></tr>`;
   }).join("");
@@ -810,35 +873,42 @@ function ordersView(){
 }
 
 function needActionView(){
-  const opsList=ORDERS.filter(opsCallDue);
+  // Flattened per-item list: mixed orders contribute one entry PER sub-job that's individually
+  // due (with its own category badge), single-category orders contribute one order-level entry
+  // (sj:null) — same {o,sj} shape already used by reschedItems below.
+  const opsItems=[];
+  ORDERS.forEach(o=>{
+    if(isMixedOrder(o))o.subjobs.forEach(sj=>{if(subjobOpsCallDue(o,sj))opsItems.push({o,sj});});
+    else if(opsCallDue(o))opsItems.push({o,sj:null});
+  });
   const fuList=ORDERS.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today))
     .filter(o=>!opsCallDue(o));
   const reschedItems=[];
   ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.status==="reschedule")reschedItems.push({o,sj});}));
-  const reschedPIs=new Set(reschedItems.map(x=>x.o.pi));
-  const fuPIs=new Set(fuList.map(x=>x.pi));
-  const opsPIs=new Set(opsList.map(x=>x.pi));
 
   let html=`<div class="crumbs">Installations / Need Action</div>
   <div class="pagehead"><div><h1>Need Action today</h1><p>All orders requiring your attention today — ops calls due, follow-ups overdue, and sub-jobs to reschedule.</p></div></div>`;
 
-  if(!opsList.length&&!fuList.length&&!reschedItems.length){
+  if(!opsItems.length&&!fuList.length&&!reschedItems.length){
     html+=`<div class="tablecard" style="padding:30px;text-align:center;color:var(--muted)">Nothing needs action today.</div>`;
     return html;
   }
 
-  if(opsList.length){
-    const rows=opsList.map(o=>{
-      const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
+  if(opsItems.length){
+    const rows=opsItems.map(({o,sj})=>{
+      const effDate=sj?sjDeliveryDate(o,sj):o.deliveryDate;
+      const effCustomWp=sj?sjCustomWp(o,sj):o.customWp;
+      const effStatus=sj?sj.status:o.status;
+      const dd=new Date(effDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
       return `<tr data-pi="${o.pi}">
-        <td><div class="pi">${o.pi}</div></td>
+        <td><div class="pi">${o.pi}</div>${sj?`<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span> <span style="font-size:11px;color:var(--muted)">${sj.type==='wallpaper'?'Wallpaper':'Flooring'} delivery call due</span>`:''}</td>
         <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
-        <td>${o.customWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill">Standard</span>'}</td>
-        <td>${fmtDate(o.deliveryDate)} <span style="color:var(--muted)">(${dleft<=0?'today/overdue':'in '+dleft+'d'})</span></td>
-        <td>${chip(o.status)}</td>
+        <td>${effCustomWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill">Standard</span>'}</td>
+        <td>${fmtDate(effDate)} <span style="color:var(--muted)">(${dleft<=0?'today/overdue':'in '+dleft+'d'})</span></td>
+        <td>${chip(effStatus)}</td>
         <td><button class="btn amber sm" data-open="${o.pi}">Call ops &amp; confirm</button></td></tr>`;
     }).join("");
-    html+=`<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--amber);margin:0 0 8px">&#9742; Operations calls due (${opsList.length})</div>
+    html+=`<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--amber);margin:0 0 8px">&#9742; Operations calls due (${opsItems.length})</div>
     <div class="tablecard" style="margin-bottom:16px"><table>
       <thead><tr><th>PI</th><th>Customer</th><th>Type</th><th>Delivery date</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
@@ -1147,7 +1217,109 @@ function customWpProductionSection(o){
   html+=`</div>`;
   return html;
 }
+// Mixed-order variants of cwpBackHalfDone/cwpTrackHtml/customWpProductionSection — identical
+// logic, scoped to one sub-job's own fields instead of the order's, since a mixed order's
+// wallpaper sub-job runs its own independent production+delivery+install lifecycle. Kept as
+// separate functions rather than parameterizing the originals so the single-category path
+// (the vast majority of orders) is never touched by this feature.
+function sjCwpBackHalfDone(o,sj,key){
+  if(key==='delivsched')return !!sjDeliveryDate(o,sj);
+  if(key==='deliv')return !['pending','call_na','deliv_delayed'].includes(sj.status);
+  if(key==='install')return sj.status==='completed';
+  return false;
+}
+function sjCwpTrackHtml(o,sj){
+  const stage=sjCustomWpStage(o,sj)||'draft';
+  const meta=sjCustomWpMeta(o,sj);
+  const terminal=stage==='warehouse'&&!!meta.warehouseReceivedAt;
+  const nodes=CWP_STAGES.map((s)=>{
+    let state='';
+    if(s.k==='placed'){state='done';}
+    else if(CWP_STAGE_RANK[s.k]){
+      if(terminal)state='done';
+      else if(CWP_STAGE_RANK[stage]>CWP_STAGE_RANK[s.k])state='done';
+      else if(stage===s.k)state='cur';
+    } else {
+      state=sjCwpBackHalfDone(o,sj,s.k)?'done':'';
+    }
+    return {...s,state};
+  });
+  let html=`<div class="cwp-track">`;
+  nodes.forEach((n,i)=>{
+    if(i>0)html+=`<div class="cwp-line ${nodes[i-1].state==='done'?'done':''}"></div>`;
+    html+=`<div class="cwp-node ${n.state}"><div class="cwp-dot">${n.state==='done'?'&#10003;':(i+1)}</div>${n.l}</div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
+function sjCustomWpProductionSection(o,sj){
+  const stage=sjCustomWpStage(o,sj)||'draft';
+  const meta=sjCustomWpMeta(o,sj);
+  const terminal=stage==='warehouse'&&!!meta.warehouseReceivedAt;
+  let html=`<div class="sec" style="margin-top:0"><h4 style="margin:0 0 8px;font-size:12.5px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.4px">Custom Wallpaper Journey</h4>`;
+  html+=sjCwpTrackHtml(o,sj);
+  if(terminal){
+    html+=`<div class="note green">&#10003; Production complete — received at warehouse on ${fmtLog(meta.warehouseReceivedAt)}. Proceed with delivery scheduling below.</div>`;
+  } else if(stage==='draft'){
+    const knownVendor=CWP_VENDORS.includes(meta.vendor)?meta.vendor:(meta.vendor?'Other':'Macro Media');
+    html+=`<div class="field"><label>Vendor</label>
+        <select data-cwpvendor="${sj.id}">${CWP_VENDORS.map(v=>`<option value="${v}" ${knownVendor===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="field" data-cwpvendorotherwrap="${sj.id}" style="${knownVendor==='Other'?'':'display:none'}">
+        <label>Vendor name</label><input data-cwpvendorother="${sj.id}" placeholder="Vendor name" value="${knownVendor==='Other'&&meta.vendor?meta.vendor:''}"></div>
+      <div class="note" data-cwpslanote="${sj.id}" style="${knownVendor==='Macro Media'?'':'display:none'}">Macro Media: approval before 1 PM &rarr; printing starts same day; after 1 PM &rarr; next day.</div>
+      <div class="field"><label>Render — paste a link</label><input data-cwprenderurl="${sj.id}" placeholder="https://..." value="${meta.renderUrl&&!meta.renderIsImage?meta.renderUrl:''}"></div>
+      <div class="field"><label>...or upload an image</label><input type="file" accept="image/*" data-cwprenderfile="${sj.id}"></div>
+      ${meta.renderUrl?`<div style="margin:8px 0">${meta.renderIsImage?`<img src="${meta.renderUrl}" style="max-width:160px;border-radius:8px;border:1px solid var(--line)">`:`<a href="${meta.renderUrl}" target="_blank" rel="noopener">View current render link</a>`}</div>`:''}
+      <button class="btn navy sm" data-cwpmarkdraftready="${sj.id}">Mark render ready — send for approval</button>`;
+  } else if(stage==='approval'){
+    html+=`<div class="kv"><div class="k">Vendor</div><div class="v">${meta.vendor||'—'}</div>
+        <div class="k">Revisions so far</div><div class="v">${meta.revisionCount||0}</div></div>
+      ${meta.renderUrl?`<div style="margin:8px 0">${meta.renderIsImage?`<img src="${meta.renderUrl}" style="max-width:200px;border-radius:8px;border:1px solid var(--line)">`:`<a href="${meta.renderUrl}" target="_blank" rel="noopener">View render</a>`}</div>`:`<div class="note amber">No render on file.</div>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn green sm" data-cwpapprove="${sj.id}">&#9989; Approved by customer</button>
+        <button class="btn amber sm" data-cwprevision="${sj.id}">&#128260; Revision requested</button>
+      </div>`;
+  } else if(stage==='warehouse'){
+    html+=`<div class="note">Printed material dispatched by vendor — confirm once it physically arrives at the Material Depot warehouse.</div>
+      <button class="btn navy sm" data-cwpwarehousereceived="${sj.id}">&#128230; Received at warehouse</button>`;
+  }
+  html+=`</div>`;
+  return html;
+}
+// Per-sub-job "Delivery — confirm with Operations first" block, mixed orders only. Mirrors the
+// order-level delivery section below almost exactly, scoped to one sub-job via the sj* fallback
+// accessors, plus a "Confirm ready to schedule" action once that category's delivery is on time
+// (the per-sub-job equivalent of the order-level "Create service" step).
+const DELIVERY_PHASE_STATUSES=['pending','deliv_ontime','deliv_delayed','call_na'];
+function sjDeliveryBlock(o,sj){
+  let html='';
+  if(sjCustomWp(o,sj))html+=sjCustomWpProductionSection(o,sj);
+  const dDate=sjDeliveryDate(o,sj);
+  const dd=dDate?new Date(dDate+"T00:00"):null;
+  const dleft=dd?Math.round((dd-today)/86400000):null;
+  html+=`<div class="sec" style="margin-top:0"><h4 style="margin:0 0 8px;font-size:12.5px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.4px">Delivery — confirm with Operations first</h4><div class="kv">
+    <div class="k">Scheduled delivery</div><div class="v">${dDate?fmtDate(dDate)+' ('+(dleft<=0?'today/past':'in '+dleft+'d')+')':'—'}</div>
+    <div class="k">Type</div><div class="v">${sjCustomWp(o,sj)?'Custom wallpaper — call 3 days prior':'Standard — call 1 day prior'}</div></div>`;
+  if(['pending','call_na'].includes(sj.status)){
+    html+=`${sj.status==='call_na'?'<div class="note red" style="margin-bottom:6px">Previous call was not answered — please retry before confirming delivery status.</div>':''}
+      <div class="note ${subjobOpsCallDue(o,sj)?'amber':''}">${subjobOpsCallDue(o,sj)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
+      <div class="field"><label>If delayed — new delivery date from Operations</label><input type="date" data-newdeliv="${sj.id}" min="${dstr(today)}" value="${dDate||''}"></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn danger sm" data-sjdelayed="${sj.id}">Delivery delayed</button><button class="btn green sm" data-sjontime="${sj.id}">Delivery on time</button></div>`;
+  } else if(sj.status==='deliv_delayed'){
+    html+=`<div class="note red">Delivery delayed. If delayed further, update the date below and click "Further delayed".</div>
+      <div class="field"><label>New delivery date from Operations</label><input type="date" data-newdeliv="${sj.id}" min="${dstr(today)}" value="${dDate||''}"></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn danger sm" data-sjdelayed="${sj.id}">Further delayed</button><button class="btn green sm" data-sjontime="${sj.id}">Now on time</button></div>`;
+  } else if(sj.status==='deliv_ontime'){
+    html+=`<div class="note green">Delivery confirmed on time.</div>
+      <button class="btn navy sm" style="margin-top:8px" data-sjready="${sj.id}">Confirm ready to schedule</button>`;
+  } else {
+    html+=`<div class="note green">Delivery confirmed.</div>`;
+  }
+  html+=`</div>`;
+  return html;
+}
 function drawerBody(o){
+  const mixed=isMixedOrder(o);
   let html="";
   const skupills=o.skus.map(s=>`<span class="skupill ${s.type==='install'?'inst':''} ${/CUST/.test(s.c)?'cust':''}">${s.c} · ${s.n}</span>`).join(" ");
   html+=`<div class="sec"><h3>Order</h3><div class="kv">
@@ -1172,36 +1344,40 @@ function drawerBody(o){
       <button class="btn ${o.auditBy==='customer'?'primary':'gray'}" id="auditByCust">Customer self-audit</button>
     </div></div>`;
 
-  // ---- CUSTOM WALLPAPER PRODUCTION TRACKER (before delivery — happens earlier in the lifecycle) ----
-  if(o.customWp)html+=customWpProductionSection(o);
+  if(!mixed){
+    // ---- CUSTOM WALLPAPER PRODUCTION TRACKER (before delivery — happens earlier in the lifecycle) ----
+    if(o.customWp)html+=customWpProductionSection(o);
 
-  // ---- DELIVERY stage (first) ----
-  const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
-  html+=`<div class="sec"><h3>Delivery — confirm with Operations first</h3><div class="kv">
-    <div class="k">Scheduled delivery</div><div class="v">${fmtDate(o.deliveryDate)} (${dleft<=0?'today/past':'in '+dleft+'d'})</div>
-    <div class="k">Type</div><div class="v">${o.customWp?'Custom wallpaper — call 3 days prior':'Standard — call 1 day prior'}</div></div>`;
-  if(['pending','call_na'].includes(o.status)){
-    html+=`${o.status==='call_na'?'<div class="note red" style="margin-bottom:6px">Previous call was not answered — please retry before confirming delivery status.</div>':''}
-      <div class="note ${opsCallDue(o)?'amber':''}">${opsCallDue(o)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
-      <div class="field"><label>If delayed — new delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
-  } else if(o.status==='deliv_delayed'){
-    html+=`<div class="note red">Delivery delayed — BM asked to inform client. If delayed further, update the date below and click "Further delayed".</div>
-      <div class="field"><label>New delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
+    // ---- DELIVERY stage (first) ----
+    const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
+    html+=`<div class="sec"><h3>Delivery — confirm with Operations first</h3><div class="kv">
+      <div class="k">Scheduled delivery</div><div class="v">${fmtDate(o.deliveryDate)} (${dleft<=0?'today/past':'in '+dleft+'d'})</div>
+      <div class="k">Type</div><div class="v">${o.customWp?'Custom wallpaper — call 3 days prior':'Standard — call 1 day prior'}</div></div>`;
+    if(['pending','call_na'].includes(o.status)){
+      html+=`${o.status==='call_na'?'<div class="note red" style="margin-bottom:6px">Previous call was not answered — please retry before confirming delivery status.</div>':''}
+        <div class="note ${opsCallDue(o)?'amber':''}">${opsCallDue(o)?'Call Operations now to confirm delivery.':'Operations call not yet due. You can still record an outcome.'}</div>
+        <div class="field"><label>If delayed — new delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
+    } else if(o.status==='deliv_delayed'){
+      html+=`<div class="note red">Delivery delayed — BM asked to inform client. If delayed further, update the date below and click "Further delayed".</div>
+        <div class="field"><label>New delivery date from Operations</label><input type="date" id="newDeliv" min="${dstr(today)}" value="${o.deliveryDate}"></div>`;
+    } else {
+      html+=`<div class="note green">Delivery confirmed on time.</div>`;
+    }
+    html+=`</div>`;
+
+    // ---- manual status override ----
+    html+=`<div class="sec"><h3>Set status <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— manual override</span></h3>
+      <div class="note">Installer steps (On the way / At site / Completed) update automatically per sub-job. You can also set any status manually here.</div>
+      <div class="statusmenu" id="statusMenu">
+        ${Object.keys(STATUS).filter(k=>k!=='mixed').map(k=>`<button data-setstatus="${k}" class="${o.status===k?'cur':''}">${STATUS[k].l}${AUTO_STATUSES.includes(k)?'<span class="autobadge">AUTO</span>':''}</button>`).join("")}
+      </div></div>`;
+
+    // ---- SERVICE CREATION (after delivery on time) ----
+    if(["deliv_ontime"].includes(o.status)){
+      html+=serviceCreationPanel(o);
+    }
   } else {
-    html+=`<div class="note green">Delivery confirmed on time.</div>`;
-  }
-  html+=`</div>`;
-
-  // ---- manual status override ----
-  html+=`<div class="sec"><h3>Set status <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— manual override</span></h3>
-    <div class="note">Installer steps (On the way / At site / Completed) update automatically per sub-job. You can also set any status manually here.</div>
-    <div class="statusmenu" id="statusMenu">
-      ${Object.keys(STATUS).map(k=>`<button data-setstatus="${k}" class="${o.status===k?'cur':''}">${STATUS[k].l}${AUTO_STATUSES.includes(k)?'<span class="autobadge">AUTO</span>':''}</button>`).join("")}
-    </div></div>`;
-
-  // ---- SERVICE CREATION (after delivery on time) ----
-  if(["deliv_ontime"].includes(o.status)){
-    html+=serviceCreationPanel(o);
+    html+=`<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a">&#128203; This order has multiple categories — delivery, production, and scheduling are tracked separately per category below. There's no single order-wide delivery date or manual status override; see each sub-job's own card.</div>`;
   }
 
   // ---- FOLLOW-UP DATE ----
@@ -1228,15 +1404,20 @@ function drawerBody(o){
       const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
       const totalSqft=(sj.items||[]).reduce((s,it)=>s+(parseFloat(it.sqft)||0),0);
       const skText=sj.items.map(it=>it.sku+(it.name?(' · '+it.name):'')+(it.sqft?' · '+it.sqft+' sq.ft':'')).join(', ');
+      // Mixed orders only: a sub-job still in the delivery-confirmation phase hasn't been
+      // scheduled yet — show its own delivery/production card instead of a premature (empty)
+      // installer-assignment section.
+      const inDeliveryPhase=mixed&&DELIVERY_PHASE_STATUSES.includes(sj.status);
       html+=`<div class="sjcard" data-sj="${sj.id}">
         <div class="sjh"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WALLPAPER':'FLOORING'}</span>
           <span class="sk">${skText}</span>
           <span class="st">${chip(sj.status)}</span></div>
+        ${mixed?sjDeliveryBlock(o,sj):''}
         ${sj.type==='wallpaper'
           ?`<div class="wp-dur-badge"><span>${totalSqft?totalSqft+' sq.ft → ':''}${rolls} roll${rolls===1?'':'s'} → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
           :`<div class="fl-fullday-note">Flooring — 1 full day per installer visit</div>`}
         ${sj.status==='completed'?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download Job Card PDF</button>`:''}
-        <div data-assignsection="${sj.id}"></div>
+        ${inDeliveryPhase?'':`<div data-assignsection="${sj.id}"></div>`}
       </div>`;
     });
     html+=`</div>`;
@@ -1569,6 +1750,11 @@ function editInstallServiceSection(o){
 
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">&#128465; Delete</button>`;
+  // Mixed orders: real delivery/status actions live inside each sub-job's own card now — never
+  // show the order-level delivery buttons here, even if the rollup status happens to coincide
+  // with 'pending'/'deliv_ontime'/'deliv_delayed' (those buttons write to o.status/o.deliveryDate
+  // directly, which is meaningless once a mixed order's two categories track independently).
+  if(isMixedOrder(o))return del+`<button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="pending")return del+`<button class="btn danger" id="markDelayed">Delivery delayed</button><button class="btn green" id="markOnTime">Delivery on time</button>`;
   if(o.status==="deliv_delayed")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn danger" id="markDelayed">Further delayed</button><button class="btn green" id="markOnTime">Now on time</button>`;
   if(o.status==="deliv_ontime")return del+`<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="createService">Create service</button>`;
@@ -1639,6 +1825,10 @@ function wireDrawer(o){
       }
       o.subjobs.forEach(sj=>{
         if(skipSigned&&sj.jobcard&&sj.jobcard.sign)return;
+        // Archive the signed snapshot before disconnecting it from its installer, at the moment
+        // of the reset itself — the installer app also backfills this on reopen, but archiving
+        // here too means the record survives even if nobody ever reopens the job card again.
+        if(sj.jobcard&&sj.jobcard.sign)_archiveInstallJobcard(o.id,sj.id,sj.jobcard,'status-changed-to-created');
         sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;
       });
     } else if(st==='completed'&&o.subjobs&&o.subjobs.length){
@@ -1721,6 +1911,96 @@ function wireDrawer(o){
     await loadOrders();toast("Marked received at warehouse");openOrder(o.pi);
   };
 
+  // ---- mixed orders: per-sub-job delivery + custom-wallpaper actions ----
+  // Mirrors the order-level handlers directly above, scoped to one sub-job — only reachable
+  // when isMixedOrder(o), since single-category orders never render these data-sj* elements
+  // (see sjDeliveryBlock/sjCustomWpProductionSection).
+  document.querySelectorAll('[data-sjontime]').forEach(b=>b.onclick=async()=>{
+    const sj=o.subjobs.find(s=>s.id===b.dataset.sjontime);if(!sj)return;
+    sj.status="deliv_ontime";
+    o.log.push({t:(sj.type==='wallpaper'?"Wallpaper":"Flooring")+" delivery confirmed on time",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    syncParent(o);
+    if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast("Delivery on time — confirm ready to schedule next");openOrder(o.pi);
+  });
+  document.querySelectorAll('[data-sjdelayed]').forEach(b=>b.onclick=async()=>{
+    const sj=o.subjobs.find(s=>s.id===b.dataset.sjdelayed);if(!sj)return;
+    const input=document.querySelector(`[data-newdeliv="${sj.id}"]`);
+    const nd=input?input.value:sjDeliveryDate(o,sj);
+    const wasDelayed=sj.status==="deliv_delayed";
+    sj.deliveryDate=nd;sj.status="deliv_delayed";
+    o.log.push({t:(sj.type==='wallpaper'?"Wallpaper":"Flooring")+" "+(wasDelayed?"delivery further delayed":"delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    syncParent(o);
+    if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast(wasDelayed?"Delivery date updated":"Marked delivery delayed");openOrder(o.pi);
+  });
+  document.querySelectorAll('[data-sjready]').forEach(b=>b.onclick=async()=>{
+    const sj=o.subjobs.find(s=>s.id===b.dataset.sjready);if(!sj)return;
+    sj.status="created";
+    o.log.push({t:(sj.type==='wallpaper'?"Wallpaper":"Flooring")+" service ready to schedule",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    syncParent(o);
+    if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast("Ready to schedule");openOrder(o.pi);
+  });
+  document.querySelectorAll('[data-cwpvendor]').forEach(sel=>sel.onchange=()=>{
+    const sjId=sel.dataset.cwpvendor;const v=sel.value;
+    const wrap=document.querySelector(`[data-cwpvendorotherwrap="${sjId}"]`);if(wrap)wrap.style.display=v==='Other'?'':'none';
+    const sla=document.querySelector(`[data-cwpslanote="${sjId}"]`);if(sla)sla.style.display=v==='Macro Media'?'':'none';
+  });
+  document.querySelectorAll('[data-cwpmarkdraftready]').forEach(b=>b.onclick=async()=>{
+    const sjId=b.dataset.cwpmarkdraftready;const sj=o.subjobs.find(s=>s.id===sjId);if(!sj)return;
+    const vSel=document.querySelector(`[data-cwpvendor="${sjId}"]`).value;
+    const vOtherEl=document.querySelector(`[data-cwpvendorother="${sjId}"]`);
+    const vendor=vSel==='Other'?((vOtherEl&&vOtherEl.value.trim())||'Other'):vSel;
+    const urlInp=document.querySelector(`[data-cwprenderurl="${sjId}"]`);
+    const url=urlInp?urlInp.value.trim():'';
+    const fileInp=document.querySelector(`[data-cwprenderfile="${sjId}"]`);
+    const file=fileInp?fileInp.files[0]:null;
+    if(!url&&!file){toast("Add a render link or upload an image first");return;}
+    const origTxt=b.textContent;b.disabled=true;b.textContent="Saving...";
+    try{
+      let renderUrl=url,renderIsImage=false;
+      if(file){
+        const dataUrl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(file);});
+        renderUrl=await _uploadRenderImage(dataUrl);renderIsImage=true;
+      }
+      const meta=sjCustomWpMeta(o,sj);
+      sj.customWpMeta={...meta,vendor,renderUrl,renderIsImage,revisionCount:meta.revisionCount||0,revisionNotes:meta.revisionNotes||[]};
+      sj.customWpStage='approval';
+      o.log.push({t:"Custom wallpaper ("+sj.type+"): draft render received"+(vendor?" (Vendor: "+vendor+")":""),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+      if(o.id)await sbPatch('install_orders',o.id,{subjobs:o.subjobs,log:o.log});
+      await loadOrders();toast("Sent for customer approval");openOrder(o.pi);
+    }catch(e){toast("Save failed: "+e.message);b.disabled=false;b.textContent=origTxt;}
+  });
+  document.querySelectorAll('[data-cwpapprove]').forEach(b=>b.onclick=async()=>{
+    const sj=o.subjobs.find(s=>s.id===b.dataset.cwpapprove);if(!sj)return;
+    sj.customWpStage='warehouse';
+    o.log.push({t:"Custom wallpaper ("+sj.type+"): approved by customer",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast("Approved — awaiting warehouse arrival");openOrder(o.pi);
+  });
+  document.querySelectorAll('[data-cwprevision]').forEach(b=>b.onclick=async()=>{
+    const sj=o.subjobs.find(s=>s.id===b.dataset.cwprevision);if(!sj)return;
+    const note=(prompt("What changes did the customer request?")||'').trim();
+    if(!note){toast("Revision note required — status not changed");return;}
+    const meta={...sjCustomWpMeta(o,sj)};
+    meta.revisionCount=(meta.revisionCount||0)+1;
+    meta.revisionNotes=[...(meta.revisionNotes||[]),{note,d:new Date().toISOString()}];
+    meta.renderUrl='';meta.renderIsImage=false;
+    sj.customWpMeta=meta;sj.customWpStage='draft';
+    o.log.push({t:"Custom wallpaper ("+sj.type+"): customer requested revision — \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast("Sent back for a new render");openOrder(o.pi);
+  });
+  document.querySelectorAll('[data-cwpwarehousereceived]').forEach(b=>b.onclick=async()=>{
+    const sj=o.subjobs.find(s=>s.id===b.dataset.cwpwarehousereceived);if(!sj)return;
+    const meta={...sjCustomWpMeta(o,sj),warehouseReceivedAt:new Date().toISOString()};
+    sj.customWpMeta=meta;
+    o.log.push({t:"Custom wallpaper ("+sj.type+"): received at warehouse",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{subjobs:o.subjobs,log:o.log});
+    await loadOrders();toast("Marked received at warehouse");openOrder(o.pi);
+  });
+
   // service creation
   function renderSkuRows(grp){
     const box=document.querySelector(`[data-rows="${grp}"]`);if(!box)return;
@@ -1783,13 +2063,26 @@ function wireDrawer(o){
       o.log.push({t:"Wallpaper sub-job removed (was "+wpSj.status+" — SM correction)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     }
     o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
+    // Late-fork check: if the order will end up with BOTH categories present after this save
+    // (regardless of whether it was single-category before), a newly-added sub-job starts its
+    // own fresh delivery-confirmation cycle ('pending', seeded from the order's current
+    // effective delivery date) instead of jumping straight to 'created' — nobody has actually
+    // confirmed that category's delivery yet, even if the other one already has. An order that
+    // stays single-category keeps today's exact behavior (new sub-job starts at 'created').
+    const bothPresent=fl.length>0&&wp.length>0;
+    const newlyMixed=bothPresent&&((fl.length&&!flSj)||(wp.length&&!wpSj));
     if(o.subjobs){
       if(fl.length&&flSj)flSj.items=fl;
-      else if(fl.length&&!flSj)o.subjobs.push({id:'sj_fl',type:'flooring',items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
+      else if(fl.length&&!flSj)o.subjobs.push(bothPresent
+        ?{id:'sj_fl',type:'flooring',items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:o.deliveryDate||null,originalDeliveryDate:o.deliveryDate||null}
+        :{id:'sj_fl',type:'flooring',items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
       else if(!fl.length&&flSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_fl');
       if(wp.length&&wpSj)wpSj.items=wp;
-      else if(wp.length&&!wpSj)o.subjobs.push({id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
+      else if(wp.length&&!wpSj)o.subjobs.push(bothPresent
+        ?{id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:o.deliveryDate||null,originalDeliveryDate:o.deliveryDate||null,customWp:o.customWp,customWpStage:'draft',customWpMeta:{}}
+        :{id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
       else if(!wp.length&&wpSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_wp');
+      if(newlyMixed)o.log.push({t:"Order became mixed (flooring + wallpaper) — the newly-added category starts its own delivery confirmation, tracked independently",d:new Date().toISOString(),by:"auto"});
     }
     syncParent(o);
     o.log.push({t:"Service details updated",d:new Date().toISOString(),by:"manual",who:SESSION.name});
@@ -1850,6 +2143,18 @@ function wireDrawer(o){
 function syncParent(o){
   if(!o.subjobs||!o.subjobs.length)return;
   const sts=o.subjobs.map(s=>s.status);
+  // Mixed orders' sub-jobs can sit in the delivery-confirmation states (pending/deliv_ontime/
+  // deliv_delayed/call_na) that never applied to a sub-job before this feature. None of the
+  // post-creation rungs below were designed to recognize those, and — critically — some of them
+  // (e.g. "some sub-job is assigned") would otherwise fire even while a DIFFERENT sub-job is
+  // still awaiting its own delivery confirmation, masking a real divergence (confirmed live:
+  // flooring 'assigned' + wallpaper 'pending' rolled up to a misleading "assigned" before this
+  // check was moved first). So: evaluate delivery-phase agreement/divergence BEFORE any of the
+  // post-creation rungs, not as a final fallback.
+  if(sts.some(s=>DELIVERY_PHASE_STATUSES.includes(s))){
+    o.status=sts.every(s=>s===sts[0])?sts[0]:"mixed";
+    return;
+  }
   if(sts.every(s=>s==="completed"))o.status="completed";
   else if(sts.some(s=>s==="completed")&&sts.some(s=>s!=="completed"))o.status="partial";
   else if(sts.some(s=>["onway","atsite"].includes(s)))o.status=sts.find(s=>["onway","atsite"].includes(s));
@@ -1858,6 +2163,10 @@ function syncParent(o){
   else if(sts.some(s=>s==="assigned"))o.status="assigned";
   else if(sts.some(s=>s==="scheduled"))o.status="scheduled";
   else if(sts.every(s=>s==="created"))o.status="created";
+  // Safety net — an unmatched combination previously left o.status silently stale. Roll up to
+  // the shared value if every sub-job agrees, otherwise the categories have genuinely diverged.
+  else if(sts.every(s=>s===sts[0]))o.status=sts[0];
+  else o.status="mixed";
 }
 
 function deletedView(){
@@ -1978,7 +2287,27 @@ async function submitAddOrder(){
   if(auditBy){
     logEntries.push({t:"Site audit type auto-detected: "+(auditBy==='material_depot'?"Material Depot audit (phone match)":"Customer self-audit (no matching site audit found)"),d:new Date().toISOString(),by:"auto",who:SESSION.name});
   }
-  const service=auditBy?{audit_by:auditBy}:null;
+  let service=auditBy?{audit_by:auditBy}:null;
+
+  // Mixed-order fork point: if this single order already has both a flooring and a wallpaper
+  // SKU, create both sub-jobs immediately (skipping the shared pending→deliv_ontime→"Create
+  // service" gate) so delivery, custom-wallpaper production, and scheduling can each run as
+  // independent per-category tracks from day one — see CLAUDE.md note on mixed install orders.
+  // Single-category orders are completely unaffected (subjobs stays null, exactly as before).
+  const flSkus=skus.filter(s=>s.type==='flooring');
+  const wpSkus=skus.filter(s=>s.type==='wallpaper');
+  let subjobs=null;
+  if(flSkus.length&&wpSkus.length){
+    const toItem=s=>({sku:s.c,name:(s.n&&s.n!==s.c)?s.n:'',sqft:'',link:''});
+    const flItems=flSkus.map(toItem),wpItems=wpSkus.map(toItem);
+    service={...(service||{}),flooring:flItems,wallpaper:wpItems};
+    subjobs=[
+      {id:'sj_fl',type:'flooring',items:flItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null},
+      {id:'sj_wp',type:'wallpaper',items:wpItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null,customWp,customWpStage:'draft',customWpMeta:{}},
+    ];
+    logEntries.push({t:"Mixed order (flooring + wallpaper) — each category tracked as an independent sub-job from delivery onward",d:new Date().toISOString(),by:"auto"});
+  }
+
   const payload={
     pi, po:po.join(','), skus, bm,
     customer_name:name, phone, addr,
@@ -1990,6 +2319,7 @@ async function submitAddOrder(){
     custom_wp_meta:{},
     status:'pending',
     service,
+    subjobs,
     log:logEntries,
     created_by_email:SESSION.email
   };
@@ -2017,7 +2347,7 @@ async function submitAddOrder(){
       customWpStage:'draft',
       customWpMeta:{},
       status:"pending",
-      subjobs:null,service,
+      subjobs,service,
       log:logEntries
     });
     closeAddOrder();render();

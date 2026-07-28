@@ -898,7 +898,11 @@ function showAuditSignature(o,ratings){
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
     clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
     const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
-    jcSign={img:jcSignPad.export(),name:$("#signName").value,ratings};
+    // Signature uploaded to Storage (same job-photos bucket as room photos) instead of embedded
+    // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
+    let sigImg=jcSignPad.export();
+    try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
+    jcSign={img:sigImg,name:$("#signName").value,ratings};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto",who:ME.name});

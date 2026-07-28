@@ -664,6 +664,10 @@ function ordersView(){
       if(filterStatus==="action")return ["pending","created","call_na"].includes(o.status);
       if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
       if(filterStatus==="live")return ["scheduled","assigned","onway","atsite"].includes(o.status);
+      // Pre-booked (Store) tab is a permanent record of every store pre-booking — shows both
+      // still-open (slot_reserved) and already-fulfilled (slot_converted) rows together, so
+      // marking "Service Created" doesn't make the booking vanish from view entirely.
+      if(filterStatus==="slot_reserved")return o.status==='slot_reserved'||o.status==='slot_converted';
       if(o.status!==filterStatus)return false;
     }
     if(filterDate&&o.date!==filterDate)return false;
@@ -686,11 +690,15 @@ function ordersView(){
   const slotResBanner=todaySlotRes.length?`<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a;margin-bottom:0">
     &#128197; <b>${todaySlotRes.length} slot pre-booking${todaySlotRes.length!==1?'s':''} for today</b> from store teams — waiting for Kylas enquiry numbers. <button data-filter="slot_reserved" style="border:0;background:transparent;color:var(--blue);font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline;padding:0">View all pre-bookings</button>
   </div>`:'';
+  const prebookTabNote=filterStatus==='slot_reserved'?`<div class="note" style="border-color:#1a4a8a;background:#eef4fb;color:#1a4a8a;margin-bottom:0">
+    &#128220; Running record of every store pre-booking — <b>${c.slot_reserved} pending</b> (waiting on a service order) and <b>${c.slot_converted} fulfilled</b> (service already created). Fulfilled ones stay here for reference and no longer count toward the "Store pre-bookings" reminder above.
+  </div>`:'';
   return `<div class="crumbs">Site Audit / Orders</div>
   <div class="pagehead"><div><h1>Audit orders</h1><p>Every confirmed order containing the Site Audit SKU (${AUDIT_SKU}). Click a row to manage.</p></div>
     <div class="actions"><button class="btn ghost sm" onclick="openKylasSheet()">&#128203; Pending POs</button><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}
   ${slotResBanner}
+  ${prebookTabNote}
   <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
       <input type="date" id="dateFilter" value="${filterDate}" title="Filter by audit date" style="border:1.5px solid ${filterDate?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${filterDate?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
@@ -869,7 +877,7 @@ function auditorsView(){
 function openOrder(pi){
   currentPI=pi;const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
   $("#dwTitle").textContent=o.name||(o.status==='slot_reserved'?'Pre-booked Slot':'—');
-  const _store=o.status==='slot_reserved'?(o.log?.[0]?.who||o.bm||'—'):null;
+  const _store=(o.status==='slot_reserved'||o.status==='slot_converted')?(o.log?.[0]?.who||o.bm||'—'):null;
   $("#dwSub").innerHTML=`${o.pi} · ${_store?'Store '+_store:'BM '+o.bm} ${chip(o.status)}`;
   $("#dwBody").innerHTML=drawerBody(o);
   $("#dwFoot").innerHTML=drawerFoot(o);
@@ -926,8 +934,45 @@ function slotReservedDrawerBody(o){
   <div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='manual'?' · store team':''}</div></div>`).join("")}</div></div>`;
 }
 
+// Read-only record for a pre-booking after "Service Created" has been marked — keeps the
+// original store-booking details visible (per the user's ask that fulfilling a pre-booking
+// shouldn't make it vanish from the Pre-booked (Store) tab), and best-effort surfaces the real
+// service order it turned into (matched heuristically by slot+date+phone/name, same signal used
+// for auditor-assignment linking above — there is no stored foreign key between the two rows).
+function slotConvertedDrawerBody(o){
+  const cats=Array.isArray(o.auditTicked)?o.auditTicked.filter(Boolean):[];
+  const store=o.log?.[0]?.who||o.bm||'—';
+  const bmName=(o.bm&&o.bm!==store)?o.bm:null;
+  const enqId=o.po&&o.po.length?o.po[0]:null;
+  const _nm=o.name?o.name.trim().toLowerCase():null;
+  const linkedSvc=ORDERS.find(r=>r.id!==o.id&&r.status!=='slot_reserved'&&r.status!=='slot_converted'&&r.status!=='deleted'&&r.slot===o.slot&&r.date===o.date&&((enqId&&r.pi===enqId)||(_nm&&r.name&&r.name.trim().toLowerCase()===_nm)));
+  const fulfilledLog=o.log.slice().reverse().find(l=>l.t&&l.t.toLowerCase().indexOf('fulfilled')>-1);
+  return `<div class="note" style="border-color:#1f7a3f;background:#eafaf0;color:#1f7a3f">
+    &#10003; Fulfilled — a service order was created for this pre-booking${fulfilledLog?' on '+fmtLog(fulfilledLog.d):''}${fulfilledLog&&fulfilledLog.who?' by '+fulfilledLog.who:''}. Kept here as a record only.
+  </div>
+  ${linkedSvc?`<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a;cursor:pointer" onclick="openOrder('${linkedSvc.pi}')">
+    &#128279; Linked service order: <b>${linkedSvc.pi}</b> ${chip(linkedSvc.status)} — click to open
+  </div>`:''}
+  <div class="sec"><h3>Original pre-booking details</h3><div class="kv">
+    <div class="k">Date</div><div class="v">${fmtDate(o.date)}</div>
+    <div class="k">Slot</div><div class="v">${slotLabel(o.slot)}</div>
+    <div class="k">Store</div><div class="v">${store}</div>
+    ${bmName?`<div class="k">BM</div><div class="v">${bmName}</div>`:''}
+    ${enqId?`<div class="k">ENQ ID</div><div class="v">${enqId}</div>`:''}
+    <div class="k">Categories</div><div class="v">${cats.length?cats.join(', '):'—'}</div>
+    <div class="k">Booking ID</div><div class="v">${o.pi}</div>
+  </div></div>
+  <div class="sec"><h3>Customer</h3><div class="kv">
+    <div class="k">Name</div><div class="v">${o.name}</div>
+    <div class="k">Phone</div><div class="v">${o.phone}</div>
+    <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div>
+  </div></div>
+  <div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}</div></div>`).join("")}</div></div>`;
+}
+
 function drawerBody(o){
   if(o.status==='slot_reserved')return slotReservedDrawerBody(o);
+  if(o.status==='slot_converted')return slotConvertedDrawerBody(o);
   let html=stepper(o);
   const skupills=o.skus.map(s=>`<span class="skupill ${s.audit?'audit':''}">${s.c} · ${s.n}</span>`).join(" ");
   html+=`<div class="sec"><h3>Order</h3><div class="kv">
@@ -1107,6 +1152,7 @@ function editAuditServiceSection(o){
 function drawerFoot(o){
   const del=`<button class="btn danger" id="delOrder">🗑 Delete</button>`;
   if(o.status==="slot_reserved")return `<button class="btn danger" id="cancelRes">Cancel Reservation</button><button class="btn green" id="markSvcCreated">✓ Service Created</button><button class="btn gray" id="dClose">Close</button>`;
+  if(o.status==="slot_converted")return `<button class="btn gray" id="dClose">Close</button>`;
   if(o.status==="pending")return `${del}<button class="btn gray" id="dClose">Cancel</button><button class="btn navy" id="createService">Create service</button>`;
   if(["created","call_na"].includes(o.status))return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="bookSlot" disabled>Book slot</button>`;
   if(o.status==="scheduled")return `${del}<button class="btn gray" id="dClose">Close</button><button class="btn navy" id="assignAuditor" disabled>Assign auditor</button>`;

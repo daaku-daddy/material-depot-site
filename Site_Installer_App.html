@@ -269,6 +269,28 @@ function rollupStatus(subjobs,fallback){
 
 let JOBS=[];
 
+// Permanent completion history for install job cards — mirrors _archiveAuditTicked in
+// Site_Auditor_App.html (see CLAUDE.md note 66/72). Lives as jobcard_history on the subjob
+// object itself (subjobs is already a flexible jsonb array — no new column needed). Does its
+// own independent read-modify-write of subjobs so it never has to trust a possibly-stale copy
+// of the array held elsewhere; deduped by sign.img so repeated calls for the same completed
+// card are no-ops. Best-effort and must never throw or block the caller's real write path.
+async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
+  if(!orderId||!sjId||!jobcard||!jobcard.sign)return;
+  try{
+    const rows=await sbGet('install_orders?id=eq.'+orderId+'&select=subjobs');
+    if(!Array.isArray(rows)||!rows[0])return;
+    const subjobs=rows[0].subjobs||[];
+    const sj=subjobs.find(s=>s.id===sjId);
+    if(!sj)return;
+    const hist=Array.isArray(sj.jobcard_history)?sj.jobcard_history:[];
+    if(hist.some(h=>h&&h.sign&&h.sign.img===jobcard.sign.img))return;
+    hist.push(Object.assign({},jobcard,{archivedAt:new Date().toISOString(),archivedReason:reason||'completed'}));
+    sj.jobcard_history=hist;
+    await sbPatch('install_orders',orderId,{subjobs});
+  }catch(e){/* history is best-effort — never block on this */}
+}
+
 async function loadJobs(){
   try{
     const rows=await sbGet('install_orders_slim?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)&order=created_at.desc');
@@ -626,6 +648,9 @@ async function openJobCard(j){
   }
   if(rooms){
     jcHadSign=true;
+    // Backfill safety net: covers subjobs completed before jobcard_history existed, or any
+    // completion whose archive write (below, at reallyDone time) itself failed.
+    _archiveInstallJobcard(j.id,j.sjId,j.jobcard,'backfill-on-reopen');
     j.parentLog=j.parentLog||[];
     j.parentLog.push({t:"Reopened signed job card for edit — signature kept on file until re-signed",d:new Date().toISOString(),by:"manual",who:ME.name});
     if(j.id)sbPatch('install_orders',j.id,{log:j.parentLog}).catch(()=>{});
@@ -934,7 +959,11 @@ function showInstallSignature(j,ratings){
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
     const btn=$("#reallyDone");btn.disabled=true;btn.textContent="Saving…";
     clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
-    j.jobcard={rooms:collectRooms(),sign:{img:jcSignPad.export(),name:$("#signName").value,ratings}};
+    // Signature uploaded to Storage (same job-photos bucket as room photos) instead of embedded
+    // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
+    let sigImg=jcSignPad.export();
+    try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
+    j.jobcard={rooms:collectRooms(),sign:{img:sigImg,name:$("#signName").value,ratings}};
     const prev=j.status;j.status="completed";
     j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
     toast("Saving...");
@@ -960,6 +989,7 @@ function showInstallSignature(j,ratings){
         _completionWrite=completionPatch;
         await sbPatchLong('install_orders',j.id,completionPatch);
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
+        _archiveInstallJobcard(j.id,j.sjId,j.jobcard,'completed');
         // Write ratings to dedicated table for reporting/NPS
         try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){
           try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e2){console.error('ratings write failed',e2);}
