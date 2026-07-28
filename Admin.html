@@ -48,6 +48,7 @@
   .nav-item.active{background:var(--navy);color:#fff;}
   .nav-badge{margin-left:auto;font-size:11px;background:var(--lighter);color:var(--navy);border-radius:20px;padding:1px 7px;font-weight:800;}
   .nav-item.active .nav-badge{background:rgba(255,255,255,.18);color:#fff;}
+  body.sm-analytics-only .admin-only{display:none;}
 
   main{flex:1;min-width:0;padding:22px 24px 60px;overflow:auto;}
   .page-head{margin-bottom:20px;}
@@ -254,9 +255,9 @@
     <div class="logo">MD</div>
     <div class="brand-text">
       <div class="t">MATERIAL DEPOT</div>
-      <div class="h">Admin Console</div>
+      <div class="h" id="hdr-subtitle">Admin Console</div>
     </div>
-    <span class="admin-badge">ADMIN</span>
+    <span class="admin-badge" id="hdr-badge">ADMIN</span>
     <div class="hdr-right">
       <span class="user-pill">Signed in as <b id="hdr-name">—</b></span>
       <button class="signout-btn" onclick="signOut()">Sign out</button>
@@ -267,16 +268,16 @@
 
   <div class="layout">
     <nav class="rail">
-      <div class="rail-section">Dashboard</div>
-      <button class="nav-item active" data-view="overview"><span class="ico">🏠</span>Overview</button>
-      <div class="rail-section">Manage</div>
-      <button class="nav-item" data-view="users"><span class="ico">👥</span>Users<span class="nav-badge" id="users-count">—</span></button>
+      <div class="rail-section admin-only">Dashboard</div>
+      <button class="nav-item active admin-only" data-view="overview"><span class="ico">🏠</span>Overview</button>
+      <div class="rail-section admin-only">Manage</div>
+      <button class="nav-item admin-only" data-view="users"><span class="ico">👥</span>Users<span class="nav-badge" id="users-count">—</span></button>
       <div class="rail-section">Insights</div>
-      <button class="nav-item" data-view="roleviewer"><span class="ico">👁</span>Role Viewer</button>
-      <button class="nav-item" data-view="jobs"><span class="ico">📋</span>Job Overview</button>
-      <button class="nav-item" data-view="perf"><span class="ico">📊</span>Performance</button>
+      <button class="nav-item admin-only" data-view="roleviewer"><span class="ico">👁</span>Role Viewer</button>
+      <button class="nav-item admin-only" data-view="jobs"><span class="ico">📋</span>Job Overview</button>
+      <button class="nav-item admin-only" data-view="perf"><span class="ico">📊</span>Performance</button>
       <button class="nav-item" data-view="analytics"><span class="ico">📉</span>Analytics</button>
-      <button class="nav-item" data-view="live"><span class="ico">📍</span>Live</button>
+      <button class="nav-item admin-only" data-view="live"><span class="ico">📍</span>Live</button>
     </nav>
 
     <main id="main"></main>
@@ -2073,10 +2074,20 @@ async function _drawLiveLocations(m){
 /* ---- INIT ---- */
 (function(){
   SESSION=getSession();
-  if(!SESSION||SESSION.role!=='admin'){window.location.href='Login.html';return;}
+  if(!SESSION||!['admin','service_mgr'].includes(SESSION.role)){window.location.href='Login.html';return;}
   document.getElementById('app').hidden=false;
   document.getElementById('hdr-name').textContent=SESSION.name;
-  navigate('overview');
+  if(SESSION.role==='service_mgr'){
+    // Service Managers get a scoped, read-only view of this console — Analytics only.
+    // See CLAUDE.md note on service_mgr Analytics access: reuses this tab instead of
+    // duplicating its ~15 calc helpers into the SM dashboards (note 58 lesson).
+    document.body.classList.add('sm-analytics-only');
+    document.getElementById('hdr-badge').textContent='ANALYTICS';
+    document.getElementById('hdr-subtitle').textContent='Analytics';
+    navigate('analytics');
+  }else{
+    navigate('overview');
+  }
 })();
 </script>
 <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>

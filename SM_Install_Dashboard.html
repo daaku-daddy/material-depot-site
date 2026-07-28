@@ -323,6 +323,8 @@
     <a data-view="deleted"><span class="ico">🗑</span>Deleted Orders<span class="ct" id="cDeleted"></span></a>
     <a data-view="rectifications"><span class="ico">↩</span>Rectifications<span class="ct" id="cRect"></span></a>
     <a data-view="live"><span class="ico">📍</span>Live Locations</a>
+    <div class="grp">INSIGHTS</div>
+    <a href="Admin.html"><span class="ico">📉</span>Analytics</a>
   </nav>
   <main id="main"></main>
 </div>
@@ -2217,11 +2219,14 @@ function wire(){
   document.querySelectorAll(".caldet-card[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openOrder(c.dataset.pi);});
 }
 
-document.querySelectorAll("#rail a").forEach(a=>a.onclick=async()=>{
-  if(a.dataset.view!=='live'&&_liveLocTimer){clearInterval(_liveLocTimer);_liveLocTimer=null;}
-  activeView=a.dataset.view;filterStatus="all";filterDate="";
-  if(activeView==="deleted"&&!DELETED.length){await loadDeletedOrders();}
-  render();
+document.querySelectorAll("#rail a").forEach(a=>{
+  if(a.hasAttribute("href"))return; // external link (e.g. Analytics -> Admin.html) — let it navigate natively
+  a.onclick=async()=>{
+    if(a.dataset.view!=='live'&&_liveLocTimer){clearInterval(_liveLocTimer);_liveLocTimer=null;}
+    activeView=a.dataset.view;filterStatus="all";filterDate="";
+    if(activeView==="deleted"&&!DELETED.length){await loadDeletedOrders();}
+    render();
+  };
 });
 $("#scrim").onclick=closeDrawer;
 $("#vSiteAudit").onclick=()=>{window.location.href="SM_Audit_Dashboard.html";};
