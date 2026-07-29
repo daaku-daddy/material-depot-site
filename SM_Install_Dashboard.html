@@ -813,22 +813,33 @@ function subjobSummary(o){
 function ordersView(){
   const c={};Object.keys(STATUS).forEach(k=>c[k]=0);ORDERS.forEach(o=>c[o.status]++);
   const opsDue=ORDERS.filter(opsCallDue).length;
+  // Mutually-exclusive lifecycle buckets — every order falls into exactly one, so these 6 always
+  // sum to ORDERS.length. "Ops calls due today" and "Today's installs" are deliberately NOT tiles
+  // here: both are date-driven cross-sections of these same statuses (e.g. a due-today call could
+  // be a pending OR a deliv_delayed order), not a distinct status, so summing them in here would
+  // double-count. They stay visible via the banner below + their own sidebar nav tabs instead.
+  const awaitConfirm=c.pending+c.call_na;
+  const awaitSchedule=c.deliv_ontime+c.created;
+  const inProgress=c.scheduled+c.assigned+c.callpending+c.onway+c.atsite+c.partial;
   const stats=`<div class="stats">
     ${statTile(ORDERS.length,"Installation orders","#1F3A5F","all")}
-    ${statTile(opsDue,"Ops calls due today","#9a6200","opsdue")}
+    ${statTile(awaitConfirm,"Awaiting delivery confirmation","#9a6200","await_confirm")}
     ${statTile(c.deliv_delayed,"Delivery delayed","#b3261e","deliv_delayed")}
-    ${statTile(c.scheduled+c.assigned+c.partial,"Scheduled / in progress","#2E6CA8","live")}
+    ${statTile(awaitSchedule,"Confirmed — awaiting scheduling","#5b3aa6","await_schedule")}
+    ${statTile(inProgress,"Scheduled / in progress","#2E6CA8","live")}
+    ${statTile(c.reschedule,"To reschedule","#0f6e74","reschedule")}
     ${statTile(c.completed,"Completed","#1f7a3f","completed")}</div>`;
   const banner=opsDue?`<div class="callbanner"><div><div class="ttl">&#9742; ${opsDue} order${opsDue>1?'s':''} need an Operations call today</div>
     <div class="sub">Custom wallpaper: 3 days before delivery · everything else: 1 day before. Confirm delivery before creating the service.</div></div>
     <button class="btn amber" data-goto="calls">Review calls</button></div>`:"";
-  const filters=["all","followup","pending","deliv_delayed","created","scheduled","assigned","partial","mixed","completed"];
+  const filters=["all","followup","pending","call_na","deliv_ontime","deliv_delayed","created","scheduled","assigned","callpending","onway","atsite","partial","reschedule","mixed","completed"];
   const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
   const filteredOrders=ORDERS.filter(o=>{
     if(filterStatus!=="all"){
-      if(filterStatus==="opsdue")return opsCallDue(o);
       if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
-      if(filterStatus==="live")return ["scheduled","assigned","partial","onway","atsite"].includes(o.status);
+      if(filterStatus==="live")return ["scheduled","assigned","callpending","onway","atsite","partial"].includes(o.status);
+      if(filterStatus==="await_confirm")return ["pending","call_na"].includes(o.status);
+      if(filterStatus==="await_schedule")return ["deliv_ontime","created"].includes(o.status);
       if(o.status!==filterStatus)return false;
     }
     if(filterDate&&!installOrderHasDate(o,filterDate))return false;
@@ -2212,7 +2223,7 @@ function wire(){
   if($("#dateFilter"))$("#dateFilter").onchange=e=>{filterDate=e.target.value;render();};
   document.querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filterStatus=b.dataset.filter;render();});
   if($("#toggleSort"))$("#toggleSort").onclick=()=>{sortDelivery=sortDelivery==="asc"?"desc":"asc";render();};
-  document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{const k=s.dataset.stat;if(k==="opsdue"){activeView="calls";render();return;}filterStatus=k;render();});
+  document.querySelectorAll("[data-stat]").forEach(s=>s.onclick=()=>{filterStatus=s.dataset.stat;render();});
   document.querySelectorAll("[data-delslot-fl]").forEach(b=>b.onclick=()=>{if(SLOTS_FL.length<=1){toast("Keep at least one window");return;}SLOTS_FL.splice(+b.getAttribute('data-delslot-fl'),1);try{localStorage.setItem('md_install_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}render();toast("Flooring window deleted");});
   document.querySelectorAll("[data-delslot-wp]").forEach(b=>b.onclick=()=>{if(SLOTS_WP.length<=1){toast("Keep at least one window");return;}SLOTS_WP.splice(+b.getAttribute('data-delslot-wp'),1);try{localStorage.setItem('md_install_slots_wp',JSON.stringify(SLOTS_WP));}catch(e){}render();toast("Wallpaper window deleted");});
   if($("#addSlotFl"))$("#addSlotFl").onclick=()=>{SLOTS_FL.push({id:"sf"+Date.now(),label:"New window"});try{localStorage.setItem('md_install_slots_fl',JSON.stringify(SLOTS_FL));}catch(e){}render();toast("Flooring window added");};
