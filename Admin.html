@@ -692,7 +692,10 @@ function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'
 function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'));}
 
 /* ---- JOBS OVERVIEW ---- */
-let jobsFilter='all',jobsDateFrom='',jobsDateTo='',jobsSearch='';
+// jobsType (Audit/Install) and jobsFilter (status/stat-tile category) are independent,
+// combinable dimensions (added 2026-07-29) — e.g. Unassigned + Audit narrows to just the
+// unassigned audits, without losing the Unassigned scope the way a single shared filter would.
+let jobsType='all',jobsFilter='all',jobsDateFrom='',jobsDateTo='',jobsSearch='';
 function setJobDateFrom(d){jobsDateFrom=d;drawJobs(document.getElementById('main'));}
 function setJobDateTo(d){jobsDateTo=d;drawJobs(document.getElementById('main'));}
 function clearJobDateRange(){jobsDateFrom='';jobsDateTo='';drawJobs(document.getElementById('main'));}
@@ -765,8 +768,10 @@ async function renderJobs(m){
 
 function getFilteredJobs(){
   return realJobs.filter(j=>{
-    if(jobsFilter==='audit')return j.type==='audit';
-    if(jobsFilter==='install')return j.type==='install';
+    if(jobsType==='audit')return j.type==='audit';
+    if(jobsType==='install')return j.type==='install';
+    return true;
+  }).filter(j=>{
     if(jobsFilter==='active')return ['assigned','onway','atsite','scheduled'].includes(j.status);
     if(jobsFilter==='unassigned')return !j.assignee;
     if(JOB_STATUS[jobsFilter])return j.status===jobsFilter;
@@ -810,10 +815,10 @@ function drawJobs(m){
   m.innerHTML=`
     <div class="page-head"><h1>Jobs Overview</h1><p>All audit and installation jobs across your team.</p></div>
     <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
-      <div class="stat-card clickable${jobsFilter==='all'?' active':''}" onclick="setJobStatFilter('all')"><div class="val">${jc.total}</div><div class="lbl">Total Jobs</div></div>
-      <div class="stat-card clickable${jobsFilter==='active'?' active':''}" onclick="setJobStatFilter('active')"><div class="val">${jc.active}</div><div class="lbl">Active Now</div></div>
-      <div class="stat-card clickable${jobsFilter==='completed'?' active':''}" onclick="setJobStatFilter('completed')"><div class="val">${jc.done}</div><div class="lbl">Completed</div></div>
-      <div class="stat-card clickable${jobsFilter==='unassigned'?' active':''}" onclick="setJobStatFilter('unassigned')"><div class="val">${jc.unassigned}</div><div class="lbl">Unassigned</div></div>
+      <div class="stat-card clickable${jobsType==='all'&&jobsFilter==='all'?' active':''}" onclick="setJobStatFilter('all')"><div class="val">${jc.total}</div><div class="lbl">Total Jobs</div></div>
+      <div class="stat-card clickable${jobsType==='all'&&jobsFilter==='active'?' active':''}" onclick="setJobStatFilter('active')"><div class="val">${jc.active}</div><div class="lbl">Active Now</div></div>
+      <div class="stat-card clickable${jobsType==='all'&&jobsFilter==='completed'?' active':''}" onclick="setJobStatFilter('completed')"><div class="val">${jc.done}</div><div class="lbl">Completed</div></div>
+      <div class="stat-card clickable${jobsType==='all'&&jobsFilter==='unassigned'?' active':''}" onclick="setJobStatFilter('unassigned')"><div class="val">${jc.unassigned}</div><div class="lbl">Unassigned</div></div>
     </div>
     ${!realJobs.length?'<div class="card"><div class="empty"><div class="e-ico">📋</div><div class="e-msg">No jobs yet — orders will appear here once Service Managers start adding them.</div></div></div>':`
     <div class="card">
@@ -823,9 +828,14 @@ function drawJobs(m){
           <input id="jobsSearchInput" type="text" placeholder="Search Enquiry ID or customer…" value="${jobsSearch}" oninput="jobsSearch=this.value;drawJobs(document.getElementById('main'))">
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${['all','audit','install','active','unassigned','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
+          ${['all','audit','install'].map(t=>`
+            <button class="filt-btn${jobsType===t?' active':''}" onclick="setJobType('${t}')">
+              ${t==='all'?'All Types':t==='audit'?'Audit':'Install'}
+            </button>`).join('')}
+          <span style="width:1px;background:var(--line);margin:2px 4px"></span>
+          ${['all','active','unassigned','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
             <button class="filt-btn${jobsFilter===f?' active':''}" onclick="setJobFilter('${f}')">
-              ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':f==='active'?'Active Now':f==='unassigned'?'Unassigned':JOB_STATUS[f]?.l||f}
+              ${f==='all'?'All Jobs':f==='active'?'Active Now':f==='unassigned'?'Unassigned':JOB_STATUS[f]?.l||f}
             </button>`).join('')}
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;flex-wrap:wrap">
@@ -857,10 +867,15 @@ function drawJobs(m){
   if(jobsSearch){const si=document.getElementById('jobsSearchInput');if(si){si.focus();si.setSelectionRange(jobsSearch.length,jobsSearch.length);}}
 }
 function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));}
-// Stat-card clicks: the 4 header numbers are always computed over the full unfiltered realJobs
-// (see jc in drawJobs), so jumping to one of them also clears any active date range/search —
-// otherwise clicking "380 Total Jobs" while a date filter is set would show fewer than 380 rows.
-function setJobStatFilter(f){jobsFilter=f;jobsDateFrom='';jobsDateTo='';jobsSearch='';drawJobs(document.getElementById('main'));}
+// Type (Audit/Install) is a separate, combinable dimension from the status pills above — doesn't
+// reset jobsFilter/date/search, so e.g. picking Audit while already on the Unassigned tab narrows
+// to just the unassigned audits instead of replacing the Unassigned scope entirely.
+function setJobType(t){jobsType=t;drawJobs(document.getElementById('main'));}
+// Stat-card clicks: the 4 header numbers are always computed over the full unfiltered realJobs,
+// across both types (see jc in drawJobs), so jumping to one of them also resets the type filter
+// and clears any active date range/search — otherwise clicking "380 Total Jobs" while, say, Audit
+// was still selected would show fewer than 380 rows.
+function setJobStatFilter(f){jobsFilter=f;jobsType='all';jobsDateFrom='';jobsDateTo='';jobsSearch='';drawJobs(document.getElementById('main'));}
 function setJobSearch(v){jobsSearch=v;drawJobs(document.getElementById('main'));}
 
 /* ---- JOB DETAIL MODAL ---- */
