@@ -1527,8 +1527,14 @@ function _anInstallOrderAttempts(order){
   return out;
 }
 // Same idea as _anInstallOrderAttempts but for a single-type audit order — one auditor field, no
-// per-type split. "Slot rebooked — auditor cleared..." (SM_Audit_Dashboard.html's reschedule path)
-// both clears the auditor AND re-books the slot in the same log entry, so it's handled as one branch.
+// per-type split. Any "slot booked/updated/rebooked" message updates the slot; only ones that
+// literally say "auditor cleared" also reset the auditor. Checking the substring rather than a
+// fixed prefix matters here: a live order (ENQ2026070177346, found 2026-07-29 while verifying this
+// feature) carries a log entry reading "Slot rebooked: Sat, 4 Jul · 9:00 AM — Client preference" —
+// an older log-message format from before SM_Audit_Dashboard.html's current wording ("Slot rebooked
+// — auditor cleared, reassignment needed: ...") existed. That order's auditor was never actually
+// disconnected (confirmed live: auditor_name unchanged throughout), so a bare "slot rebooked" must
+// NOT be treated as an auditor-clearing signal, or it wrongly orphans a perfectly real arrival.
 function _anAuditOrderAttempts(order){
   const logs=(order.log||[]).slice().sort((a,b)=>new Date(a.d)-new Date(b.d));
   let names=new Set(),slot=null;
@@ -1541,11 +1547,9 @@ function _anAuditOrderAttempts(order){
       let namePart=l.t.split(': ').slice(1).join(': ');
       namePart=namePart.split(' · ')[0].split(' ⚠')[0].trim();
       names=new Set([namePart].filter(Boolean));
-    }else if(tl.startsWith('slot rebooked')){
-      names=new Set();
+    }else if(tl.startsWith('slot booked')||tl.startsWith('slot updated')||tl.startsWith('slot rebooked')||tl.startsWith('date/time updated')){
       const s=_anParseSlotTime12h(l.t);if(s)slot=s;
-    }else if(tl.startsWith('slot booked')||tl.startsWith('slot updated')||tl.startsWith('date/time updated')){
-      const s=_anParseSlotTime12h(l.t);if(s)slot=s;
+      if(tl.includes('auditor cleared'))names=new Set();
     }else if(tl.includes('arrived at site')&&l.who&&names.has(l.who)&&slot){
       // Dedupe repeat writes for the same auditor on the same day — one real visit, not two.
       const dayKey=l.who+'|'+_anDateIST(l.d);
