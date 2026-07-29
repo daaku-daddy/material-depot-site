@@ -1263,9 +1263,15 @@ function wireDrawer(o){
     if(['assigned','onway','atsite'].includes(o.status))curEff=FLOW.indexOf('assigned');
     if(o.status==='completed')curEff=FLOW.length-1;
     if(o.status==='reschedule'||o.status==='call_na')curEff=FLOW.indexOf('created');
+    // Manually forcing At Site skips the auditor app's own arrival confirmation (which is what
+    // actually writes the "arrived at site" log entry Admin's Analytics tab matches on) — so a job
+    // set this way will never show up in Auditor Arrival On Time % (CLAUDE.md note 74). Not a
+    // restriction — the SM can still do this — just make sure they know why the metric won't count it.
+    const isManualAtSite=st==='atsite'&&o.status!=='atsite';
     o.status=st;
     const overrideNote=overrideReason?" · ⚠ forced Completed without signed job card: \""+overrideReason+"\" (SM override)":"";
-    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const atsiteNote=isManualAtSite?" · ⚠ no field-confirmed arrival (SM override — excluded from Arrival On Time % tracking)":"";
+    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote+atsiteNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     const patch={status:o.status,log:o.log};
     // Clear forward data when moving backward
     if(tEff<curEff){
@@ -1273,7 +1279,9 @@ function wireDrawer(o){
       if(tEff<FLOW.indexOf('scheduled')){o.slot=null;o.date=null;patch.slot=null;patch.date=null;}
     }
     if(o.id)await sbPatch('audit_orders',o.id,patch);
-    await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
+    await loadOrders();
+    toast(isManualAtSite?"⚠ Marked At Site manually — no arrival confirmed from the auditor app, so this won't count in Arrival On Time % tracking":"Status: "+STATUS[st].l);
+    openOrder(o.pi);
   });
 
   // ---- service creation interactions ----

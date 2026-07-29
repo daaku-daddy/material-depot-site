@@ -1850,11 +1850,19 @@ function wireDrawer(o){
         }
       });
     }
+    // Manually forcing At Site skips the installer app's own arrival confirmation (which is what
+    // actually writes the "arrived at site" log entry Admin's Analytics tab matches on) — so a job
+    // set this way will never show up in Installer Arrival On Time % (CLAUDE.md note 74). Not a
+    // restriction — the SM can still do this — just make sure they know why the metric won't count it.
+    const isManualAtSite=st==='atsite'&&o.status!=='atsite';
     o.status=st;
     const overrideNote=overrideReason?" · ⚠ forced Completed without job card: \""+overrideReason+"\" (SM override)":"";
-    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    const atsiteNote=isManualAtSite?" · ⚠ no field-confirmed arrival (SM override — excluded from Arrival On Time % tracking)":"";
+    o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote+atsiteNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs||null,log:o.log});
-    await loadOrders();toast("Status: "+STATUS[st].l);openOrder(o.pi);
+    await loadOrders();
+    toast(isManualAtSite?"⚠ Marked At Site manually — no arrival confirmed from the installer app, so this won't count in Arrival On Time % tracking":"Status: "+STATUS[st].l);
+    openOrder(o.pi);
   });
 
   // delivery outcomes

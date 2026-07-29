@@ -61,6 +61,10 @@
   .stat-card .lbl{font-size:12px;color:var(--muted);font-weight:700;margin-top:2px;}
   .stat-card .bar{height:3px;border-radius:3px;margin-top:10px;background:var(--line);overflow:hidden;}
   .stat-card .bar-fill{height:100%;border-radius:3px;}
+  .stat-card.clickable{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
+  .stat-card.clickable:hover{border-color:var(--blue);box-shadow:0 2px 10px rgba(46,108,168,.15);}
+  .stat-card.clickable.active{border-color:var(--navy);background:var(--navy);}
+  .stat-card.clickable.active .val,.stat-card.clickable.active .lbl{color:#fff;}
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;}
   .card-head{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;}
@@ -763,6 +767,8 @@ function getFilteredJobs(){
   return realJobs.filter(j=>{
     if(jobsFilter==='audit')return j.type==='audit';
     if(jobsFilter==='install')return j.type==='install';
+    if(jobsFilter==='active')return ['assigned','onway','atsite','scheduled'].includes(j.status);
+    if(jobsFilter==='unassigned')return !j.assignee;
     if(JOB_STATUS[jobsFilter])return j.status===jobsFilter;
     return true;
   }).filter(j=>{
@@ -804,10 +810,10 @@ function drawJobs(m){
   m.innerHTML=`
     <div class="page-head"><h1>Jobs Overview</h1><p>All audit and installation jobs across your team.</p></div>
     <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
-      <div class="stat-card"><div class="val">${jc.total}</div><div class="lbl">Total Jobs</div></div>
-      <div class="stat-card"><div class="val">${jc.active}</div><div class="lbl">Active Now</div></div>
-      <div class="stat-card"><div class="val">${jc.done}</div><div class="lbl">Completed</div></div>
-      <div class="stat-card"><div class="val">${jc.unassigned}</div><div class="lbl">Unassigned</div></div>
+      <div class="stat-card clickable${jobsFilter==='all'?' active':''}" onclick="setJobStatFilter('all')"><div class="val">${jc.total}</div><div class="lbl">Total Jobs</div></div>
+      <div class="stat-card clickable${jobsFilter==='active'?' active':''}" onclick="setJobStatFilter('active')"><div class="val">${jc.active}</div><div class="lbl">Active Now</div></div>
+      <div class="stat-card clickable${jobsFilter==='completed'?' active':''}" onclick="setJobStatFilter('completed')"><div class="val">${jc.done}</div><div class="lbl">Completed</div></div>
+      <div class="stat-card clickable${jobsFilter==='unassigned'?' active':''}" onclick="setJobStatFilter('unassigned')"><div class="val">${jc.unassigned}</div><div class="lbl">Unassigned</div></div>
     </div>
     ${!realJobs.length?'<div class="card"><div class="empty"><div class="e-ico">📋</div><div class="e-msg">No jobs yet — orders will appear here once Service Managers start adding them.</div></div></div>':`
     <div class="card">
@@ -817,9 +823,9 @@ function drawJobs(m){
           <input id="jobsSearchInput" type="text" placeholder="Search Enquiry ID or customer…" value="${jobsSearch}" oninput="jobsSearch=this.value;drawJobs(document.getElementById('main'))">
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${['all','audit','install','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
+          ${['all','audit','install','active','unassigned','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
             <button class="filt-btn${jobsFilter===f?' active':''}" onclick="setJobFilter('${f}')">
-              ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':JOB_STATUS[f]?.l||f}
+              ${f==='all'?'All Jobs':f==='audit'?'Audit':f==='install'?'Install':f==='active'?'Active Now':f==='unassigned'?'Unassigned':JOB_STATUS[f]?.l||f}
             </button>`).join('')}
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;flex-wrap:wrap">
@@ -851,6 +857,10 @@ function drawJobs(m){
   if(jobsSearch){const si=document.getElementById('jobsSearchInput');if(si){si.focus();si.setSelectionRange(jobsSearch.length,jobsSearch.length);}}
 }
 function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));}
+// Stat-card clicks: the 4 header numbers are always computed over the full unfiltered realJobs
+// (see jc in drawJobs), so jumping to one of them also clears any active date range/search —
+// otherwise clicking "380 Total Jobs" while a date filter is set would show fewer than 380 rows.
+function setJobStatFilter(f){jobsFilter=f;jobsDateFrom='';jobsDateTo='';jobsSearch='';drawJobs(document.getElementById('main'));}
 function setJobSearch(v){jobsSearch=v;drawJobs(document.getElementById('main'));}
 
 /* ---- JOB DETAIL MODAL ---- */
@@ -1289,7 +1299,11 @@ async function dlJobCard(i,btn){
 }
 
 /* ---- ANALYTICS V2 ---- */
-let analyticsFrom='', analyticsTo='', _anPollTid=null;
+// Site Audit and Site Installation each get their own independent date range (added 2026-07-29,
+// CLAUDE.md note 77) — they used to share one analyticsFrom/analyticsTo pair, which forced picking
+// a single range for both sections even though an SM/admin often wants to look at a different
+// window for each (e.g. audits this week vs installs this month).
+let analyticsAuditFrom='', analyticsAuditTo='', analyticsInstallFrom='', analyticsInstallTo='', _anPollTid=null;
 
 function _anDstr(d){const z=n=>n<10?'0'+n:n;return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());}
 function _anToIST(iso){return new Date(new Date(iso).getTime()+19800000);}
@@ -1354,11 +1368,17 @@ async function _anFetchData(){
 
 async function renderAnalytics(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
-  if(!analyticsFrom){
+  if(!analyticsAuditFrom){
     const t=new Date();
-    analyticsTo=_anDstr(t);
+    analyticsAuditTo=_anDstr(t);
     t.setDate(t.getDate()-6);
-    analyticsFrom=_anDstr(t);
+    analyticsAuditFrom=_anDstr(t);
+  }
+  if(!analyticsInstallFrom){
+    const t=new Date();
+    analyticsInstallTo=_anDstr(t);
+    t.setDate(t.getDate()-6);
+    analyticsInstallFrom=_anDstr(t);
   }
   const ok=await _anFetchData();
   if(!ok){
@@ -1377,7 +1397,7 @@ async function renderAnalytics(m){
   _anPollTid=setInterval(async()=>{
     if(currentView!=='analytics'||document.hidden)return;
     const active=document.activeElement;
-    if(active&&(active.id==='anFrom'||active.id==='anTo'))return;
+    if(active&&['anAuditFrom','anAuditTo','anInstallFrom','anInstallTo'].includes(active.id))return;
     const fresh=await _anFetchData();
     if(fresh&&currentView==='analytics')drawAnalytics(document.getElementById('main'));
   },60000);
@@ -1451,52 +1471,142 @@ function _anArrivalBucket(slot,logIso){
   const [sh,sm]=slot.split(':').map(Number);
   return (_anMinsIST(logIso)-(sh*60+sm))>3?'late':'onTime';
 }
-// rows: canonical install rows (already narrowed to "reached site" subset by caller).
-// Returns {agg:{onTime,late}, byName:{name:{onTime,late}}} — every assigned installer on a row is
-// credited (not just primary), matching this table's pre-existing per-person crediting behavior.
-function _anInstallArrivalStats(rows){
-  const byName={};let onTime=0,late=0;const tagged=[];
-  for(const row of rows){
-    const names=new Set((row.installers||[]).map(a=>a.installer_name).filter(Boolean));
-    if(!names.size){tagged.push({row,bucket:null});continue;}
-    let bucket=null;
-    for(const l of (row.order.log||[])){
-      if(!l.t||!l.d||!l.who) continue;
-      if(!l.t.toLowerCase().includes('arrived at site')) continue;
-      const logDate=_anDateIST(l.d);
-      // Accept a match against the row's display date OR any of its scheduled date(s) — arrival can
-      // land a day before the completion log is written on a multi-day job.
-      if(logDate!==row.date&&!(row.schedDates||[]).includes(logDate)) continue;
-      if(!names.has(l.who)) continue;
-      bucket=_anArrivalBucket(row.slot,l.d);
-      break;
+// Recovers a 24h "HH:MM" from a log message's trailing 12h time (e.g. "...· 2:00 PM") — these are
+// the display-formatted strings slotLabel()/fmtDate() write into log text; there is no raw HH:MM
+// stored alongside them, so this is the only way to reconstruct what slot was in effect at a given
+// point in an order's history. Returns null if no such time is found at the end of the string.
+function _anParseSlotTime12h(str){
+  const m=str.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i);
+  if(!m)return null;
+  let h=parseInt(m[1],10);const mm=m[2];const ap=m[3].toUpperCase();
+  if(ap==='PM'&&h!==12)h+=12;
+  if(ap==='AM'&&h===12)h=0;
+  return String(h).padStart(2,'0')+':'+mm;
+}
+// Replays one install order's log chronologically to recover EVERY real "installer arrived at
+// site" event, tied to whichever installer+slot were actually in effect at that moment — not just
+// the subjob's CURRENT assignment. This matters because reassignment overwrites sj.assignments[]
+// in place (SM_Install_Dashboard.html's saveAssign: `sj.assignments=valid`) with no history kept on
+// the live document — the only surviving record of "who was assigned before" is the log text itself
+// (added 2026-07-29, CLAUDE.md note 79, per explicit user request: a job reassigned mid-flight
+// should credit/debit EACH installer's own real attempt at their own assigned time, not silently
+// drop the earlier one just because someone else now holds the subjob).
+// Returns {flooring:[{name,slot,d,bucket}], wallpaper:[...]} — only for types actually present.
+function _anInstallOrderAttempts(order){
+  const types=[...new Set((order.subjobs||[]).map(sj=>sj.type).filter(Boolean))];
+  if(!types.length)return {};
+  const logs=(order.log||[]).slice().sort((a,b)=>new Date(a.d)-new Date(b.d));
+  const state={};types.forEach(t=>{state[t]={names:new Set(),slot:null};});
+  const out={};types.forEach(t=>{out[t]=[];});
+  for(const l of logs){
+    if(!l.t)continue;
+    const tl=l.t.toLowerCase();
+    for(const type of types){
+      const st=state[type];
+      if(tl.startsWith(type+' slot cleared')){st.names=new Set();st.slot=null;}
+      else if(tl.startsWith(type+' assigned')||tl.startsWith(type+' rescheduled')){
+        const namePart=l.t.split(': ').slice(1).join(': ');
+        st.names=new Set(namePart.split(',').map(s=>s.trim()).filter(Boolean));
+      }else if(tl.startsWith(type+' slot booked')||tl.startsWith(type+' slot rescheduled')){
+        const slot=_anParseSlotTime12h(l.t);if(slot)st.slot=slot;
+      }
     }
-    tagged.push({row,bucket});
-    if(!bucket) continue;
-    if(bucket==='late')late++;else onTime++;
-    for(const n of names){ if(!byName[n])byName[n]={onTime:0,late:0}; byName[n][bucket]++; }
+    if(l.t.toLowerCase().includes('arrived at site')&&l.who){
+      for(const type of types){
+        const st=state[type];
+        if(!st.names.has(l.who)||!st.slot)continue;
+        // Dedupe repeat "arrived at site" writes for the same person on the same day (e.g. a
+        // network retry re-firing the confirm) — these are one real visit, not two attempts.
+        const dayKey=l.who+'|'+_anDateIST(l.d);
+        if(st.seenDays&&st.seenDays.has(dayKey))continue;
+        st.seenDays=st.seenDays||new Set();st.seenDays.add(dayKey);
+        out[type].push({name:l.who,slot:st.slot,d:l.d,bucket:_anArrivalBucket(st.slot,l.d)});
+      }
+    }
+  }
+  return out;
+}
+// Same idea as _anInstallOrderAttempts but for a single-type audit order — one auditor field, no
+// per-type split. "Slot rebooked — auditor cleared..." (SM_Audit_Dashboard.html's reschedule path)
+// both clears the auditor AND re-books the slot in the same log entry, so it's handled as one branch.
+function _anAuditOrderAttempts(order){
+  const logs=(order.log||[]).slice().sort((a,b)=>new Date(a.d)-new Date(b.d));
+  let names=new Set(),slot=null;
+  const seenDays=new Set();
+  const out=[];
+  for(const l of logs){
+    if(!l.t)continue;
+    const tl=l.t.toLowerCase();
+    if(tl.startsWith('auditor assigned')){
+      let namePart=l.t.split(': ').slice(1).join(': ');
+      namePart=namePart.split(' · ')[0].split(' ⚠')[0].trim();
+      names=new Set([namePart].filter(Boolean));
+    }else if(tl.startsWith('slot rebooked')){
+      names=new Set();
+      const s=_anParseSlotTime12h(l.t);if(s)slot=s;
+    }else if(tl.startsWith('slot booked')||tl.startsWith('slot updated')||tl.startsWith('date/time updated')){
+      const s=_anParseSlotTime12h(l.t);if(s)slot=s;
+    }else if(tl.includes('arrived at site')&&l.who&&names.has(l.who)&&slot){
+      // Dedupe repeat writes for the same auditor on the same day — one real visit, not two.
+      const dayKey=l.who+'|'+_anDateIST(l.d);
+      if(seenDays.has(dayKey))continue;
+      seenDays.add(dayKey);
+      out.push({name:l.who,slot,d:l.d,bucket:_anArrivalBucket(slot,l.d)});
+    }
+  }
+  return out;
+}
+// installs: full all-time array (not pre-filtered) — attempts are scoped by from/to on each
+// attempt's OWN arrival date, independent of the parent subjob's current status/date, since a real
+// visit's punctuality doesn't stop being real just because the job was later reassigned/rescheduled.
+// reachedRows: the existing "reached site" canonical rows (note 74) — used ONLY to emit a visible
+// "no arrival log matched" placeholder for eligible jobs that got zero real attempts (e.g. an SM
+// override or a broken/empty log, see CLAUDE.md note 78) — never counted toward onTime/late.
+function _anInstallArrivalStats(installs,from,to,reachedRows){
+  const byName={};let onTime=0,late=0;const tagged=[];
+  const matchedKeys=new Set();
+  for(const order of installs){
+    const byType=_anInstallOrderAttempts(order);
+    for(const type of Object.keys(byType)){
+      for(const att of byType[type]){
+        const d=_anDateIST(att.d);
+        if(d<from||d>to)continue;
+        matchedKeys.add(order.pi+'|'+type);
+        tagged.push({pi:order.pi,date:d,order,type,name:att.name,bucket:att.bucket});
+        if(!att.bucket)continue;
+        if(att.bucket==='late')late++;else onTime++;
+        if(!byName[att.name])byName[att.name]={onTime:0,late:0};
+        byName[att.name][att.bucket]++;
+      }
+    }
+  }
+  for(const row of reachedRows){
+    if(matchedKeys.has(row.pi+'|'+row.type))continue;
+    tagged.push({pi:row.pi,date:row.date,order:row.order,type:row.type,name:null,bucket:null});
   }
   return {agg:{onTime,late},byName,tagged};
 }
-// rows: audit orders (already narrowed to "reached site" — status==='completed' — subset by caller).
-function _anAuditArrivalStats(rows){
+// audits: full all-time array; reachedRows: existing "reached site" (completed) canonical rows —
+// same placeholder-only role as _anInstallArrivalStats' reachedRows above.
+function _anAuditArrivalStats(audits,from,to,reachedRows){
   const byName={};let onTime=0,late=0;const tagged=[];
-  for(const o of rows){
-    if(!o.auditor_name){tagged.push({o,bucket:null});continue;}
-    let bucket=null;
-    for(const l of (o.log||[])){
-      if(!l.t||!l.d||!l.who) continue;
-      if(!l.t.toLowerCase().includes('arrived at site')) continue;
-      if(l.who!==o.auditor_name) continue;
-      if(_anDateIST(l.d)!==o.date) continue;
-      bucket=_anArrivalBucket(o.slot,l.d);
-      break;
+  const matchedPIs=new Set();
+  for(const o of audits){
+    const attempts=_anAuditOrderAttempts(o);
+    for(const att of attempts){
+      const d=_anDateIST(att.d);
+      if(d<from||d>to)continue;
+      matchedPIs.add(o.pi);
+      tagged.push({pi:o.pi,date:d,order:o,name:att.name,bucket:att.bucket});
+      if(!att.bucket)continue;
+      if(att.bucket==='late')late++;else onTime++;
+      if(!byName[att.name])byName[att.name]={onTime:0,late:0};
+      byName[att.name][att.bucket]++;
     }
-    tagged.push({o,bucket});
-    if(!bucket) continue;
-    if(bucket==='late')late++;else onTime++;
-    if(!byName[o.auditor_name])byName[o.auditor_name]={onTime:0,late:0};
-    byName[o.auditor_name][bucket]++;
+  }
+  for(const o of reachedRows){
+    if(matchedPIs.has(o.pi))continue;
+    tagged.push({pi:o.pi,date:o.date,order:o,name:null,bucket:null});
   }
   return {agg:{onTime,late},byName,tagged};
 }
@@ -1581,6 +1691,13 @@ function _anInstallerMap(canonRows,ratingMap,arrByName){
     const ar=arrByName[map[k].name]||{onTime:0,late:0};
     map[k].arrOnTime=ar.onTime; map[k].arrLate=ar.late;
   }
+  // An installer reassigned away from every currently-live subjob (note 79) won't appear in
+  // canonRows at all, but their real logged arrival attempt(s) still count toward the aggregate
+  // % above — surface them here too so the per-installer table doesn't silently disagree with it.
+  for(const name of Object.keys(arrByName)){
+    if(Object.values(map).some(m=>m.name===name))continue;
+    map[name]={name,email:'',orders:0,completed:0,wfQty:0,wpRolls:0,wpSqft:0,q1:[],q2:[],q3:[],arrOnTime:arrByName[name].onTime,arrLate:arrByName[name].late};
+  }
   return Object.values(map).sort((a,b)=>b.orders-a.orders);
 }
 
@@ -1601,6 +1718,12 @@ function _anAuditorMap(auditFiltered,ratingMap,arrByName){
   for(const k of Object.keys(map)){
     const ar=arrByName[map[k].name]||{onTime:0,late:0};
     map[k].arrOnTime=ar.onTime; map[k].arrLate=ar.late;
+  }
+  // Same reasoning as _anInstallerMap above — an auditor reassigned off every audit in
+  // auditFiltered still has their own real attempt(s) counted in the aggregate %.
+  for(const name of Object.keys(arrByName)){
+    if(Object.values(map).some(m=>m.name===name))continue;
+    map[name]={name,email:'',orders:0,completed:0,q1:[],q2:[],q3:[],arrOnTime:arrByName[name].onTime,arrLate:arrByName[name].late};
   }
   return Object.values(map).sort((a,b)=>b.orders-a.orders);
 }
@@ -1650,19 +1773,38 @@ function downloadDrillCSV(key){
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
+// Renders the Apply/Last-7/30/90-days date-range control for one section ('Audit' or 'Install'),
+// wired to that section's own analytics{kind}From/To vars — kept as one function instead of two
+// near-duplicate blocks so both stay byte-identical apart from which vars/ids they touch.
+function _anDateRowHtml(kind){
+  const idF='an'+kind+'From', idT='an'+kind+'To';
+  const varF='analytics'+kind+'From', varT='analytics'+kind+'To';
+  const from=kind==='Audit'?analyticsAuditFrom:analyticsInstallFrom;
+  const to=kind==='Audit'?analyticsAuditTo:analyticsInstallTo;
+  return `<div class="an-date-row">
+    <span class="an-date-label">Date range</span>
+    <input type="date" id="${idF}" class="an-date-inp" value="${from}">
+    <span style="color:var(--muted);font-size:13px;padding:0 2px">to</span>
+    <input type="date" id="${idT}" class="an-date-inp" value="${to}">
+    <button class="an-apply-btn" onclick="${varF}=document.getElementById('${idF}').value;${varT}=document.getElementById('${idT}').value;drawAnalytics(document.getElementById('main'))">Apply</button>
+    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-6);${varF}=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 7 days</button>
+    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-29);${varF}=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 30 days</button>
+    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-89);${varF}=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 90 days</button>
+  </div>`;
+}
 function drawAnalytics(m){
   window._anDrill={};
   const {installs,audits,ratings}=window._anData||{installs:[],audits:[],ratings:[]};
-  const from=analyticsFrom, to=analyticsTo;
+  const aFrom=analyticsAuditFrom, aTo=analyticsAuditTo, iFrom=analyticsInstallFrom, iTo=analyticsInstallTo;
   const todayStr=_anDstr(new Date());
   const TRACK_FROM='2026-07-02'; // arrival on time tracking start date
 
   // Install: one canonical row per subjob in range (no reschedule/multi-day double-counting)
-  const iCanon=_anInstallCanon(installs,from,to);
+  const iCanon=_anInstallCanon(installs,iFrom,iTo);
   const iTotal=iCanon.length;
 
   // Audit: completed orders by actual completion date; pending/in-progress by scheduled date
-  const aFiltered=audits.filter(o=>o.date&&o.date>=from&&o.date<=to);
+  const aFiltered=audits.filter(o=>o.date&&o.date>=aFrom&&o.date<=aTo);
   const aTotal=aFiltered.length;
 
   // Install calcs
@@ -1706,14 +1848,14 @@ function drawAnalytics(m){
   // the moment status flips to atsite, so an in-progress atsite job already has real arrival data
   // available. Deliberately broader than iDone/aCompleted (which stay completed/partial-only —
   // those drive Completion %, where an in-progress job must NOT count as done).
-  const iTrackFrom=from>TRACK_FROM?from:TRACK_FROM;
-  const aTrackFrom=from>TRACK_FROM?from:TRACK_FROM;
+  const iTrackFrom=iFrom>TRACK_FROM?iFrom:TRACK_FROM;
+  const aTrackFrom=aFrom>TRACK_FROM?aFrom:TRACK_FROM;
   const iArrivalEligible=iCanon.filter(a=>['completed','partial','atsite'].includes(a.status));
   const aArrivalEligible=aFiltered.filter(o=>['completed','atsite'].includes(o.status));
   const iReached=iArrivalEligible.filter(r=>r.date>=iTrackFrom);
   const aReached=aArrivalEligible.filter(o=>o.date>=aTrackFrom);
-  const iArr=_anInstallArrivalStats(iReached);
-  const aArr=_anAuditArrivalStats(aReached);
+  const iArr=_anInstallArrivalStats(installs,iTrackFrom,iTo,iReached);
+  const aArr=_anAuditArrivalStats(audits,aTrackFrom,aTo,aReached);
   const iArrTot=iArr.agg, aArrTot=aArr.agg;
 
   // Per-installer / per-auditor
@@ -1823,16 +1965,16 @@ function drawAnalytics(m){
   const _iRow=o=>({customer:o.customer_name||'',phone:o.phone||'',bm:o.bm||''});
   _anSetDrill('aCompletion','Site Audit — Completion %','Every audit scheduled in this date range.','audit',
     aFiltered.map(o=>({pi:o.pi,date:o.date,..._aRow(o),result:o.status==='completed'?'✓ Completed':'✗ Not completed ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
-  _anSetDrill('aArrival','Site Audit — Auditor Arrival On Time %','Audits that reached completed status and are on/after 2 Jul 2026 (when arrival tracking began). Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','audit',
-    aArr.tagged.map(t=>({pi:t.o.pi,date:t.o.date,..._aRow(t.o),result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
+  _anSetDrill('aArrival','Site Audit — Auditor Arrival On Time %','Every real logged arrival on/after 2 Jul 2026 (when arrival tracking began) — one row per attempt, so a reassigned audit can show up to once per auditor who actually visited. Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','audit',
+    aArr.tagged.map(t=>({pi:t.pi,date:t.date,..._aRow(t.order),result:t.bucket==='onTime'?'✓ On time'+(t.name?' ('+t.name+')':''):t.bucket==='late'?'✗ Late'+(t.name?' ('+t.name+')':''):'— No arrival log matched (excluded from %)'})));
   _anSetDrill('aReschedule','Site Audit — Reschedule Rate %','Every audit scheduled in this date range.','audit',
     aFiltered.map(o=>({pi:o.pi,date:o.date,..._aRow(o),result:o.status==='reschedule'?'✓ In reschedule status':'✗ Not in reschedule ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
   _anSetDrill('aConversion','Site Audit → Order Conversion %','One row per distinct customer phone audited in this range. "Converted" = that phone placed an install order at any time, even after the range ends.','audit',
     [...aPhonesInRange].map(p=>{const rep=aFiltered.find(o=>o.phone===p);return {pi:rep?rep.pi:'',date:rep?rep.date:'',...(rep?_aRow(rep):{customer:'',phone:p,bm:''}),result:aConvertedPhones.includes(p)?'✓ Converted to install order':'✗ Not converted yet'};}));
   _anSetDrill('aRatings','Site Audit — Client Ratings','Every audit with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','audit',
     [...aRatingMap.entries()].map(([o,r])=>({pi:o.pi,date:o.date,..._aRow(o),result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
-  _anSetDrill('iArrival','Site Installation — Installer Arrival On Time %','Subjobs that reached completed/partial status and are on/after 2 Jul 2026 (when arrival tracking began). Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','install',
-    iArr.tagged.map(t=>({pi:t.row.pi,date:t.row.date,..._iRow(t.row.order),result:t.bucket==='onTime'?'✓ On time':t.bucket==='late'?'✗ Late':'— No arrival log matched (excluded from %)'})));
+  _anSetDrill('iArrival','Site Installation — Installer Arrival On Time %','Every real logged arrival on/after 2 Jul 2026 (when arrival tracking began) — one row per attempt, so a reassigned subjob can show up to once per installer who actually visited. Rows with no matching "arrived at site" log entry are excluded from the % but shown here for visibility.','install',
+    iArr.tagged.map(t=>({pi:t.pi,date:t.date,..._iRow(t.order),result:t.bucket==='onTime'?'✓ On time'+(t.name?' ('+t.name+')':''):t.bucket==='late'?'✗ Late'+(t.name?' ('+t.name+')':''):'— No arrival log matched (excluded from %)'})));
   _anSetDrill('iMDaudit','Site Installation — Material Depot Audit %','Every subjob in range, phone-matched against all-time site audit orders.','install',
     iCanon.map(r=>({pi:r.pi,date:r.date,..._iRow(r.order),result:(r.order.phone&&auditPhones.has(r.order.phone))?'✓ Matched a Material Depot site audit':'✗ No matching site audit'})));
   _anSetDrill('iCompletion','Site Installation — Completion %','Every subjob in this date range.','install',
@@ -1854,19 +1996,9 @@ function drawAnalytics(m){
   ];
 
   m.innerHTML=`
-    <div class="page-head"><h1>Analytics</h1><p>Operational metrics. Each subjob counted exactly once per range, using its current status and most relevant date — reschedule history and multi-day spans never duplicate a row.</p></div>
+    <div class="page-head"><h1>Analytics</h1><p>Operational metrics. Each subjob counted exactly once per range, using its current status and most relevant date — reschedule history and multi-day spans never duplicate a row. Site Audit and Site Installation each have their own independent date range below.</p></div>
 
-    <div class="an-date-row">
-      <span class="an-date-label">Date range</span>
-      <input type="date" id="anFrom" class="an-date-inp" value="${from}">
-      <span style="color:var(--muted);font-size:13px;padding:0 2px">to</span>
-      <input type="date" id="anTo" class="an-date-inp" value="${to}">
-      <button class="an-apply-btn" onclick="analyticsFrom=document.getElementById('anFrom').value;analyticsTo=document.getElementById('anTo').value;drawAnalytics(document.getElementById('main'))">Apply</button>
-      <button class="filt-btn" onclick="(function(){const t=new Date();analyticsTo=_anDstr(t);t.setDate(t.getDate()-6);analyticsFrom=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 7 days</button>
-      <button class="filt-btn" onclick="(function(){const t=new Date();analyticsTo=_anDstr(t);t.setDate(t.getDate()-29);analyticsFrom=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 30 days</button>
-      <button class="filt-btn" onclick="(function(){const t=new Date();analyticsTo=_anDstr(t);t.setDate(t.getDate()-89);analyticsFrom=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 90 days</button>
-    </div>
-    <div style="color:var(--muted);font-size:11px;margin:-8px 0 12px">🔄 Auto-refreshing every 60s${window._anLastFetch?(' · Last updated '+new Date(window._anLastFetch).toLocaleTimeString()):''}</div>
+    <div style="color:var(--muted);font-size:11px;margin:0 0 12px">🔄 Auto-refreshing every 60s${window._anLastFetch?(' · Last updated '+new Date(window._anLastFetch).toLocaleTimeString()):''}</div>
 
     <!-- ══ SITE AUDIT ════════════════════════════════════════════════════ -->
     <div class="an-section">
@@ -1874,15 +2006,17 @@ function drawAnalytics(m){
         <span class="an-section-ico">🔍</span>
         <div>
           <div class="an-section-title">Site Audit</div>
-          <div class="an-section-sub">One row per audit · ${from} to ${to}</div>
+          <div class="an-section-sub">One row per audit · ${aFrom} to ${aTo}</div>
         </div>
         <div class="an-hero"><div class="an-hero-val">${aTotal}</div><div class="an-hero-label">Total Audits in Range</div></div>
       </div>
 
+      <div style="padding:14px 20px 0">${_anDateRowHtml('Audit')}</div>
+
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
         ${pctCard('Completion %',aCompleted,aTotal,'Audits that reached completed status','','aCompletion')}
-        ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed',aArrNote,'aArrival')}
+        ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed — one entry per real logged arrival, so a reassigned audit counts each auditor\'s own attempt',aArrNote,'aArrival')}
         ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','','aReschedule')}
         ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','','aConversion')}
         ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length,'aRatings')}
@@ -1910,14 +2044,16 @@ function drawAnalytics(m){
         <span class="an-section-ico">🔧</span>
         <div>
           <div class="an-section-title">Site Installation</div>
-          <div class="an-section-sub">One row per subjob · ${from} to ${to}</div>
+          <div class="an-section-sub">One row per subjob · ${iFrom} to ${iTo}</div>
         </div>
         <div class="an-hero"><div class="an-hero-val">${iTotal}</div><div class="an-hero-label">Total Subjobs in Range</div></div>
       </div>
 
+      <div style="padding:14px 20px 0">${_anDateRowHtml('Install')}</div>
+
       <div class="an-sub-head">Overview</div>
       <div class="an-grid4">
-        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed — only counted among jobs that reached site',iArrNote,'iArrival')}
+        ${pctCard('Installer Arrival On Time %',iArrTot.onTime,iArrTot.onTime+iArrTot.late,'&gt; 3 min past slot = delayed — one entry per real logged arrival, so a reassigned job counts each installer\'s own attempt',iArrNote,'iArrival')}
         ${pctCard('Material Depot Audit %',iMDaudit,iTotal,'Install customers who also had an MD site audit','Fully automated — phone-number match, no manual input used','iMDaudit')}
         ${pctCard('Completion %',iDone.length,iTotal,'Completed or partially completed, out of all subjobs in range','','iCompletion')}
         ${npsCard('NPS Score',IR_nps,IR_prom,IR_det,IR.length,'iRatings')}
