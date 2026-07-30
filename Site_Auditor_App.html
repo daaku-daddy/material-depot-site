@@ -71,6 +71,11 @@
   .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:520px;margin:0 auto;}
   body.loc-banner-show .app{padding-top:46px;}
   body.loc-banner-show .screen{top:46px;}
+  body.pending-sync-banner-show .app{padding-top:40px;}
+  body.pending-sync-banner-show .screen{top:40px;}
+  body.loc-banner-show.pending-sync-banner-show .app{padding-top:86px;}
+  body.loc-banner-show.pending-sync-banner-show .screen{top:86px;}
+  body.loc-banner-show #pendingSyncBanner{top:46px;}
   .shead{background:var(--navy);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
   .shead .back{border:0;background:rgba(255,255,255,.14);color:#fff;width:34px;height:34px;border-radius:9px;font-size:18px;cursor:pointer;}
   .shead .ti{font-weight:700;font-size:16px;} .shead .su{font-size:11px;color:#9fb2cd;}
@@ -135,6 +140,7 @@
     </div>
   </header>
   <div id="locDeniedBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:60;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.35)">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location to confirm your site arrivals. <button id="locRecheckBtn" style="margin-left:8px;background:#fff;color:#b3261e;border:0;border-radius:6px;padding:4px 10px;font-weight:800;font-size:12px;cursor:pointer">I've fixed it — Recheck</button></div>
+  <div id="pendingSyncBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:59;background:#1a4a8a;color:#fff;font-size:13px;font-weight:700;padding:9px 16px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.35)"><span id="pendingSyncText"></span></div>
   <div class="wrap" id="listView"></div>
 </div>
 
@@ -244,6 +250,13 @@ const STATUS={
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
+// Relative ordering of the local status vocabulary adv() writes — used only to decide,
+// on a poll, whether a queued-but-not-yet-synced local status is still "ahead of" what the
+// server just returned (keep it) or the server has already caught up (drop the stale queue entry).
+// completed/reschedule share the terminal rank: this table is only ever consulted when the
+// server genuinely hasn't seen the write yet, never to arbitrate between two terminal states.
+const ACT_ORDER={callpending:1,onway:2,atsite:3,completed:4,reschedule:4};
+
 let ORDERS=[];
 
 const AUDITOR_COLS='id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log';
@@ -264,6 +277,20 @@ async function _archiveAuditTicked(orderId,ticked,reason){
   }catch(e){/* history is best-effort — never block on this */}
 }
 
+// Persistent indicator (adapts #locDeniedBanner's fixed-banner + body-class mechanics) so a
+// worker whose action got queued isn't left wondering whether it silently failed — counts every
+// not-yet-synced key across both the completion queue (ps/pjc) and the status-transition queue
+// (actq). Called after loadJobs()/_flushActionQueue()/_retryPendingCompletions() so it stays
+// current without a dedicated interval.
+function _updatePendingSyncBanner(){
+  const n=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_actq_')||k.startsWith('md_audit_ps_')||k.startsWith('md_audit_pjc_')).length;
+  const b=document.getElementById('pendingSyncBanner');
+  if(!b)return;
+  document.body.classList.toggle('pending-sync-banner-show',n>0);
+  b.style.display=n>0?'block':'none';
+  if(n>0)document.getElementById('pendingSyncText').textContent=n===1?'⏳ 1 update saved — syncing automatically':`⏳ ${n} updates saved — syncing automatically`;
+}
+
 let _retryingCompletion=false;
 async function _retryPendingCompletions(){
   if(_retryingCompletion)return;_retryingCompletion=true;
@@ -272,33 +299,67 @@ async function _retryPendingCompletions(){
     for(const k of pKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatch('audit_orders',d.id,{status:'completed',log:d.log});localStorage.removeItem(k);}catch(e){}}
     const jcKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_pjc_'));
     for(const k of jcKeys){try{const d=JSON.parse(localStorage.getItem(k));await sbPatchLong('audit_orders',d.id,{audit_ticked:d.ticked});localStorage.removeItem(k);_archiveAuditTicked(d.id,d.ticked,'completed');}catch(e){}}
-  }finally{_retryingCompletion=false;}
+  }finally{_retryingCompletion=false;_updatePendingSyncBanner();}
 }
+
+// Generalized offline-retry queue for adv()'s status transitions (callpending/onway/atsite/
+// reschedule) — one localStorage slot per order, overwritten wholesale on every failed adv()
+// call. Safe because o.log/o.status accumulate monotonically in memory across repeated taps,
+// so each subsequent queued write is already a strict superset of the last. Separate from (and
+// does not touch) the completion-only md_audit_ps_/md_audit_pjc_ queue above.
+let _flushingActionQueue=false;
+async function _flushActionQueue(){
+  if(_flushingActionQueue)return;_flushingActionQueue=true;
+  try{
+    const keys=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_actq_'));
+    for(const k of keys){
+      try{
+        const d=JSON.parse(localStorage.getItem(k));
+        await sbPatch('audit_orders',d.id,{status:d.status,log:d.log});
+        localStorage.removeItem(k);
+      }catch(e){/* leave queued, retry next tick */}
+    }
+  }finally{_flushingActionQueue=false;_updatePendingSyncBanner();}
+}
+
 async function loadJobs(){
   _retryPendingCompletions();
+  _flushActionQueue();
   try{
     const rows=await sbGet('audit_orders?auditor_email=eq.'+encodeURIComponent(ME.email)+'&select='+AUDITOR_COLS+'&status=neq.deleted&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
     const existing={};ORDERS.forEach(o=>{if(o.jobcard)existing[o.pi]=o.jobcard;});
-    ORDERS=rows.map(r=>({
-      id:r.id,
-      pi:r.pi||'',
-      name:r.customer_name||'',
-      phone:r.phone||'',
-      addr:r.addr||'',
-      bm:r.bm||'',
-      date:r.date||null,
-      slot:r.slot||null,
-      status:r.status==='assigned'?'scheduled':r.status,
-      skus:r.skus||[],
-      log:r.log||[],
-      jobcard:existing[r.pi]||null
-    }));
+    const pendingQ={};
+    Object.keys(localStorage).filter(k=>k.startsWith('md_audit_actq_')).forEach(k=>{
+      try{const d=JSON.parse(localStorage.getItem(k));if(d&&d.id)pendingQ[d.id]=d;}catch(e){}
+    });
+    ORDERS=rows.map(r=>{
+      const srvStatus=r.status==='assigned'?'scheduled':r.status;
+      const q=pendingQ[r.id];
+      const localAhead=q&&(ACT_ORDER[q.status]||0)>(ACT_ORDER[srvStatus]||0);
+      if(q&&!localAhead){try{localStorage.removeItem('md_audit_actq_'+r.pi);}catch(e){}}
+      return{
+        id:r.id,
+        pi:r.pi||'',
+        name:r.customer_name||'',
+        phone:r.phone||'',
+        addr:r.addr||'',
+        bm:r.bm||'',
+        date:r.date||null,
+        slot:r.slot||null,
+        status:localAhead?q.status:srvStatus,
+        skus:r.skus||[],
+        log:localAhead?q.log:(r.log||[]),
+        jobcard:existing[r.pi]||null
+      };
+    });
     renderList();
-  }catch(e){console.error('loadJobs',e);renderList();}
+    _updatePendingSyncBanner();
+  }catch(e){console.error('loadJobs',e);renderList();_updatePendingSyncBanner();}
 }
 setInterval(()=>{if(!document.hidden){loadJobs();_locPermTick();}},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadJobs();_locPermTick();}});
+window.addEventListener('online',()=>{_flushActionQueue();_retryPendingCompletions();});
 
 /* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
 const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
@@ -466,11 +527,19 @@ function showCommentThen(title,cb){
 function wireDetail(o){
   $("#detBack").onclick=()=>{$("#detailScreen").classList.add("hide");renderList();};
   const adv=async(st,msg,logOverride,extraLog)=>{
-    const prev=o.status;o.status=st;
+    o.status=st;
     const logMsg=logOverride||{callpending:"Pre-visit call started",onway:"Auditor on the way · customer confirmed",reschedule:"Customer declined → sent to SM to reschedule",atsite:"Auditor arrived at site",completed:"Site audit completed"}[st]||st;
     o.log=o.log||[];o.log.push({t:logMsg,d:new Date().toISOString(),by:"auto",who:ME.name,...(extraLog||{})});
     const dbStatus=st==='scheduled'?'assigned':st;
-    if(o.id){try{await sbPatch('audit_orders',o.id,{status:dbStatus,log:o.log});}catch(e){o.status=prev;toast("Network error — try again");return;}}
+    if(o.id){
+      try{
+        await sbPatch('audit_orders',o.id,{status:dbStatus,log:o.log});
+        try{localStorage.removeItem('md_audit_actq_'+o.pi);}catch(e2){}
+      }catch(e){
+        try{localStorage.setItem('md_audit_actq_'+o.pi,JSON.stringify({id:o.id,status:dbStatus,log:o.log}));}catch(e2){}
+        toast("Saved on your phone — will sync automatically once you're back online");
+      }
+    }
     if(st==='atsite')startLocationTracking(o.pi);
     else if(st==='completed'||st==='reschedule')stopLocationTracking();
     await loadJobs();toast(msg);openDetail(o.pi);
@@ -1175,13 +1244,17 @@ function closeArrivalModal(){
 async function _uploadPhoto(dataURL){
   const blob=await(await fetch(dataURL)).blob();
   const fname=Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.jpg';
-  const r=await fetch(SB_URL+'/storage/v1/object/job-photos/'+fname,{
-    method:'POST',
-    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
-    body:blob
-  });
-  if(!r.ok)throw new Error('upload failed');
-  return SB_URL+'/storage/v1/object/public/job-photos/'+fname;
+  const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),20000);
+  try{
+    const r=await fetch(SB_URL+'/storage/v1/object/job-photos/'+fname,{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
+      body:blob,
+      signal:ac.signal
+    });
+    if(!r.ok)throw new Error('upload failed');
+    return SB_URL+'/storage/v1/object/public/job-photos/'+fname;
+  }finally{clearTimeout(tid);}
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1354,6 +1427,7 @@ function _dsApply(){
 // ─────────────────────────────────────────────────────────────────────────────
 
 renderList();
+_updatePendingSyncBanner();
 loadJobs();
 startLocationTracking(null);
 

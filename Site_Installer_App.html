@@ -65,6 +65,11 @@
   .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
   body.loc-banner-show .app{padding-top:46px;}
   body.loc-banner-show .screen{top:46px;}
+  body.pending-sync-banner-show .app{padding-top:40px;}
+  body.pending-sync-banner-show .screen{top:40px;}
+  body.loc-banner-show.pending-sync-banner-show .app{padding-top:86px;}
+  body.loc-banner-show.pending-sync-banner-show .screen{top:86px;}
+  body.loc-banner-show #pendingSyncBanner{top:46px;}
   .shead{background:var(--navy);color:#fff;padding:14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
   .shead .back{border:0;background:rgba(255,255,255,.16);color:#fff;width:40px;height:40px;border-radius:10px;font-size:22px;cursor:pointer;}
   .shead .ti{font-weight:800;font-size:18px;line-height:1.1;} .shead .su{font-size:12px;color:#9fb2cd;}
@@ -138,6 +143,7 @@
     </div>
   </header>
   <div id="locDeniedBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:60;background:#b3261e;color:#fff;font-size:13px;font-weight:700;padding:10px 16px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.35)">⚠ Location access is blocked. Go to your phone settings &rarr; Site permissions &rarr; enable Location to confirm your site arrivals. <button id="locRecheckBtn" style="margin-left:8px;background:#fff;color:#b3261e;border:0;border-radius:6px;padding:4px 10px;font-weight:800;font-size:12px;cursor:pointer">I've fixed it — Recheck</button></div>
+  <div id="pendingSyncBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:59;background:#1a4a8a;color:#fff;font-size:13px;font-weight:700;padding:9px 16px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.35)"><span id="pendingSyncText"></span></div>
   <div class="wrap" id="listView"></div>
 </div>
 
@@ -253,6 +259,13 @@ const STATUS={
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 
+// Relative ordering of the local status vocabulary adv() writes — used only to decide, on a
+// poll, whether a queued-but-not-yet-synced local status is still "ahead of" what the server
+// just returned (keep it) or the server has already caught up (drop the stale queue entry).
+// completed/reschedule share the terminal rank: this table is only ever consulted when the
+// server genuinely hasn't seen the write yet, never to arbitrate between two terminal states.
+const ACT_ORDER={callpending:1,onway:2,atsite:3,completed:4,reschedule:4};
+
 // roll the parent install_order status up from its sub-jobs (mirrors SM dashboard syncParent)
 function rollupStatus(subjobs,fallback){
   if(!subjobs||!subjobs.length)return fallback;
@@ -291,12 +304,128 @@ async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
   }catch(e){/* history is best-effort — never block on this */}
 }
 
+// Persistent indicator (adapts #locDeniedBanner's fixed-banner + body-class mechanics) so a
+// worker whose action got queued isn't left wondering whether it silently failed — counts every
+// not-yet-synced key across both the completion queue (ps/pjc) and the status-transition queue
+// (actq). Called after loadJobs()/_flushActionQueue()/_retryPendingInstallCompletions() so it
+// stays current without a dedicated interval.
+function _updatePendingSyncBanner(){
+  const n=Object.keys(localStorage).filter(k=>k.startsWith('md_install_actq_')||k.startsWith('md_install_ps_')||k.startsWith('md_install_pjc_')).length;
+  const b=document.getElementById('pendingSyncBanner');
+  if(!b)return;
+  document.body.classList.toggle('pending-sync-banner-show',n>0);
+  b.style.display=n>0?'block':'none';
+  if(n>0)document.getElementById('pendingSyncText').textContent=n===1?'⏳ 1 update saved — syncing automatically':`⏳ ${n} updates saved — syncing automatically`;
+}
+
+// Offline-retry queue for reallyDone's completion write — mirrors Site_Auditor_App.html's
+// md_audit_ps_/md_audit_pjc_ pattern (closes CLAUDE.md note 72's documented gap: this file
+// previously had no retry mechanism for a failed completion write at all). Two independent
+// keys per subjob, since reallyDone itself splits into two independently-retried steps.
+let _retryingInstallCompletion=false;
+async function _retryPendingInstallCompletions(){
+  if(_retryingInstallCompletion)return;_retryingInstallCompletion=true;
+  try{
+    const psKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_install_ps_'));
+    for(const k of psKeys){
+      try{
+        const d=JSON.parse(localStorage.getItem(k));
+        const parentRows=await sbGet('install_orders?id=eq.'+d.id+'&select=subjobs,status');
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===d.sjId);
+        if(sj){
+          if(sj.assignments&&sj.assignments.length){
+            const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+            if(myA)myA.status='completed';
+            sj.status='completed';
+          }else{sj.status='completed';}
+        }
+        const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
+        await sbPatch('install_orders',d.id,{status:parentStatus,log:d.log});
+        localStorage.removeItem(k);
+      }catch(e){}
+    }
+    const pjcKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_install_pjc_'));
+    for(const k of pjcKeys){
+      try{
+        const d=JSON.parse(localStorage.getItem(k));
+        const parentRows=await sbGet('install_orders?id=eq.'+d.id+'&select=subjobs');
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===d.sjId);
+        if(sj){
+          if(sj.assignments&&sj.assignments.length){
+            const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+            if(myA)myA.status='completed';
+            sj.status='completed';
+          }else{sj.status='completed';}
+          sj.jobcard=d.jobcard;
+        }
+        await sbPatchLong('install_orders',d.id,{subjobs});
+        localStorage.removeItem(k);
+        _archiveInstallJobcard(d.id,d.sjId,d.jobcard,'completed');
+      }catch(e){}
+    }
+  }finally{_retryingInstallCompletion=false;_updatePendingSyncBanner();}
+}
+
+// Generalized offline-retry queue for adv()'s status transitions (callpending/onway/atsite/
+// reschedule) — one localStorage slot per subjob, holding the latest target status plus an
+// append-only list of not-yet-synced log entries (each keeping its own originally-captured
+// timestamp). Unlike the auditor app, adv() here is a read-modify-write against a `subjobs`
+// array shared with other installers/subjobs on the same order, so a queue entry can NEVER be
+// blind-PATCHed from a locally-cached subjobs snapshot — every flush re-fetches fresh, exactly
+// like adv()'s own online path, to avoid clobbering a sibling installer's concurrent edit.
+function _queueInstallAction(pi,sjId,id,status,logEntry){
+  const key='md_install_actq_'+pi+'_'+sjId;
+  let existing=null;
+  try{existing=JSON.parse(localStorage.getItem(key));}catch(e){}
+  const logEntries=(existing&&Array.isArray(existing.logEntries))?existing.logEntries:[];
+  logEntries.push(logEntry);
+  try{localStorage.setItem(key,JSON.stringify({id,sjId,status,logEntries}));}catch(e){}
+}
+let _flushingActionQueue=false;
+async function _flushActionQueue(){
+  if(_flushingActionQueue)return;_flushingActionQueue=true;
+  try{
+    const keys=Object.keys(localStorage).filter(k=>k.startsWith('md_install_actq_'));
+    for(const k of keys){
+      try{
+        const d=JSON.parse(localStorage.getItem(k));
+        const parentRows=await sbGet('install_orders?id=eq.'+d.id+'&select=subjobs,log,status');
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===d.sjId);
+        if(!sj){localStorage.removeItem(k);continue;} // subjob genuinely gone — nothing sane to retry
+        if(sj.assignments&&sj.assignments.length){
+          const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+          if(myA)myA.status=d.status;else sj.status=d.status;
+          const amPrimary=myA&&(myA.primary===true||(!sj.assignments.some(a=>a.primary)&&sj.assignments.indexOf(myA)===0));
+          if(amPrimary){sj.status=d.status;}
+        }else{sj.status=d.status;}
+        const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
+        (d.logEntries||[]).forEach(le=>freshLog.push(le));
+        const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
+        await sbPatch('install_orders',d.id,{subjobs,status:parentStatus,log:freshLog});
+        localStorage.removeItem(k);
+      }catch(e){/* leave queued, retry next tick */}
+    }
+  }finally{_flushingActionQueue=false;_updatePendingSyncBanner();}
+}
+
 async function loadJobs(){
+  _retryPendingInstallCompletions();
+  _flushActionQueue();
   try{
     const rows=await sbGet('install_orders_slim?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)&order=created_at.desc');
     if(!Array.isArray(rows)){renderList();return;}
     // Preserve existing jobcard data
     const existing={};JOBS.forEach(j=>{if(j.jobcard)existing[j.pi+'|'+j.sjId]=j.jobcard;});
+    const pendingQ={};
+    Object.keys(localStorage).filter(k=>k.startsWith('md_install_actq_')).forEach(k=>{
+      try{const d=JSON.parse(localStorage.getItem(k));if(d&&d.id&&d.sjId)pendingQ[d.id+'|'+d.sjId]=d;}catch(e){}
+    });
     const newJobs=[];
     rows.forEach(r=>{
       (r.subjobs||[]).forEach(sj=>{
@@ -307,6 +436,10 @@ async function loadJobs(){
           const aSlots=myAssign?(myAssign.slots||[]):(sj.slot?[sj.slot]:[]);
           // Primary = the assignment with primary:true, or the first one if none set
           const isPrimary=myAssign?(myAssign.primary===true||(!sj.assignments.some(a=>a.primary)&&sj.assignments.indexOf(myAssign)===0)):true;
+          const srvStatus=sj.status==='assigned'?'scheduled':sj.status;
+          const q=pendingQ[r.id+'|'+sj.id];
+          const localAhead=q&&(ACT_ORDER[q.status]||0)>(ACT_ORDER[srvStatus]||0);
+          if(q&&!localAhead){try{localStorage.removeItem('md_install_actq_'+r.pi+'_'+sj.id);}catch(e){}}
           newJobs.push({
             id:r.id,
             sjId:sj.id,
@@ -319,12 +452,12 @@ async function loadJobs(){
             date:aDate,
             slot:aSlots[0]||null,
             slots:aSlots,
-            status:sj.status==='assigned'?'scheduled':sj.status,
+            status:localAhead?q.status:srvStatus,
             sku:(sj.items||[]).map(it=>({code:it.sku||'',skuName:it.name||it.num||'',link:it.link||'',qty:_itemQtyDisplay(it,sj.type==='wallpaper')})),
             auditBy:(r.service&&r.service.audit_by)||null,
             audit:null,
             jobcard:existing[r.pi+'|'+sj.id]||sj.jobcard||null,
-            parentLog:r.log||[],
+            parentLog:localAhead?[...(r.log||[]),...(q.logEntries||[])]:(r.log||[]),
             isPrimary
           });
         }
@@ -332,10 +465,12 @@ async function loadJobs(){
     });
     JOBS=newJobs;
     renderList();
-  }catch(e){console.error('loadJobs',e);renderList();}
+    _updatePendingSyncBanner();
+  }catch(e){console.error('loadJobs',e);renderList();_updatePendingSyncBanner();}
 }
 setInterval(()=>{if(!document.hidden){loadJobs();_locPermTick();}},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadJobs();_locPermTick();}});
+window.addEventListener('online',()=>{_flushActionQueue();_retryPendingInstallCompletions();});
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
@@ -500,30 +635,36 @@ function wireDetail(j){
     document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=true);
     const prev=j.status;j.status=st;
     const logMsg=logOverride||{callpending:"Pre-install call started",onway:"Installer on the way · customer confirmed",reschedule:"Customer declined → sent to office to reschedule",atsite:"Installer arrived at site",completed:"Installation completed"}[st]||st;
+    const dbSt=st==='scheduled'?'assigned':st;
+    // Captured now, before any network call, so this exact moment survives even if the write
+    // below fails and has to be queued/retried later — never regenerated on retry.
+    const logEntry={t:logMsg,d:new Date().toISOString(),by:"auto",who:ME.name,...(extraLog||{})};
     if(j.id&&j.sjId){
       try{
         const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
-        if(Array.isArray(parentRows)&&parentRows[0]){
-          const subjobs=parentRows[0].subjobs||[];
-          const sj=subjobs.find(s=>s.id===j.sjId);
-          if(!sj){toast("Job not found — please refresh");j.status=prev;_advBusy=false;document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=false);return;}
-          const dbSt=st==='scheduled'?'assigned':st;
-          if(sj.assignments&&sj.assignments.length){
-            const myA=sj.assignments.find(a=>a.installer_email===ME.email);
-            if(myA)myA.status=dbSt;
-            else sj.status=dbSt;
-            // sj.status driven by the primary installer; additional installers don't affect it
-            const primaryA=sj.assignments.find(a=>a.primary===true)||sj.assignments[0];
-            const amPrimary=myA&&(myA.primary===true||(!sj.assignments.some(a=>a.primary)&&sj.assignments.indexOf(myA)===0));
-            if(amPrimary){sj.status=dbSt;}
-            // else: non-primary — their assignment is updated above but sj.status unchanged
-          }else{sj.status=dbSt;}
-          const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
-          freshLog.push({t:logMsg,d:new Date().toISOString(),by:"auto",who:ME.name,...(extraLog||{})});
-          const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
-          await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
-        }
-      }catch(e){j.status=prev;_advBusy=false;document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=false);toast("Network error — try again");return;}
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===j.sjId);
+        if(!sj){toast("Job not found — please refresh");j.status=prev;_advBusy=false;document.querySelectorAll('#detBody .bigbtn').forEach(b=>b.disabled=false);return;}
+        if(sj.assignments&&sj.assignments.length){
+          const myA=sj.assignments.find(a=>a.installer_email===ME.email);
+          if(myA)myA.status=dbSt;
+          else sj.status=dbSt;
+          // sj.status driven by the primary installer; additional installers don't affect it
+          const primaryA=sj.assignments.find(a=>a.primary===true)||sj.assignments[0];
+          const amPrimary=myA&&(myA.primary===true||(!sj.assignments.some(a=>a.primary)&&sj.assignments.indexOf(myA)===0));
+          if(amPrimary){sj.status=dbSt;}
+          // else: non-primary — their assignment is updated above but sj.status unchanged
+        }else{sj.status=dbSt;}
+        const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
+        freshLog.push(logEntry);
+        const parentStatus=rollupStatus(subjobs,parentRows[0].status||'scheduled');
+        await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
+        try{localStorage.removeItem('md_install_actq_'+j.pi+'_'+j.sjId);}catch(e2){}
+      }catch(e){
+        _queueInstallAction(j.pi,j.sjId,j.id,dbSt,logEntry);
+        toast("Saved on your phone — will sync automatically once you're back online");
+      }
     }
     if(st==='atsite')startLocationTracking(j.pi);
     else if(st==='completed'||st==='reschedule')stopLocationTracking();
@@ -964,38 +1105,64 @@ function showInstallSignature(j,ratings){
     let sigImg=jcSignPad.export();
     try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
     j.jobcard={rooms:collectRooms(),sign:{img:sigImg,name:$("#signName").value,ratings}};
-    const prev=j.status;j.status="completed";
-    j.parentLog=j.parentLog||[];j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
+    j.status="completed";
+    j.parentLog=j.parentLog||[];
+    j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
     toast("Saving...");
-    try{
-      const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
-      if(Array.isArray(parentRows)&&parentRows[0]){
+    if(j.id&&j.sjId){
+      // Step 1: update status immediately (small — ensures order leaves atsite in SM/admin).
+      // Independently queued/retried on failure — mirrors the auditor app's finishAudit flow
+      // (md_audit_ps_/md_audit_pjc_) rather than reverting/discarding the completion.
+      try{
+        const parentRows=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,log,status');
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
         const subjobs=parentRows[0].subjobs||[];
         const sj=subjobs.find(s=>s.id===j.sjId);
         if(sj){
           if(sj.assignments&&sj.assignments.length){
             const myA=sj.assignments.find(a=>a.installer_email===ME.email);
             if(myA)myA.status='completed';
-            // Primary completing drives the sj to completed (additional installers tracked separately)
             sj.status='completed';
           }else{sj.status='completed';}
-          sj.jobcard=j.jobcard;
         }
         const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
-        // Step 1: update status immediately (small — ensures order leaves atsite in SM/admin)
         await sbPatch('install_orders',j.id,{status:parentStatus,log:j.parentLog});
-        // Step 2: save full job card (subjobs with job card data — may be large)
-        const completionPatch={subjobs};
+        try{localStorage.removeItem('md_install_ps_'+j.pi+'_'+j.sjId);}catch(e2){}
+      }catch(e){
+        toast("Status not saved — will retry automatically");
+        try{localStorage.setItem('md_install_ps_'+j.pi+'_'+j.sjId,JSON.stringify({id:j.id,sjId:j.sjId,log:j.parentLog}));}catch(e2){}
+      }
+      // Step 2: save full job card (subjobs with job card data — may be large). Always attempted
+      // regardless of step 1's outcome — re-fetches its own fresh subjobs so it never depends on
+      // step 1 having succeeded, and mutates sj.status itself so it's self-sufficient either way.
+      try{
+        const parentRows2=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs');
+        if(!Array.isArray(parentRows2)||!parentRows2[0])throw new Error('fetch failed');
+        const subjobs2=parentRows2[0].subjobs||[];
+        const sj2=subjobs2.find(s=>s.id===j.sjId);
+        if(sj2){
+          if(sj2.assignments&&sj2.assignments.length){
+            const myA2=sj2.assignments.find(a=>a.installer_email===ME.email);
+            if(myA2)myA2.status='completed';
+            sj2.status='completed';
+          }else{sj2.status='completed';}
+          sj2.jobcard=j.jobcard;
+        }
+        const completionPatch={subjobs:subjobs2};
         _completionWrite=completionPatch;
         await sbPatchLong('install_orders',j.id,completionPatch);
         try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
+        try{localStorage.removeItem('md_install_pjc_'+j.pi+'_'+j.sjId);}catch(e2){}
         _archiveInstallJobcard(j.id,j.sjId,j.jobcard,'completed');
-        // Write ratings to dedicated table for reporting/NPS
-        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){
-          try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e2){console.error('ratings write failed',e2);}
-        }
+      }catch(e){
+        toast("Job saved on your phone — will finish syncing automatically");
+        try{localStorage.setItem('md_install_pjc_'+j.pi+'_'+j.sjId,JSON.stringify({id:j.id,sjId:j.sjId,jobcard:j.jobcard}));}catch(e2){}
       }
-    }catch(e){j.status=prev;if(btn){btn.disabled=false;btn.textContent="Save & finish job";}toast("Network error — couldn't save. Try again");return;}
+      // Write ratings to dedicated table for reporting/NPS (best-effort, unrelated to the retry queue)
+      try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){
+        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e2){console.error('ratings write failed',e2);}
+      }
+    }
     await genPDF(j);
     await loadJobs();
     document.querySelector(".footer").classList.remove("hide");
@@ -1244,13 +1411,17 @@ function closeArrivalModal(){
 async function _uploadPhoto(dataURL){
   const blob=await(await fetch(dataURL)).blob();
   const fname=Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.jpg';
-  const r=await fetch(SB_URL+'/storage/v1/object/job-photos/'+fname,{
-    method:'POST',
-    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
-    body:blob
-  });
-  if(!r.ok)throw new Error('upload failed');
-  return SB_URL+'/storage/v1/object/public/job-photos/'+fname;
+  const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),20000);
+  try{
+    const r=await fetch(SB_URL+'/storage/v1/object/job-photos/'+fname,{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
+      body:blob,
+      signal:ac.signal
+    });
+    if(!r.ok)throw new Error('upload failed');
+    return SB_URL+'/storage/v1/object/public/job-photos/'+fname;
+  }finally{clearTimeout(tid);}
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1422,7 +1593,7 @@ function _dsApply(){
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-renderList();loadJobs();
+renderList();_updatePendingSyncBanner();loadJobs();
 startLocationTracking(null);
 
 // ── Location permission monitor — periodically re-checks/re-prompts; "somewhat mandatory" ──
