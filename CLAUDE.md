@@ -364,7 +364,7 @@ Additional installer: marks own assignment complete via `markAdditionalComplete(
 Same fix as auditor app. `showPassToClientInst(j)` does the early cancel. `_completionWrite` is set before `sbPatch` in `reallyDone`, storing `{subjobs, status:parentStatus, log:j.parentLog}`. Autosave re-issues after draft write. `markAdditionalComplete` also does early cancel. Installer autosave is more dangerous (read-modify-write: `sbGet` → mutate → `sbPatch`) — seq checks placed after `sbGet` and before `sbPatch`, plus `_completionWrite` catches the post-write race.
 
 ### Store Team App (`Store_Team_App.html`)
-- Standalone slot-booking app for in-store staff at Material Depot's 3 experience centres: JP Nagar, Whitefield, Yelahanka
+- Standalone slot-booking app for in-store staff at Material Depot's 4 experience centres: JP Nagar, Whitefield, Yelahanka, HSR Layout
 - **Open access** — no login required. Any visitor with the URL can use it. Store selection persisted in `localStorage` key `md_store` per device; first visit shows store picker overlay.
 - **No `ME` session** — booking log uses `who:MYSTORE` and `created_by_email:'store-team'`. No sign-out button.
 - **6 fixed slots**: 10:00, 11:00, 13:00, 14:00, 16:00, 17:00 (each 1 hour)
@@ -374,7 +374,7 @@ Same fix as auditor app. `showPassToClientInst(j)` does the early cancel. `_comp
 - **Pre-booking creates** `audit_orders` row: `{pi:'SRES-{storeCode6}-{timestamp9}', bm:MYSTORE, date, slot:slotId, status:'slot_reserved', skus:[{c:'AUDIT',n:'Site Audit',audit:true}], log:[{who:MYSTORE, ...}], created_by_email:'store-team'}`
 - **Confirmed bookings section**: shows ALL non-deleted, non-slot_reserved audit orders for the selected date (all stores, all auditors). This is intentional — shows store staff total auditor workload for the day, which determines slot availability across all stores.
 - **Poll**: no background poll — data re-fetched each time the date changes or booking is made
-- `STORES` constant: `['JP Nagar','Whitefield','Yelahanka']`
+- `STORES` constant: `['JP Nagar','Whitefield','Yelahanka','HSR Layout']`
 
 ### Admin Console (`Admin.html`)
 - **Mobile shell** (added 2026-07-23, see note 61): `@media(max-width:900px)` turns `.rail` into an off-canvas drawer (`#menuToggle` hamburger in header, `#railOverlay` backdrop, `closeMobileNav()`). Below 900px width, always test that any new full-width grid/table wraps instead of overflowing — `html,body{overflow-x:hidden}` is a safety net, not a substitute for wrapping content correctly.

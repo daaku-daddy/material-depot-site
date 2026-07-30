@@ -166,7 +166,7 @@ async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout((
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 
 /* ── Constants ───────────────────────────────────────────────────────────────── */
-const STORES=['JP Nagar','Whitefield','Yelahanka'];
+const STORES=['JP Nagar','Whitefield','Yelahanka','HSR Layout'];
 
 const SLOT_DEFS=[
   {id:'10:00',label:'10:00 AM',rangeEnd:'11:00 AM',startMin:600,endMin:660,group:'Morning'},
