@@ -1,0 +1,13 @@
+{
+  "name": "MD Site Shadower",
+  "short_name": "MD Shadower",
+  "description": "Material Depot — Site Shadower training schedule app",
+  "start_url": "/Site_Shadower_App.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1F3A5F",
+  "theme_color": "#1F3A5F",
+  "icons": [
+    {"src": "/md_icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

@@ -136,6 +136,7 @@
     <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Auditor</div></div>
     <div class="hright">
       <button class="rolesw" id="switchRole" style="display:none">&#8644; Installer</button>
+      <button class="rolesw" id="switchSM" style="display:none">&#8646; Service Manager</button>
       <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Auditor</div>
     </div>
   </header>
@@ -214,9 +215,20 @@ async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeo
 async function sbPatchLong(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),90000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+// Returns the trainee's secondary role active today (site_shadower|site_auditor), or null. Same
+// lexicographic YYYY-MM-DD compare as active_from; dstr() below is hoisted. See CLAUDE.md note 85.
+function activeSecondaryRole(stages){
+  if(!Array.isArray(stages))return null;
+  const t=dstr(new Date());
+  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
+  return null;
+}
 
 const SESSION=getSession();
-if(!SESSION||!['site_auditor','auditor_installer'].includes(SESSION.role)){window.location.href='Login.html';}
+// Admit real auditors/auditor-installers, OR a service_mgr trainee whose training schedule puts them
+// in a site_auditor stage TODAY. A plain service_mgr (training_stages=[] → null) is still rejected.
+const _isAuditorTrainee=SESSION&&SESSION.role==='service_mgr'&&activeSecondaryRole(SESSION.training_stages)==='site_auditor';
+if(!SESSION||!(['site_auditor','auditor_installer'].includes(SESSION.role)||_isAuditorTrainee)){window.location.href='Login.html';}
 history.replaceState(null,'',location.href);
 window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',zone:''};
@@ -1116,6 +1128,9 @@ function renderSketchData(r){
 $("#jcBack").onclick=()=>{$("#jcScreen").classList.add("hide");};
 if(document.getElementById("signOut"))document.getElementById("signOut").onclick=()=>{if(confirm("Sign out?")){localStorage.removeItem('md_user');window.location.href="Login.html";}};
 if(SESSION.role==='auditor_installer'){const sw=document.getElementById('switchRole');if(sw){sw.style.display='';sw.onclick=()=>{window.location.href='Site_Installer_App.html';};}}
+// A service_mgr on this page can only be a trainee in an active site_auditor stage (see guard) —
+// give them a toggle back to their primary Service Manager dashboard.
+if(SESSION.role==='service_mgr'){const sw2=document.getElementById('switchSM');if(sw2){sw2.style.display='';sw2.onclick=()=>{window.location.href='SM_Audit_Dashboard.html';};}}
 
 // ── PWA service worker ─────────────────────────────────────────────────────
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});

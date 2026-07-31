@@ -31,7 +31,7 @@
   header .who b{color:#fff;font-size:13px;}
   .avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;}
   .layout{display:flex;min-height:calc(100vh - 56px);}
-  .rail{width:208px;background:#fff;border-right:1px solid var(--line);padding:14px 10px;flex:0 0 auto;}
+  .rail{width:208px;background:#fff;border-right:1px solid var(--line);padding:14px 10px;flex:0 0 auto;position:sticky;top:56px;align-self:flex-start;height:calc(100vh - 56px);overflow-y:auto;}
   .rail .grp{font-size:10px;letter-spacing:.8px;color:var(--muted);font-weight:800;margin:14px 8px 6px;}
   .rail a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px;cursor:pointer;margin:2px 0;}
   .rail a .ico{width:18px;text-align:center;opacity:.8;}
@@ -261,6 +261,7 @@
     <button id="vInstall">Installations</button>
   </div>
   <div class="right">
+    <a id="roleSwitch" href="#" title="Switch to your current training role" style="display:none;align-self:center;margin-right:12px;background:var(--yellow);color:var(--navy);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#8646;</a>
     <div class="who"><b id="smName">…</b><br>Service Manager</div>
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer" id="smAvatar">SM</div>
   </div>
@@ -457,6 +458,30 @@ window.addEventListener('popstate',()=>history.pushState(null,'',location.href))
 document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 (function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
 
+/* ===== Training secondary-role toggle (service_mgr trainees keep SM access + switch to today's stage) ===== */
+function _renderRoleSwitch(){
+  const sw=document.getElementById('roleSwitch'); if(!sw)return;
+  const sec=activeSecondaryRole(SESSION&&SESSION.training_stages);
+  if(sec==='site_shadower'){sw.innerHTML='&#8646; Shadower';sw.href='Site_Shadower_App.html';sw.style.display='';}
+  else if(sec==='site_auditor'){sw.innerHTML='&#8646; Auditor';sw.href='Site_Auditor_App.html';sw.style.display='';}
+  else{sw.style.display='none';}
+}
+_renderRoleSwitch();
+// Sessions never expire, so a schedule the Admin sets AFTER this trainee logged in won't be in md_user
+// yet. Refresh training_stages once in the background, then re-render the toggle. Best-effort; a plain
+// SM (or admin) with no stages just no-ops. Reuses the app's own sbGet (read-only).
+(async function(){
+  if(!SESSION||SESSION.role!=='service_mgr')return;
+  try{
+    const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(SESSION.email)+'&select=training_stages');
+    if(Array.isArray(rows)&&rows[0]){
+      SESSION.training_stages=rows[0].training_stages||[];
+      localStorage.setItem('md_user',JSON.stringify(SESSION));
+      _renderRoleSwitch();
+    }
+  }catch(e){}
+})();
+
 /* ============== CONFIG ============== */
 const AUDIT_SKU="SVC-AUDIT-001";
 // Flooring audit windows
@@ -528,8 +553,18 @@ async function loadAuditors(){
     AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
   }catch(e){console.error('loadAuditors',e);}
 }
+// Site shadowers = service_mgr trainees whose training schedule has them in a site_shadower stage
+// TODAY (see CLAUDE.md note 85). Kept a SEPARATE list from AUDITORS so it never touches the auditor
+// picker / cap / conflict logic — a shadower only observes, they are not an auditable resource.
+let SHADOWERS=[];
+async function loadShadowers(){
+  try{
+    const rows=await sbGet('profiles?role=eq.service_mgr&select=id,name,email,training_stages');
+    SHADOWERS=(Array.isArray(rows)?rows:[]).filter(r=>activeSecondaryRole(r.training_stages)==='site_shadower').map(r=>({id:r.id,name:r.name,email:r.email}));
+  }catch(e){console.error('loadShadowers',e);SHADOWERS=[];}
+}
 
-const AUDIT_COLS='id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log,created_by_email';
+const AUDIT_COLS='id,pi,po,skus,bm,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,shadower_email,shadower_name,log,created_by_email';
 const mapAuditRow=r=>({
   id:r.id,
   pi:r.pi||'',
@@ -547,6 +582,8 @@ const mapAuditRow=r=>({
   auditor:r.auditor_id||null,
   auditorName:r.auditor_name||null,
   auditorEmail:r.auditor_email||null,
+  shadowerEmail:r.shadower_email||null,
+  shadowerName:r.shadower_name||null,
   log:r.log||[]
 });
 async function loadOrders(){
@@ -577,6 +614,27 @@ function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="pin">&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
 function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime())){const m=String(d).match(/\d{1,2}:\d{2}\s*(?:[AP]M)?/i);return m?m[0]+' (date unknown)':'—';}const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+ts;}
+// Mandatory note for any MANUAL SM action (status change, backward move, partial, follow-up).
+// Returns the trimmed non-empty note, or null if the SM cancelled or left it blank — callers MUST
+// abort and write nothing when this returns null. Note text is embedded into the log entry's `t`,
+// so it surfaces in the drawer Activity timeline with no render changes.
+function requireNote(actionLabel,preface){
+  const raw=prompt((preface?preface+"\n\n":"")+"Add a note for this action (required):\n"+actionLabel);
+  if(raw===null)return null;
+  const note=raw.trim();
+  if(!note){toast("A note is required — nothing was changed");return null;}
+  return note;
+}
+// Training lifecycle: a service_mgr trainee keeps role=service_mgr (primary) plus dated secondary
+// stages {role,start,end} in profiles.training_stages (site_shadower then site_auditor). Returns the
+// secondary role active TODAY, or null when no stage covers today (→ pure SM, toggle hidden). Uses the
+// same lexicographic YYYY-MM-DD compare as active_from (notes 44/50); dstr() is a function declaration.
+function activeSecondaryRole(stages){
+  if(!Array.isArray(stages))return null;
+  const t=dstr(new Date());
+  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
+  return null;
+}
 
 const BOOKED=["scheduled","assigned","onway","atsite","completed"];
 function slotUsage(date,slotId){return ORDERS.filter(o=>o.date===date&&o.slot===slotId&&BOOKED.includes(o.status)).length;}
@@ -1029,7 +1087,16 @@ function drawerBody(o){
         <button class="btn navy sm" id="saveSchSlot" style="margin-top:4px">Save time change</button>
       </div>
       <div class="note">Auditors with a time conflict (booking within 2 hours) are flagged in amber — you can still assign them if the two sites are close by, with a confirmation. Assigning SMSes the auditor's details to the customer.</div>
-      <div class="auditorlist" id="auditorList"></div></div>`;
+      <div class="auditorlist" id="auditorList"></div>${(function(){
+        const opts=SHADOWERS.slice();
+        if(o.shadowerEmail&&!opts.some(s=>s.email===o.shadowerEmail))opts.push({email:o.shadowerEmail,name:o.shadowerName||o.shadowerEmail});
+        if(!opts.length)return '';
+        return `<div class="field" style="margin-top:12px"><label>Shadowed by (optional) — a trainee observing this audit</label>
+          <select id="shadowerSelect" style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
+            <option value="">None</option>
+            ${opts.map(s=>`<option value="${s.email}" ${o.shadowerEmail===s.email?'selected':''}>${s.name}</option>`).join('')}
+          </select></div>`;
+      })()}</div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
     const slotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
@@ -1195,14 +1262,16 @@ function wireDrawer(o){
     if(o.status==="call_na"||o.status==="reschedule")curEff=FLOW.indexOf("created");
     const tIdx=FLOW.indexOf(target);
     if(tIdx>=curEff)return; // only backward
+    const note=requireNote("Move back to "+STATUS[target].l);
+    if(note===null)return;
     o.status=target;
     // clear forward data
-    if(tIdx<FLOW.indexOf("assigned"))o.auditor=null;
+    if(tIdx<FLOW.indexOf("assigned")){o.auditor=null;o.shadowerEmail=null;o.shadowerName=null;}
     if(tIdx<FLOW.indexOf("scheduled")){o.slot=null;o.date=null;}
-    o.log.push({t:"Moved back to "+STATUS[target].l+" by SM",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    o.log.push({t:"Moved back to "+STATUS[target].l+" by SM — note: \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id){
       const patch={status:o.status,log:o.log};
-      if(tIdx<FLOW.indexOf("assigned")){patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;}
+      if(tIdx<FLOW.indexOf("assigned")){patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;patch.shadower_email=null;patch.shadower_name=null;}
       if(tIdx<FLOW.indexOf("scheduled")){patch.slot=null;patch.date=null;}
       await sbPatch('audit_orders',o.id,patch);
     }
@@ -1212,7 +1281,7 @@ function wireDrawer(o){
   // manual status override
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
-    let overrideReason='';
+    let forcedCompletedNoCard=false;
     if(st==='completed'&&o.status!=='completed'){
       // audit_ticked.sign is the only proof the audit actually happened — it's excluded from the
       // bulk poll (see POLL NOTE), so fetch fresh rather than trusting a possibly-unloaded o.auditTicked.
@@ -1226,8 +1295,7 @@ function wireDrawer(o){
         const draftNote=(ticked&&!Array.isArray(ticked)&&ticked.draft)?" There is an unfinished draft with "+((ticked.rooms||[]).length)+" room(s) recorded — it will be left as-is, not signed.":"";
         const ok=confirm("This audit has NO signed job card yet — no photos, measurements, or customer signature/rating on file."+draftNote+"\n\nForcing Completed now will close it out with no proof the audit happened. Only do this if you've confirmed with the auditor/customer directly.\n\nContinue?");
         if(!ok)return;
-        overrideReason=(prompt("Reason for overriding without a signed job card (required):")||'').trim();
-        if(!overrideReason){toast("Reason required — status not changed");return;}
+        forcedCompletedNoCard=true;
       }
     }
     if(o.status==='completed'&&st!=='completed'){
@@ -1268,14 +1336,16 @@ function wireDrawer(o){
     // set this way will never show up in Auditor Arrival On Time % (CLAUDE.md note 74). Not a
     // restriction — the SM can still do this — just make sure they know why the metric won't count it.
     const isManualAtSite=st==='atsite'&&o.status!=='atsite';
+    const note=requireNote("Status → "+STATUS[st].l);
+    if(note===null)return;
     o.status=st;
-    const overrideNote=overrideReason?" · ⚠ forced Completed without signed job card: \""+overrideReason+"\" (SM override)":"";
+    const overrideNote=forcedCompletedNoCard?" · ⚠ forced Completed without signed job card: \""+note+"\" (SM override)":" — note: \""+note+"\"";
     const atsiteNote=isManualAtSite?" · ⚠ no field-confirmed arrival (SM override — excluded from Arrival On Time % tracking)":"";
     o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote+atsiteNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     const patch={status:o.status,log:o.log};
     // Clear forward data when moving backward
     if(tEff<curEff){
-      if(tEff<FLOW.indexOf('assigned')){o.auditor=null;patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;}
+      if(tEff<FLOW.indexOf('assigned')){o.auditor=null;o.shadowerEmail=null;o.shadowerName=null;patch.auditor_id=null;patch.auditor_name=null;patch.auditor_email=null;patch.shadower_email=null;patch.shadower_name=null;}
       if(tEff<FLOW.indexOf('scheduled')){o.slot=null;o.date=null;patch.slot=null;patch.date=null;}
     }
     if(o.id)await sbPatch('audit_orders',o.id,patch);
@@ -1348,9 +1418,9 @@ function wireDrawer(o){
     await loadOrders();toast((wasResched?"Slot rebooked":"Slot booked")+" — "+fmtDate(o.date));openOrder(o.pi);};
   if($("#saveFollowUp"))$("#saveFollowUp").onclick=async()=>{
     const fu=($("#followUpDate")||{}).value||'';
-    const rem=($("#reschedRemark")||{}).value||'';
-    if(!fu&&!rem){toast("Enter a follow-up date or remarks to save");return;}
-    const logText="Follow-up noted"+(fu?" · Call client by "+fmtDate(fu):'')+(rem?" — "+rem:'');
+    const rem=($("#reschedRemark")||{}).value.trim()||'';
+    if(!rem){toast("A note is required to save the follow-up");return;}
+    const logText="Follow-up noted"+(fu?" · Call client by "+fmtDate(fu):'')+" — note: \""+rem+"\"";
     o.log.push({t:logText,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     const svc=Object.assign({},o.service,fu?{follow_up_date:fu}:{});
     if(o.id)await sbPatch('audit_orders',o.id,{log:o.log,service:svc});
@@ -1391,7 +1461,19 @@ function wireDrawer(o){
   if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
     const overrideNote=draft.auditorOverride?" · ⚠ assigned despite 2-hour scheduling conflict (SM override)":"";
     o.log.push({t:"Auditor assigned: "+a.name+overrideNote+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
-    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
+    // Optional shadower assignment (only present when a trainee is in a shadowing stage today).
+    let shadPatch={};
+    const shSel=$("#shadowerSelect");
+    if(shSel){
+      const email=shSel.value||null;
+      const sh=email?SHADOWERS.find(s=>s.email===email):null;
+      const prev=o.shadowerEmail||null;
+      o.shadowerEmail=email; o.shadowerName=sh?sh.name:(email?o.shadowerName:null);
+      shadPatch={shadower_email:o.shadowerEmail,shadower_name:o.shadowerName};
+      if(email&&email!==prev&&sh)o.log.push({t:"Shadower assigned: "+sh.name+" (observing this audit)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+      else if(!email&&prev)o.log.push({t:"Shadower removed",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    }
+    if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,...shadPatch,log:o.log});
     await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
 
   if($("#editSchSlotBtn"))$("#editSchSlotBtn").onclick=()=>{
@@ -1426,13 +1508,17 @@ function wireDrawer(o){
 
   if($("#setFollowUp"))$("#setFollowUp").onclick=async()=>{
     const d=$("#fuDate").value;if(!d){toast("Pick a date first");return;}
+    const note=requireNote("Set follow-up to "+fmtDate(d));if(note===null)return;
     o.service={...(o.service||{}),follow_up_date:d};
-    if(o.id)await sbPatch('audit_orders',o.id,{service:o.service});
+    o.log.push({t:"Follow-up set · Call client by "+fmtDate(d)+" — note: \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{service:o.service,log:o.log});
     await loadOrders();toast("Follow-up set for "+fmtDate(d));openOrder(o.pi);
   };
   if($("#clearFollowUp"))$("#clearFollowUp").onclick=async()=>{
+    const note=requireNote("Clear follow-up");if(note===null)return;
     const svc={...(o.service||{})};delete svc.follow_up_date;o.service=svc;
-    if(o.id)await sbPatch('audit_orders',o.id,{service:o.service});
+    o.log.push({t:"Follow-up cleared — note: \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{service:o.service,log:o.log});
     await loadOrders();toast("Follow-up cleared");openOrder(o.pi);
   };
 
@@ -1966,7 +2052,7 @@ async function _drawLiveLocations(m){
 }
 
 render();
-Promise.all([loadAuditors(),loadOrders()]).then(()=>{
+Promise.all([loadAuditors(),loadShadowers(),loadOrders()]).then(()=>{
   setInterval(()=>{if(!document.hidden)loadOrders();},30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
 });

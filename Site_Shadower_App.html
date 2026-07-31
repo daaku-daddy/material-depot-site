@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Material Depot — Site Shadower</title>
+<link rel="manifest" href="/manifest_shadower.json"/>
+<meta name="theme-color" content="#1F3A5F"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="MD Shadower"/>
+<link rel="apple-touch-icon" href="/md_icon.svg"/>
+<style>
+  :root{--navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;--ink:#1b2230;--muted:#5b6677;--line:#d8dee7;--bg:#f4f6f9;--card:#fff;--lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;--red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;--teal:#0f6e74;--tealbg:#e3f1f1;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;}
+  .app{max-width:520px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative;}
+  header{background:var(--navy);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;}
+  header .logo{width:36px;height:36px;border-radius:9px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:16px;}
+  header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
+  header .h{font-size:16px;font-weight:700;line-height:1.1;}
+  header .hright{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  header .me{text-align:right;font-size:11px;color:#cdd8e8;line-height:1.25;}
+  header .me b{color:#fff;font-size:13px;}
+  header .rolesw{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.3);color:#fff;font-weight:700;font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;}
+  .wrap{padding:14px 14px 90px;}
+  .banner{background:var(--amberbg);border:1px solid #f0d79a;border-left:4px solid var(--amber);color:var(--amber);border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px;}
+  .daystrip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px;}
+  .daychip{flex:0 0 88px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;cursor:pointer;}
+  .daychip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .daychip .dn{font-size:11px;font-weight:700;opacity:.8;}
+  .daychip .dd{font-size:18px;font-weight:800;margin-top:1px;}
+  .daychip .ct{font-size:10px;margin-top:2px;opacity:.75;}
+  .sechead{font-size:11px;letter-spacing:.6px;color:var(--muted);font-weight:800;text-transform:uppercase;margin:14px 2px 8px;}
+  .jcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,80,.04);}
+  .jcard.unsched{border-left-color:var(--amber);}
+  .jcard .top{display:flex;align-items:center;gap:8px;}
+  .jcard .nm{font-weight:800;font-size:16px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jcard .tag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted);margin-top:3px;}
+  .jcard .mr{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);margin-top:7px;}
+  .jcard .mr .ic{flex:0 0 auto;width:16px;text-align:center;opacity:.75;}
+  .jcard .mr .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jcard .svc{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;background:var(--tealbg);color:var(--teal);border-radius:6px;padding:3px 9px;}
+  .jcard .shad{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:11.5px;font-weight:800;background:var(--purplebg);color:var(--purple);border-radius:6px;padding:3px 9px;}
+  .jcard hr.div{border:0;border-top:1px solid var(--line);margin:10px 0;}
+  .jcard .when{font-size:12.5px;color:var(--muted);font-weight:700;}
+  .jcard .foot{display:flex;gap:8px;margin-top:10px;}
+  .jcard .foot a{flex:1;border-radius:10px;padding:9px;font-size:12.5px;font-weight:800;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;}
+  .jcard .foot a.dir{color:var(--teal);background:var(--tealbg);}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .c-created{background:var(--lighter);color:var(--navy);}
+  .c-scheduled{background:#e4f0fb;color:var(--blue);}
+  .c-assigned{background:#e4f0fb;color:var(--blue);}
+  .c-callpending{background:var(--amberbg);color:var(--amber);}
+  .c-reschedule{background:var(--redbg);color:var(--red);}
+  .c-onway{background:#e8f0ff;color:#2b54c2;}
+  .c-atsite{background:#e9e3fb;color:#5b3aa6;}
+  .c-completed{background:var(--greenbg);color:var(--green);}
+  .c-call_na{background:var(--amberbg);color:var(--amber);}
+  .maplink{color:var(--blue);text-decoration:none;font-weight:600;}
+  .empty{text-align:center;color:var(--muted);padding:46px 16px;}
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--navy2);color:#fff;padding:11px 18px;border-radius:30px;font-size:14px;opacity:0;transition:.25s;z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3);}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">MD</div>
+    <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Shadower</div></div>
+    <div class="hright">
+      <button class="rolesw" id="switchSM" style="display:none">&#8646; Service Manager</button>
+      <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Shadower</div>
+    </div>
+  </header>
+  <div class="wrap" id="listView"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
+function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+// Secondary training role active today (site_shadower|site_auditor) or null. Same YYYY-MM-DD compare
+// as active_from; dstr() is hoisted below. See CLAUDE.md note 85.
+function activeSecondaryRole(stages){
+  if(!Array.isArray(stages))return null;
+  const t=dstr(new Date());
+  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
+  return null;
+}
+
+const SESSION=getSession();
+// Admit a real site_shadower (future-proof — role stays service_mgr in the current model), OR a
+// service_mgr trainee whose training schedule puts them in a site_shadower stage TODAY. A plain
+// service_mgr (no stages → null) is rejected, same as every other role gate in this app.
+const _isShadowerTrainee=SESSION&&SESSION.role==='service_mgr'&&activeSecondaryRole(SESSION.training_stages)==='site_shadower';
+if(!SESSION||!(SESSION.role==='site_shadower'||_isShadowerTrainee)){window.location.href='Login.html';}
+history.replaceState(null,'',location.href);
+window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
+const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:''};
+document.getElementById('meName').textContent=ME.name;
+// A service_mgr here is always a trainee — give them a toggle back to their primary SM dashboard.
+if(SESSION&&SESSION.role==='service_mgr'){const sw=document.getElementById('switchSM');if(sw){sw.style.display='';sw.onclick=()=>{window.location.href='SM_Audit_Dashboard.html';};}}
+document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localStorage.removeItem('md_user');window.location.href='Login.html';}};
+
+/* ============== DATA ============== */
+const SHAD_COLS='id,pi,skus,bm,customer_name,phone,addr,status,slot,date,auditor_name,shadower_email';
+const today=new Date();today.setHours(0,0,0,0);
+function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
+function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
+const SLOTS=(function(){
+  const defFL=[{id:"sf1",label:"9 AM – 12 PM"},{id:"sf2",label:"12 PM – 3 PM"},{id:"sf3",label:"3 PM – 6 PM"}];
+  const defWP=[{id:"sw1",label:"9 AM – 12 PM"},{id:"sw2",label:"12 PM – 3 PM"},{id:"sw3",label:"3 PM – 6 PM"}];
+  let fl=defFL,wp=defWP;
+  try{const sf=localStorage.getItem('md_audit_slots_fl');const sw=localStorage.getItem('md_audit_slots_wp');if(sf)fl=JSON.parse(sf);if(sw)wp=JSON.parse(sw);}catch(e){}
+  const m={};fl.forEach(s=>{m[s.id]={label:s.label};});wp.forEach(s=>{m[s.id]={label:s.label};});
+  return m;
+})();
+const STATUS={
+  created:{l:"Service Created",c:"c-created"},
+  scheduled:{l:"Scheduled",c:"c-scheduled"},
+  assigned:{l:"Auditor Assigned",c:"c-assigned"},
+  callpending:{l:"Call Pending",c:"c-callpending"},
+  reschedule:{l:"To Reschedule",c:"c-reschedule"},
+  call_na:{l:"Call not picked",c:"c-call_na"},
+  onway:{l:"On The Way",c:"c-onway"},
+  atsite:{l:"At Site",c:"c-atsite"},
+  completed:{l:"Audit Completed",c:"c-completed"},
+};
+function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
+function slotLabel(id){if(!id)return "—";if(SLOTS[id])return SLOTS[id].label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
+function chip(st){const s=STATUS[st]||{l:st,c:'c-scheduled'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
+function fmtDate(ds){if(!ds)return "—";const d=new Date(ds+'T00:00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+
+let ORDERS=[];
+async function loadJobs(){
+  try{
+    const rows=await sbGet('audit_orders?shadower_email=eq.'+encodeURIComponent(ME.email)+'&select='+SHAD_COLS+'&status=neq.deleted&order=created_at.desc');
+    if(!Array.isArray(rows)){renderList();return;}
+    ORDERS=rows.map(r=>({
+      id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
+      bm:r.bm||'', date:r.date||null, slot:r.slot||null, status:r.status,
+      skus:r.skus||[], auditorName:r.auditor_name||''
+    }));
+    renderList();
+  }catch(e){console.error('loadJobs',e);renderList();}
+}
+setInterval(()=>{if(!document.hidden)loadJobs();},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs();});
+
+/* ============== LIST VIEW (schedule only — no job card; see CLAUDE.md note 85) ============== */
+let selDay=dstr(today);
+function listView(){
+  const todayStr=dstr(today);
+  const days=Array.from({length:37},(_,i)=>addDays(i-30));
+  const strip=days.map(d=>{const ds=dstr(d);const n=ORDERS.filter(o=>o.date===ds).length;
+    const isToday=ds===todayStr;
+    return `<div class="daychip ${selDay===ds?'on':''}" data-day="${ds}">
+      <div class="dn">${isToday?'Today':d.toLocaleDateString('en-IN',{weekday:'short'})}</div>
+      <div class="dd">${d.getDate()}</div><div class="ct">${n>0?n+(n!==1?' jobs':' job'):''}</div></div>`;}).join("");
+  const list=ORDERS.filter(o=>o.date===selDay).sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+  const todo=list.filter(o=>o.status!=="completed");
+  const done=list.filter(o=>o.status==="completed");
+  const unscheduled=ORDERS.filter(o=>!o.date&&!['completed','reschedule'].includes(o.status));
+  const card=(o,unsched)=>{
+    const skus=o.skus.filter(s=>!s.audit).map(s=>s.c).join(', ');
+    return `<div class="jcard${unsched?' unsched':''}">
+      <div class="top"><div class="nm">${o.name}</div>${chip(o.status)}</div>
+      <div class="tag">${o.pi} · BM ${o.bm}</div>
+      <div class="mr"><span class="ic">&#128241;</span><span class="t">${o.phone}</span></div>
+      <div class="mr"><span class="ic">&#128205;</span><a class="maplink t" href="${mapUrl(o.addr)}" target="_blank" rel="noopener">${o.addr}</a></div>
+      ${o.auditorName?`<span class="shad">&#128064; Shadowing: ${o.auditorName}</span>`:''}
+      ${skus?`<span class="svc">&#128230; ${skus}</span>`:''}
+      <hr class="div">
+      <div class="when"${unsched?' style="color:var(--amber)"':''}>${unsched?'Awaiting date from office':fmtDate(o.date)+' · '+slotLabel(o.slot)}</div>
+      <div class="foot">
+        <a class="dir" href="${mapUrl(o.addr)}" target="_blank" rel="noopener">&#128205; Directions</a>
+      </div></div>`;
+  };
+  return `<div class="banner">&#128064; You're shadowing today. This is a read-only schedule of the audits assigned to you to observe — no job card yet.</div>
+    <div class="daystrip">${strip}</div>
+    ${unscheduled.length?`<div class="sechead" style="color:#9a6200">Awaiting schedule — no date set yet</div>${unscheduled.map(o=>card(o,true)).join("")}`:''}
+    <div class="sechead">${selDay===todayStr?'Today':'Jobs'} — ${fmtDate(selDay)}</div>
+    ${todo.map(o=>card(o,false)).join("")||`<div class="empty">No jobs to shadow for this day.</div>`}
+    ${done.length?`<div class="sechead">Completed</div>${done.map(o=>card(o,false)).join("")}`:""}`;
+}
+function renderList(){$("#listView").innerHTML=listView();wireList();}
+function wireList(){
+  document.querySelectorAll("[data-day]").forEach(c=>c.onclick=()=>{selDay=c.dataset.day;renderList();});
+}
+
+loadJobs();
+</script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+<script src="/pwa-install.js"></script>
+</body>
+</html>

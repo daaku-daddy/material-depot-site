@@ -30,7 +30,7 @@
   header .who b{color:#fff;font-size:13px;}
   .avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;}
   .layout{display:flex;min-height:calc(100vh - 56px);}
-  .rail{width:212px;background:#fff;border-right:1px solid var(--line);padding:14px 10px;flex:0 0 auto;}
+  .rail{width:212px;background:#fff;border-right:1px solid var(--line);padding:14px 10px;flex:0 0 auto;position:sticky;top:56px;align-self:flex-start;height:calc(100vh - 56px);overflow-y:auto;}
   .rail .grp{font-size:10px;letter-spacing:.8px;color:var(--muted);font-weight:800;margin:14px 8px 6px;}
   .rail a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px;cursor:pointer;margin:2px 0;}
   .rail a .ico{width:18px;text-align:center;opacity:.8;}
@@ -300,6 +300,7 @@
     <button class="active" id="vInstall">Installations</button>
   </div>
   <div class="right">
+    <a id="roleSwitch" href="#" title="Switch to your current training role" style="display:none;align-self:center;margin-right:12px;background:var(--yellow);color:var(--navy);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#8646;</a>
     <div class="who"><b id="smName">…</b><br>Service Manager</div>
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer">SM</div>
   </div>
@@ -515,6 +516,30 @@ window.addEventListener('popstate',()=>history.pushState(null,'',location.href))
 document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 (function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
 
+/* ===== Training secondary-role toggle (service_mgr trainees keep SM access + switch to today's stage) ===== */
+function _renderRoleSwitch(){
+  const sw=document.getElementById('roleSwitch'); if(!sw)return;
+  const sec=activeSecondaryRole(SESSION&&SESSION.training_stages);
+  if(sec==='site_shadower'){sw.innerHTML='&#8646; Shadower';sw.href='Site_Shadower_App.html';sw.style.display='';}
+  else if(sec==='site_auditor'){sw.innerHTML='&#8646; Auditor';sw.href='Site_Auditor_App.html';sw.style.display='';}
+  else{sw.style.display='none';}
+}
+_renderRoleSwitch();
+// Sessions never expire, so a schedule the Admin sets AFTER this trainee logged in won't be in md_user
+// yet. Refresh training_stages once in the background, then re-render the toggle. Best-effort; a plain
+// SM (or admin) with no stages just no-ops. Reuses the app's own sbGet (read-only).
+(async function(){
+  if(!SESSION||SESSION.role!=='service_mgr')return;
+  try{
+    const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(SESSION.email)+'&select=training_stages');
+    if(Array.isArray(rows)&&rows[0]){
+      SESSION.training_stages=rows[0].training_stages||[];
+      localStorage.setItem('md_user',JSON.stringify(SESSION));
+      _renderRoleSwitch();
+    }
+  }catch(e){}
+})();
+
 /* ============== CONFIG ============== */
 const INSTALL_SKU="SVC-INSTALL-001";
 const CUSTOM_WP_SKU="WP-CUST";
@@ -694,6 +719,27 @@ function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
 function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime())){const m=String(d).match(/\d{1,2}:\d{2}\s*(?:[AP]M)?/i);return m?m[0]+' (date unknown)':'—';}const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+ts;}
+// Mandatory note for any MANUAL SM action (status change incl. backward moves, partial, follow-up).
+// Returns the trimmed non-empty note, or null if the SM cancelled or left it blank — callers MUST
+// abort and write nothing when this returns null. Note text is embedded into the log entry's `t`,
+// so it surfaces in the drawer Activity timeline with no render changes.
+function requireNote(actionLabel,preface){
+  const raw=prompt((preface?preface+"\n\n":"")+"Add a note for this action (required):\n"+actionLabel);
+  if(raw===null)return null;
+  const note=raw.trim();
+  if(!note){toast("A note is required — nothing was changed");return null;}
+  return note;
+}
+// Training lifecycle: a service_mgr trainee keeps role=service_mgr (primary) plus dated secondary
+// stages {role,start,end} in profiles.training_stages (site_shadower then site_auditor). Returns the
+// secondary role active TODAY, or null when no stage covers today (→ pure SM, toggle hidden). Uses the
+// same lexicographic YYYY-MM-DD compare as active_from (notes 44/50); dstr() is a function declaration.
+function activeSecondaryRole(stages){
+  if(!Array.isArray(stages))return null;
+  const t=dstr(new Date());
+  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
+  return null;
+}
 
 // Ops-call window: custom WP -> 3 days prior; else -> 1 day prior
 // Also fires for deliv_delayed so SM is reminded to re-confirm the new delivery date
@@ -1804,7 +1850,7 @@ function wireDrawer(o){
   // manual status
   document.querySelectorAll("[data-setstatus]").forEach(b=>b.onclick=async()=>{
     const st=b.dataset.setstatus;if(st===o.status)return;
-    let overrideReason='';
+    let forcedCompletedNoCard=false;
     if(st==='completed'&&o.subjobs&&o.subjobs.length){
       // A signed job card (sj.jobcard.sign) is the only proof an installer actually finished the
       // work. This used to cascade Completed to EVERY open subjob on the order, not just the one
@@ -1817,10 +1863,13 @@ function wireDrawer(o){
         const names=noCard.map(sj=>sj.type==='wallpaper'?'Wallpaper':'Flooring').join(', ');
         const ok=confirm("The following sub-job(s) have NO signed job card yet — no photos, signature, or customer rating on file: "+names+".\n\nForcing Completed now will mark them done anyway with no proof of work. Only do this if you've confirmed with the installer/customer directly.\n\nContinue?");
         if(!ok)return;
-        overrideReason=(prompt("Reason for overriding without a job card (required):")||'').trim();
-        if(!overrideReason){toast("Reason required — status not changed");return;}
+        forcedCompletedNoCard=true;
       }
     }
+    // Mandatory note captured BEFORE any subjob mutation below (the created-revert cascade wipes
+    // assignments in memory) so a cancelled note can never leave the in-memory order half-reset.
+    const note=requireNote("Status → "+STATUS[st].l);
+    if(note===null)return;
     // Cascade field-level statuses down to subjobs + assignments so every dashboard stays in sync
     const FIELD_STATUSES=['callpending','onway','atsite','completed','reschedule'];
     const RANK={scheduled:0,assigned:0,callpending:1,onway:2,atsite:3};
@@ -1867,7 +1916,7 @@ function wireDrawer(o){
     // restriction — the SM can still do this — just make sure they know why the metric won't count it.
     const isManualAtSite=st==='atsite'&&o.status!=='atsite';
     o.status=st;
-    const overrideNote=overrideReason?" · ⚠ forced Completed without job card: \""+overrideReason+"\" (SM override)":"";
+    const overrideNote=forcedCompletedNoCard?" · ⚠ forced Completed without job card: \""+note+"\" (SM override)":" — note: \""+note+"\"";
     const atsiteNote=isManualAtSite?" · ⚠ no field-confirmed arrival (SM override — excluded from Arrival On Time % tracking)":"";
     o.log.push({t:"Status set to "+STATUS[st].l+(AUTO_STATUSES.includes(st)?" (manually)":"")+overrideNote+atsiteNote,d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs||null,log:o.log});
@@ -2114,13 +2163,17 @@ function wireDrawer(o){
   // ---- follow-up date ----
   if($("#setFollowUp"))$("#setFollowUp").onclick=async()=>{
     const d=$("#fuDate").value;if(!d){toast("Pick a date first");return;}
+    const note=requireNote("Set follow-up to "+fmtDate(d));if(note===null)return;
     o.service={...(o.service||{}),follow_up_date:d};
-    if(o.id)await sbPatch('install_orders',o.id,{service:o.service});
+    o.log.push({t:"Follow-up set · Call client by "+fmtDate(d)+" — note: \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{service:o.service,log:o.log});
     await loadOrders();toast("Follow-up set for "+fmtDate(d));openOrder(o.pi);
   };
   if($("#clearFollowUp"))$("#clearFollowUp").onclick=async()=>{
+    const note=requireNote("Clear follow-up");if(note===null)return;
     const svc={...(o.service||{})};delete svc.follow_up_date;o.service=svc;
-    if(o.id)await sbPatch('install_orders',o.id,{service:o.service});
+    o.log.push({t:"Follow-up cleared — note: \""+note+"\"",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('install_orders',o.id,{service:o.service,log:o.log});
     await loadOrders();toast("Follow-up cleared");openOrder(o.pi);
   };
 
