@@ -791,7 +791,18 @@ function wpSlotLoad(id,date){
 
 let activeView="orders",filterStatus="all",filterDate="",searchQ="",currentPI=null,sortDelivery="asc",calSelDay=dstr(today),_liveLocTimer=null;
 function setDateFilter(d){filterDate=d;render();}
-function installOrderHasDate(o,ds){return(o.subjobs||[]).some(sj=>{const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{date:sj.date,mode:'standard',dates:[]}]:[]);return asgns.some(a=>(a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[])).includes(ds));});}
+// Effective assignments for a subjob, INCLUDING the scheduled-but-not-yet-assigned case.
+// In the 2-step booking flow, Step 1 ("Book slot") sets sj.date/sj.slot/sj.status='scheduled'
+// with NO assignment yet (the installer is picked later, in Step 2). Such a subjob must still
+// appear in the schedule on its booked day as "Unassigned" — mirroring the SM Audit dashboard,
+// which keys its schedule off o.date regardless of whether an auditor is assigned.
+function sjEffectiveAssignments(sj){
+  if(sj.assignments&&sj.assignments.length)return sj.assignments;
+  if(sj.installer)return[{installer_id:sj.installer,installer_name:(installerById(sj.installer)||{name:'?'}).name,date:sj.date,dates:[],mode:'standard',slots:sj.slot?[sj.slot]:[],primary:true}];
+  if(sj.status==='scheduled'&&sj.date)return[{installer_id:null,installer_name:null,date:sj.date,dates:[],mode:'standard',slots:sj.slot?[sj.slot]:[],primary:true}];
+  return[];
+}
+function installOrderHasDate(o,ds){return(o.subjobs||[]).some(sj=>sjEffectiveAssignments(sj).some(a=>(a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[])).includes(ds)));}
 
 /* ============== COUNTS ============== */
 function needActionCount(){
@@ -1027,10 +1038,7 @@ function callsView(){
 function scheduleView(){
   const items=[];
   ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
-    const asgns=sj.assignments&&sj.assignments.length
-      ?sj.assignments
-      :(sj.installer?[{installer_id:sj.installer,installer_name:(installerById(sj.installer)||{name:'?'}).name,date:sj.date,dates:[],mode:'standard',slots:sj.slot?[sj.slot]:[]}]:[]);
-    asgns.forEach(a=>{
+    sjEffectiveAssignments(sj).forEach(a=>{
       const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
       if(dates.includes(dstr(today)))items.push({o,sj,a});
     });
@@ -1087,9 +1095,7 @@ function followupsView(){
 function sjsForDay(ds){
   const res=[];
   ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
-    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:
-      (sj.installer?[{installer_id:sj.installer,installer_name:(installerById(sj.installer)||{name:'?'}).name,date:sj.date,mode:'standard',primary:true}]:[]);
-    if(asgns.some(a=>{const dates=a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]);return dates.includes(ds);}))
+    if(sjEffectiveAssignments(sj).some(a=>{const dates=a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]);return dates.includes(ds);}))
       res.push({o,sj});
   }));
   return res;
@@ -1099,7 +1105,7 @@ function calendarView(){
   const days=Array.from({length:10},(_,i)=>addDays(i-3));
   const sjChip=st=>{const M={created:{l:'Service Created',c:'c-created'},assigned:{l:'Assigned',c:'c-assigned'},onway:{l:'On the Way',c:'c-onway'},atsite:{l:'At Site',c:'c-atsite'},completed:{l:'Completed',c:'c-completed'},reschedule:{l:'Reschedule',c:'c-reschedule'},partial:{l:'Partial',c:'c-partial'}};const s=M[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;};
   const typeTag=t=>t==='wallpaper'?`<span class="skupill" style="background:var(--purplebg);color:var(--purple);font-size:10px">WP</span>`:`<span class="skupill" style="background:#fff4d6;color:#7a5800;font-size:10px">FL</span>`;
-  const primaryName=sj=>{if(sj.assignments&&sj.assignments.length){const p=sj.assignments.find(a=>a.primary)||sj.assignments[0];return p.installer_name||'?';}return(installerById(sj.installer)||{name:'?'}).name;};
+  const primaryName=sj=>{const a=sjEffectiveAssignments(sj);const p=a.find(x=>x.primary)||a[0];return(p&&p.installer_name)||'Unassigned';};
   const cols=days.map(d=>{
     const ds=dstr(d);const isToday=ds===todayStr;const isSel=ds===calSelDay;const isPast=d<today;
     const items=sjsForDay(ds);const cnt=items.length;
@@ -1122,10 +1128,10 @@ function calendarView(){
   const selDate=new Date(calSelDay+'T00:00');
   const selLabel=calSelDay===todayStr?'Today — '+selDate.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'}):selDate.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const detCards=selItems.map(({o,sj})=>{
-    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_name:(installerById(sj.installer)||{name:'?'}).name,primary:true,slots:sj.slot?[sj.slot]:[]}]:[]);
+    const asgns=sjEffectiveAssignments(sj);
     const primary=asgns.find(a=>a.primary)||asgns[0]||{};
     const slotStr=(primary.slots||[]).map(s=>slotLabel(s)).join(' + ')||slotLabel(sj.slot)||'—';
-    const allNames=asgns.map(a=>a.installer_name||'?').join(', ');
+    const allNames=asgns.map(a=>a.installer_name||'Unassigned').join(', ');
     return `<div class="caldet-card" data-pi="${o.pi}">
       <div>
         <div class="caldet-name">${o.name} ${typeTag(sj.type)}</div>
