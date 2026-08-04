@@ -306,6 +306,10 @@ async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeo
 async function sbDel(t,id){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H,signal:ac.signal});}finally{clearTimeout(tid);}}
 
 let SESSION = null;
+// City segregation — deploy-safe. Admin only WRITES profiles.city (Add/Edit User); it reads profiles
+// via select=*, so display is free. Probe profiles.city; gate the write + the City field on the flag.
+let CITY_ENABLED=false;
+async function detectCity(){try{const r=await sbGet('profiles?select=city&limit=1');CITY_ENABLED=Array.isArray(r);}catch(e){CITY_ENABLED=false;}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 function signOut(){localStorage.removeItem('md_user');window.location.href='Login.html';}
 
@@ -505,6 +509,7 @@ function openAddUser(){
           <option value="wallpaper">Wallpaper</option>
         </select>
       </div>
+      ${CITY_ENABLED?`<div class="form-group"><label>City</label><select id="f-city"><option value="Bengaluru">Bengaluru</option><option value="Hyderabad">Hyderabad</option></select></div>`:''}
       <div class="form-error" id="f-err"></div>
     </div>
     <div class="modal-foot">
@@ -528,7 +533,8 @@ async function submitAddUser(){
   const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
   btn.disabled=true;btn.textContent='Adding…';
   try{
-    await sbPost('profiles',{name,email,role,installer_type});
+    const cityEl=document.getElementById('f-city');
+    await sbPost('profiles',{name,email,role,installer_type,...(CITY_ENABLED&&cityEl?{city:cityEl.value}:{})});
     closeModal();
     toast(`✓ ${name} added as ${ROLES[role]?.label||role}`);
     await renderUsers(document.getElementById('main'));
@@ -567,6 +573,7 @@ function openEditRole(u){
           <option value="wallpaper" ${curType==='wallpaper'?'selected':''}>Wallpaper</option>
         </select>
       </div>
+      ${CITY_ENABLED?`<div class="form-group"><label>City</label><select id="e-city"><option value="Bengaluru" ${(u.city||'Bengaluru')==='Bengaluru'?'selected':''}>Bengaluru</option><option value="Hyderabad" ${u.city==='Hyderabad'?'selected':''}>Hyderabad</option></select></div>`:''}
     </div>
     <div class="modal-foot">
       <button class="btn-cancel" style="margin-right:auto;color:var(--amber);border-color:var(--amber);border:1px solid" onclick="resetPasscode('${u.id}','${u.name.replace(/'/g,"\\'")}')">Reset passcode</button>
@@ -637,8 +644,9 @@ async function submitEditRole(id,name){
   const role=document.getElementById('e-role').value;
   const itypeEl=document.getElementById('e-itype');
   const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
+  const cityEl=document.getElementById('e-city');
   try{
-    await sbPatch('profiles',id,{role,installer_type});
+    await sbPatch('profiles',id,{role,installer_type,...(CITY_ENABLED&&cityEl?{city:cityEl.value}:{})});
     closeModal();
     toast(`✓ ${name}'s role updated to ${ROLES[role]?.label||role}`);
     await renderUsers(document.getElementById('main'));
@@ -2292,6 +2300,7 @@ async function _drawLiveLocations(m){
   SESSION=getSession();
   if(!SESSION||!['admin','service_mgr'].includes(SESSION.role)){window.location.href='Login.html';return;}
   document.getElementById('app').hidden=false;
+  detectCity();
   document.getElementById('hdr-name').textContent=SESSION.name;
   if(SESSION.role==='service_mgr'){
     // Service Managers get a scoped, read-only view of this console — Analytics only.

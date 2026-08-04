@@ -167,7 +167,10 @@ async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout((
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 
 /* ── Constants ───────────────────────────────────────────────────────────────── */
-const STORES=['JP Nagar','Whitefield','Yelahanka','HSR Layout'];
+const STORES=['JP Nagar','Whitefield','Yelahanka','HSR Layout','Basaveshwar Nagar','Gachibowli','Kompally'];
+// Single source of truth mapping each store to its city. Only lives here (the SM dashboards
+// key city off the toggle / stored o.city, never off a store name or the free-text bm — note 68).
+const STORE_CITY={'JP Nagar':'Bengaluru','Whitefield':'Bengaluru','Yelahanka':'Bengaluru','HSR Layout':'Bengaluru','Basaveshwar Nagar':'Bengaluru','Gachibowli':'Hyderabad','Kompally':'Hyderabad'};
 
 const SLOT_DEFS=[
   {id:'10:00',label:'10:00 AM',rangeEnd:'11:00 AM',startMin:600,endMin:660,group:'Morning'},
@@ -183,6 +186,16 @@ const DAYS_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 let MYSTORE=null,SELECTED_DATE=null;
 let DAY_ORDERS=[],AUDITOR_COUNT=3;
 let _refreshTimer=null;
+// City segregation is deploy-safe: it stays fully inert (behaves exactly as before) until the
+// `city` columns exist on BOTH profiles and audit_orders. Probe both; a missing column returns a
+// non-array error object, so the feature only self-activates once the SQL migration has run.
+let CITY_ENABLED=false;
+async function detectCity(){
+  try{
+    const rs=await Promise.all([sbGet('profiles?select=city&limit=1'),sbGet('audit_orders?select=city&limit=1')]);
+    CITY_ENABLED=rs.every(r=>Array.isArray(r));
+  }catch(e){CITY_ENABLED=false;}
+}
 
 /* ── Utilities ───────────────────────────────────────────────────────────────── */
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
@@ -255,10 +268,11 @@ function getStore(){return localStorage.getItem('md_store')||null;}
 function setStore(s){localStorage.setItem('md_store',s);}
 
 /* ── App boot ────────────────────────────────────────────────────────────────── */
-function startApp(){
+async function startApp(){
   MYSTORE=getStore();
   document.getElementById('appMain').style.display='block';
   renderHeader();
+  await detectCity();
   if(!MYSTORE){showStorePicker(false);return;}
   initDateNav();
   loadDay(SELECTED_DATE||dstr(today()));
@@ -323,11 +337,13 @@ async function loadDay(date,silent=false){
   try{
     const [orders,auditors]=await Promise.all([
       sbGet('audit_orders?select=id,pi,po,customer_name,phone,status,slot,date,auditor_id,bm,audit_ticked,log&date=eq.'+date+'&status=neq.deleted'),
-      sbGet('profiles?select=id,active_from&role=in.(site_auditor,auditor_installer)'),
+      sbGet('profiles?select=id,active_from'+(CITY_ENABLED?',city':'')+'&role=in.(site_auditor,auditor_installer)'),
     ]);
     DAY_ORDERS=Array.isArray(orders)?orders:[];
-    // Only count auditors who are active on this date (active_from null = always active)
-    const activeAuditors=(Array.isArray(auditors)?auditors:[]).filter(a=>!a.active_from||a.active_from<=date);
+    // Only count auditors active on this date (active_from null = always active, note 44) AND — when
+    // city is enabled — only auditors in THIS store's city (a Hyderabad store counts Hyderabad auditors).
+    const myCity=CITY_ENABLED?STORE_CITY[MYSTORE]:null;
+    const activeAuditors=(Array.isArray(auditors)?auditors:[]).filter(a=>(!a.active_from||a.active_from<=date)&&(!myCity||(a.city||'Bengaluru')===myCity));
     AUDITOR_COUNT=activeAuditors.length||1;
     renderSlots(date);
   }catch(e){
@@ -535,6 +551,7 @@ function openBookingSheet(slotId,date){
         service:null,
         log:[{t:logNote,d:new Date().toISOString(),by:'manual',who:MYSTORE}],
         created_by_email:'store-team',
+        ...(CITY_ENABLED?{city:STORE_CITY[MYSTORE]}:{}),
       });
       overlay.classList.remove('show');
       toast('&#10003; Slot booked for '+name+' · '+slot.label);

@@ -261,6 +261,7 @@
     <button id="vInstall">Installations</button>
   </div>
   <div class="right">
+    <span id="cityToggle" style="display:none"></span>
     <a id="roleSwitch" href="#" title="Switch to your current training role" style="display:none;align-self:center;margin-right:12px;background:var(--yellow);color:var(--navy);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#8646;</a>
     <div class="who"><b id="smName">…</b><br>Service Manager</div>
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer" id="smAvatar">SM</div>
@@ -345,6 +346,10 @@
           <label>SKU Codes</label>
           <input id="ao-skus" placeholder="WF-OAK-12MM, WP-STD-441">
         </div>
+      </div>
+      <div class="mfield" id="ao-city-field" style="display:none">
+        <label>City</label>
+        <select id="ao-city"><option value="Bengaluru">Bengaluru</option><option value="Hyderabad">Hyderabad</option></select>
       </div>
       <div class="mfield">
         <label>Audit Categories</label>
@@ -502,6 +507,32 @@ function slotsForOrder(o){
 
 let AUDITORS=[];
 
+// City segregation (Bengaluru/Hyderabad) is deploy-safe: it stays fully inert until the `city`
+// columns exist on BOTH profiles and audit_orders. Probe both; a missing column returns a non-array
+// error object, so the toggle/filter only self-activates once the SQL migration has run — no 2nd deploy.
+let CITY_ENABLED=false;
+let cityFilter=(localStorage.getItem('md_city')||'all');
+async function detectCity(){
+  try{
+    const rs=await Promise.all([sbGet('profiles?select=city&limit=1'),sbGet('audit_orders?select=city&limit=1')]);
+    CITY_ENABLED=rs.every(r=>Array.isArray(r));
+  }catch(e){CITY_ENABLED=false;}
+}
+// City-scope a list of orders for the active toggle (identity when city is off or 'all').
+function cityScope(list){return (CITY_ENABLED&&cityFilter!=='all')?list.filter(o=>(o.city||'Bengaluru')===cityFilter):list;}
+function auditorsInCity(){return (CITY_ENABLED&&cityFilter!=='all')?AUDITORS.filter(a=>(a.city||'Bengaluru')===cityFilter):AUDITORS;}
+// Header segmented control {All, Bengaluru, Hyderabad}. Cross-view context (persisted to md_city,
+// NOT reset on nav switch) since it also scopes the schedule/pickers, not just the Orders list.
+function renderCityToggle(){
+  const box=document.getElementById('cityToggle');
+  if(!box)return;
+  if(!CITY_ENABLED){box.style.display='none';return;}
+  box.style.display='inline-flex';box.style.gap='4px';box.style.alignItems='center';box.style.marginRight='12px';
+  const opts=[['all','All'],['Bengaluru','Bengaluru'],['Hyderabad','Hyderabad']];
+  box.innerHTML='<span style="font-size:11px;color:var(--muted);font-weight:700;margin-right:2px">CITY</span>'+opts.map(([v,l])=>`<button data-city="${v}" style="border:1px solid var(--line);background:${cityFilter===v?'var(--navy)':'#fff'};color:${cityFilter===v?'#fff':'var(--ink)'};font-weight:700;font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer">${l}</button>`).join('');
+  box.querySelectorAll('[data-city]').forEach(b=>b.onclick=()=>{cityFilter=b.dataset.city;localStorage.setItem('md_city',cityFilter);renderCityToggle();render();});
+}
+
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
@@ -548,8 +579,8 @@ function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner')
 /* ============== SUPABASE LOAD ============== */
 async function loadAuditors(){
   try{
-    const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email,active_from');
-    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null}));
+    const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email,active_from'+(CITY_ENABLED?',city':''));
+    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null,city:r.city||'Bengaluru'}));
     AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
   }catch(e){console.error('loadAuditors',e);}
 }
@@ -584,11 +615,12 @@ const mapAuditRow=r=>({
   auditorEmail:r.auditor_email||null,
   shadowerEmail:r.shadower_email||null,
   shadowerName:r.shadower_name||null,
+  city:r.city||'Bengaluru',
   log:r.log||[]
 });
 async function loadOrders(){
   try{
-    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+'&status=neq.deleted&order=created_at.desc');
+    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+(CITY_ENABLED?',city':'')+'&status=neq.deleted&order=created_at.desc');
     if(!Array.isArray(rows)){_setConnErr(true);if(!_retryTid)_retryTid=setTimeout(()=>{_retryTid=null;loadOrders();},8000);render();return;}
     _setConnErr(false);if(_retryTid){clearTimeout(_retryTid);_retryTid=null;}
     ORDERS=rows.map(mapAuditRow);
@@ -598,7 +630,7 @@ async function loadOrders(){
 }
 async function loadDeletedOrders(){
   try{
-    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+'&status=eq.deleted&order=created_at.desc');
+    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+(CITY_ENABLED?',city':'')+'&status=eq.deleted&order=created_at.desc');
     DELETED=(Array.isArray(rows)?rows:[]).map(mapAuditRow);
   }catch(e){console.error('loadDeletedOrders',e);}
 }
@@ -680,12 +712,13 @@ function setDateFilter(d){filterDate=d;render();}
 
 /* ============== NAV COUNTS ============== */
 function counts(){
-  $("#cOrders").textContent=ORDERS.length;
-  $("#cToday").textContent=ORDERS.filter(o=>o.date===dstr(today)&&o.status!=='slot_reserved'&&o.status!=='slot_converted').length;
-  $("#cResched").textContent=ORDERS.filter(o=>o.status==="reschedule").length;
+  const S=cityScope(ORDERS);
+  $("#cOrders").textContent=S.length;
+  $("#cToday").textContent=S.filter(o=>o.date===dstr(today)&&o.status!=='slot_reserved'&&o.status!=='slot_converted').length;
+  $("#cResched").textContent=S.filter(o=>o.status==="reschedule").length;
   if($("#cDeleted"))$("#cDeleted").textContent=DELETED.length||'';
-  if($("#cRect"))$("#cRect").textContent=ORDERS.filter(o=>o.service&&o.service.rectification_of).length||'';
-  const fuToday=ORDERS.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today)).length;
+  if($("#cRect"))$("#cRect").textContent=S.filter(o=>o.service&&o.service.rectification_of).length||'';
+  const fuToday=S.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today)).length;
   if($("#cFollowUp"))$("#cFollowUp").textContent=fuToday||'';
 }
 
@@ -709,9 +742,11 @@ function render(){
 function statTile(n,l,col,key){return `<div class="stat" data-stat="${key}"><div class="n" style="color:${col}">${n}</div><div class="l">${l}</div><div class="b" style="background:${col}"></div></div>`;}
 
 function ordersView(){
-  const c={};Object.keys(STATUS).forEach(k=>c[k]=0);ORDERS.forEach(o=>c[o.status]++);
+  // Scope counts AND rows from the SAME city-filtered set so the stat tiles always match the visible rows.
+  const scoped=cityScope(ORDERS);
+  const c={};Object.keys(STATUS).forEach(k=>c[k]=0);scoped.forEach(o=>c[o.status]++);
   const live=c.scheduled+c.assigned+c.onway+c.atsite;
-  const mainOrderCount=ORDERS.filter(o=>!['slot_reserved','slot_converted'].includes(o.status)).length;
+  const mainOrderCount=scoped.filter(o=>!['slot_reserved','slot_converted'].includes(o.status)).length;
   const stats=`<div class="stats">
     ${statTile(mainOrderCount,"Live audit orders","#1F3A5F","all")}
     ${c.slot_reserved?statTile(c.slot_reserved,"Store pre-bookings","#1a4a8a","slot_reserved"):''}
@@ -721,7 +756,7 @@ function ordersView(){
     ${statTile(c.completed,"Completed","#1f7a3f","completed")}</div>`;
   const filters=["all","slot_reserved","followup","pending","created","scheduled","assigned","reschedule","completed"];
   const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
-  const rows=ORDERS.filter(o=>{
+  const rows=scoped.filter(o=>{
     if(filterStatus==="all"){
       if(o.status==='slot_reserved'||o.status==='slot_converted')return false;
     } else {
@@ -750,7 +785,7 @@ function ordersView(){
       <td>${aud}</td>
       <td>${chip(o.status)}${o.service&&o.service.rectification_raised?`<span class="autobadge" style="background:var(--amberbg);color:var(--amber);margin-left:4px">RECT</span>`:''}${(()=>{const fu=o.service&&o.service.follow_up_date;return fu?`<div style="margin-top:4px"><span class="chip" style="background:${fu<=dstr(today)?'var(--amberbg)':'#fefce8'};color:${fu<=dstr(today)?'var(--amber)':'#7a6200'};font-size:10px">📅 ${fu===dstr(today)?'Follow-up today':fu<dstr(today)?'Follow-up overdue':fmtDate(fu)}</span></div>`:'';})()}</td></tr>`;
   }).join("");
-  const todaySlotRes=ORDERS.filter(o=>o.status==='slot_reserved'&&o.date===dstr(today));
+  const todaySlotRes=cityScope(ORDERS).filter(o=>o.status==='slot_reserved'&&o.date===dstr(today));
   const slotResBanner=todaySlotRes.length?`<div class="note" style="border-color:#2e6da4;background:#eef4fb;color:#1a4a8a;margin-bottom:0">
     &#128197; <b>${todaySlotRes.length} slot pre-booking${todaySlotRes.length!==1?'s':''} for today</b> from store teams — waiting for Kylas enquiry numbers. <button data-filter="slot_reserved" style="border:0;background:transparent;color:var(--blue);font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline;padding:0">View all pre-bookings</button>
   </div>`:'';
@@ -776,7 +811,7 @@ function ordersView(){
 }
 
 function scheduleView(){
-  const list=ORDERS.filter(o=>o.date===dstr(today)&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||"").localeCompare(b.slot||""));
+  const list=cityScope(ORDERS).filter(o=>o.date===dstr(today)&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||"").localeCompare(b.slot||""));
   const rows=list.map(o=>`<tr data-pi="${o.pi}">
     <td><b>${slotLabel(o.slot)}</b></td><td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
@@ -791,7 +826,7 @@ function scheduleView(){
 }
 
 function followupsAuditView(){
-  const list=ORDERS.filter(o=>o.service&&o.service.follow_up_date).sort((a,b)=>a.service.follow_up_date.localeCompare(b.service.follow_up_date));
+  const list=cityScope(ORDERS).filter(o=>o.service&&o.service.follow_up_date).sort((a,b)=>a.service.follow_up_date.localeCompare(b.service.follow_up_date));
   const rows=list.map(o=>{
     const fu=o.service.follow_up_date;const over=fu<dstr(today);const isToday=fu===dstr(today);
     return `<tr data-pi="${o.pi}">
@@ -809,7 +844,7 @@ function followupsAuditView(){
 }
 
 function reschedView(){
-  const list=ORDERS.filter(o=>o.status==="reschedule");
+  const list=cityScope(ORDERS).filter(o=>o.status==="reschedule");
   const rows=list.map(o=>`<tr data-pi="${o.pi}">
     <td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
@@ -829,7 +864,7 @@ function calendarView(){
   const days=Array.from({length:10},(_,i)=>addDays(i-3));
   const cols=days.map(d=>{
     const ds=dstr(d);const isToday=ds===todayStr;const isSel=ds===calSelDay;const isPast=d<today;
-    const dayOrds=ORDERS.filter(o=>o.date===ds&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+    const dayOrds=cityScope(ORDERS).filter(o=>o.date===ds&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
     const cnt=dayOrds.length;
     const minis=dayOrds.slice(0,3).map(o=>`<div class="calmini" data-pi="${o.pi}">
       <div class="calmini-name">${o.name}</div>
@@ -846,7 +881,7 @@ function calendarView(){
       <div class="daycol-b">${minis}${more}${cnt===0?'<div class="calempty-day">—</div>':''}</div>
     </div>`;
   }).join('');
-  const selOrds=ORDERS.filter(o=>o.date===calSelDay&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
+  const selOrds=cityScope(ORDERS).filter(o=>o.date===calSelDay&&o.status!=='slot_reserved'&&o.status!=='slot_converted').sort((a,b)=>(a.slot||'').localeCompare(b.slot||''));
   const selDate=new Date(calSelDay+'T00:00');
   const selLabel=calSelDay===todayStr?'Today — '+selDate.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'}):selDate.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const detCards=selOrds.map(o=>`<div class="caldet-card" data-pi="${o.pi}">
@@ -908,11 +943,12 @@ function auditorsView(){
   const days=[];for(let i=0;i<7;i++)days.push(addDays(i));
   const todayStr=dstr(today);
   const headDays=days.map(d=>`<th>${d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric'})}</th>`).join("");
-  const rows=AUDITORS.map(a=>{
+  const rows=auditorsInCity().map(a=>{
     const isActiveNow=!a.activeFrom||a.activeFrom<=todayStr;
-    const statusChip=isActiveNow
+    const cityChip=CITY_ENABLED?`<span class="chip" style="font-size:10px;padding:2px 8px;background:#e8eefb;color:var(--navy)">${a.city||'Bengaluru'}</span>`:'';
+    const statusChip=(isActiveNow
       ?`<span class="chip c-completed" style="font-size:10px;padding:2px 8px">&#9679; Active</span>`
-      :`<span class="chip c-pending" style="font-size:10px;padding:2px 8px">From ${fmtDate(a.activeFrom)}</span>`;
+      :`<span class="chip c-pending" style="font-size:10px;padding:2px 8px">From ${fmtDate(a.activeFrom)}</span>`)+cityChip;
     const cells=days.map(d=>{
       const ds=dstr(d);
       const inactive=a.activeFrom&&ds<a.activeFrom;
@@ -1438,7 +1474,7 @@ function wireDrawer(o){
       // set — find & exclude it so assigning the reserved auditor to the real order doesn't self-warn.
       const _nm=o.name?o.name.trim().toLowerCase():null;
       const linkedPre=ORDERS.find(r=>r.id!==o.id&&r.status==='slot_reserved'&&r.slot===o.slot&&r.date===o.date&&((r.po&&r.po.length&&r.po[0]===o.pi)||(_nm&&r.name&&r.name.trim().toLowerCase()===_nm)));
-      list.innerHTML=AUDITORS.map(a=>{
+      list.innerHTML=auditorsInCity().map(a=>{
         const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
         const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id,linkedPre?.id);
         const capBlocked=(cap<1&&load===0)||(cap>0&&load>=cap);
@@ -1577,7 +1613,7 @@ function wireDrawer(o){
     const _enqId=o.po&&o.po.length?o.po[0]:null;
     const _nm=o.name?o.name.trim().toLowerCase():null;
     const linkedSvc=ORDERS.find(r=>r.id!==o.id&&r.status!=='slot_reserved'&&r.status!=='deleted'&&r.status!=='slot_converted'&&r.slot===o.slot&&r.date===o.date&&((_enqId&&r.pi===_enqId)||(_nm&&r.name&&r.name.trim().toLowerCase()===_nm)));
-    list.innerHTML=AUDITORS.map(a=>{
+    list.innerHTML=auditorsInCity().map(a=>{
       const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
       const isLinkedAud=linkedSvc&&linkedSvc.auditor===a.id;
       const cx=isLinkedAud?null:auditorConflictOrder(a.id,o.date,o.slot,o.id,linkedSvc?.id);
@@ -1723,6 +1759,9 @@ if(document.getElementById("signOut"))document.getElementById("signOut").onclick
 /* ---- Add New Order modal ---- */
 function openAddOrder(){
   document.getElementById("addOrderOverlay").classList.add("show");
+  // City field only appears when the feature is live; defaults to the active toggle, else Bengaluru.
+  const cf=document.getElementById("ao-city-field");
+  if(cf){cf.style.display=CITY_ENABLED?"block":"none";const cs=document.getElementById("ao-city");if(cs)cs.value=(CITY_ENABLED&&cityFilter!=='all')?cityFilter:'Bengaluru';}
   document.getElementById("ao-pi").focus();
 }
 function closeAddOrder(){
@@ -1769,7 +1808,8 @@ async function submitAddOrder(){
   const payload={
     pi, po:po.join(','), skus, audit_ticked:ticked, bm,
     customer_name:name, phone, addr, status:'pending',
-    log:[logEntry], created_by_email:SESSION.email
+    log:[logEntry], created_by_email:SESSION.email,
+    ...(CITY_ENABLED?{city:(document.getElementById("ao-city")||{}).value||'Bengaluru'}:{})
   };
   try{
     // Check for any existing row with this PI before inserting
@@ -1939,7 +1979,7 @@ async function genAuditPDFSM(o,ticked){
 /* ============== RECTIFICATION ============== */
 let _rectOrder=null;
 function rectificationsView(){
-  const rects=ORDERS.filter(o=>o.service&&o.service.rectification_of);
+  const rects=cityScope(ORDERS).filter(o=>o.service&&o.service.rectification_of);
   const rows=rects.map(o=>`<tr data-pi="${o.pi}">
     <td><div class="pi">${o.pi}</div></td>
     <td><div class="pi">${o.service.rectification_of}</div></td>
@@ -1977,7 +2017,7 @@ async function submitRect(){
   const o=_rectOrder;const btn=document.getElementById('rect-submit');btn.disabled=true;
   try{
     const _rectSvc={rectification_of:o.pi,issue,flooring:(o.service&&o.service.flooring)||[],wallpaper:(o.service&&o.service.wallpaper)||[]};
-    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:_rectSvc,log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual'}],created_by_email:SESSION.email};
+    const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:_rectSvc,log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual'}],created_by_email:SESSION.email,...(CITY_ENABLED&&o.city?{city:o.city}:{})};
     if(svcType==='audit')await sbPost('audit_orders',{...base,audit_ticked:[]});
     else await sbPost('install_orders',{...base,status:'deliv_ontime',matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
     const updSvc={...(o.service||{}),rectification_raised:true,rectification_pi:newPi,rectification_type:svcType};
@@ -2060,7 +2100,8 @@ async function _drawLiveLocations(m){
 }
 
 render();
-Promise.all([loadAuditors(),loadShadowers(),loadOrders()]).then(()=>{
+detectCity().then(()=>Promise.all([loadAuditors(),loadShadowers(),loadOrders()])).then(()=>{
+  renderCityToggle();
   setInterval(()=>{if(!document.hidden)loadOrders();},30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
 });
