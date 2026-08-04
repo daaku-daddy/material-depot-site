@@ -76,6 +76,7 @@ header{background:var(--navy);color:#fff;padding:0 16px;height:54px;display:flex
 .slot-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
 .slot-badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:#e8f0fb;color:var(--navy);}
 .slot-badge.mine{background:var(--greenbg);color:var(--green);}
+.slot-badge.engaged{background:#fdeaea;color:var(--red);}
 
 /* ── Reservations section ─────────────────────────────────────────────────── */
 .section-head{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:22px 0 8px;}
@@ -187,7 +188,24 @@ let _refreshTimer=null;
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
 const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d;};
 function fmtDate(s){if(!s)return'—';const d=new Date(s+'T00:00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
-function fmtSlotId(id){const s=SLOT_DEFS.find(x=>x.id===id);return s?s.label:'—';}
+function fmtSlotId(id){
+  const s=SLOT_DEFS.find(x=>x.id===id);
+  if(s)return s.label;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(id||'');
+  if(m){let h=+m[1];const mn=m[2],ap=h<12?'AM':'PM';h=h%12;if(h===0)h=12;return h+':'+mn+' '+ap;}
+  return '—';
+}
+// Start-minute of an order's slot for ANY format: fixed SLOT_DEFS id, arbitrary "HH:MM"
+// (SM books via <input type=time>), else null (legacy sf/sw or missing — not resolvable here).
+function slotStartMin(slot){
+  const s=SLOT_DEFS.find(x=>x.id===slot);
+  if(s)return s.startMin;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(slot||'');
+  if(m)return(+m[1])*60+(+m[2]);
+  return null;
+}
+// Two bookings occupy the same visit if their 60-min blocks overlap (|start gap| < 60).
+function slotBlocksOverlap(a,b){return a!==null&&b!==null&&Math.abs(a-b)<60;}
 
 function slotsConflict(slotA,slotB){
   // Conflict if overlap OR less than 120 min between end of one slot and start of the other
@@ -206,11 +224,12 @@ function getAvailability(slotId){
     if(o.status==='deleted'||o.status==='slot_converted')continue;
     if(o.status==='slot_reserved'&&!o.auditor_id){
       const nm=(o.customer_name||'').trim().toLowerCase();
-      const absorbed=DAY_ORDERS.some(r=>r.slot===o.slot&&r.status!=='deleted'&&r.status!=='slot_reserved'&&r.status!=='slot_converted'&&((o.po&&r.pi===o.po)||(nm&&(r.customer_name||'').trim().toLowerCase()===nm)));
+      const oStartAbs=slotStartMin(o.slot);
+      const absorbed=DAY_ORDERS.some(r=>slotBlocksOverlap(oStartAbs,slotStartMin(r.slot))&&r.status!=='deleted'&&r.status!=='slot_reserved'&&r.status!=='slot_converted'&&((o.po&&r.pi===o.po)||(nm&&(r.customer_name||'').trim().toLowerCase()===nm)));
       if(absorbed)continue;
     }
-    const oSlot=SLOT_DEFS.find(s=>s.id===o.slot);
-    if(!oSlot||!slotsConflict(slot,oSlot))continue;
+    const oStart=slotStartMin(o.slot);
+    if(oStart===null||!slotsConflict(slot,{startMin:oStart,endMin:oStart+60}))continue;
     if(o.auditor_id){
       blockedAuditors.add(o.auditor_id);
     } else {
@@ -355,6 +374,11 @@ function renderSlots(date){
       const otherResForSlot=DAY_ORDERS.filter(o=>o.status==='slot_reserved'&&!isMyBooking(o)&&o.slot===sl.id);
       if(otherResForSlot.length){
         badges+=`<div class="slot-badges">`+otherResForSlot.map(r=>`<span class="slot-badge">${r.log?.[0]?.who||r.bm||'Other store'} pre-booked</span>`).join('')+`</div>`;
+      }
+      // SM-confirmed / assigned audits that engage this slot by time (incl. off-grid HH:MM times)
+      const engagedForSlot=allBooked.filter(o=>{const st=slotStartMin(o.slot);return st!==null&&slotsConflict(sl,{startMin:st,endMin:st+60});});
+      if(engagedForSlot.length){
+        badges+=`<div class="slot-badges">`+engagedForSlot.map(o=>`<span class="slot-badge engaged">&#9679; ${fmtSlotId(o.slot)} booked</span>`).join('')+`</div>`;
       }
 
       html+=`<div class="slot-card${isFull&&!hasMyBooking?' full':(hasMyBooking?' has-my-booking bookable':' bookable')}" data-slot="${sl.id}" data-bookable="${!isFull}">
