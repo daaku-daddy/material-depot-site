@@ -12,11 +12,15 @@
 -- Strips jobcard.rooms[].photos[] from each subjob.
 -- All other data (assignments, items, sign, measurements) is preserved.
 -- ============================================================
-CREATE OR REPLACE VIEW install_orders_slim AS
+-- NOTE: DROP + CREATE (not CREATE OR REPLACE). `CREATE OR REPLACE VIEW` can only APPEND new
+-- columns at the END — it errors if you insert a column before an existing one. `city` is added
+-- as the LAST column below; the DROP makes the re-run bulletproof regardless of the old view's shape.
+DROP VIEW IF EXISTS install_orders_slim;
+CREATE VIEW install_orders_slim AS
 SELECT
   id, created_at, pi, po, skus, bm, customer_name, phone, addr,
   matched_audit, delivery_date, custom_wp, custom_wp_stage, custom_wp_meta,
-  status, service, log, created_by_email, city,
+  status, service, log, created_by_email,
   CASE
     WHEN subjobs IS NULL THEN NULL::jsonb
     ELSE (
@@ -41,7 +45,8 @@ SELECT
       )
       FROM jsonb_array_elements(subjobs) AS sj
     )
-  END AS subjobs
+  END AS subjobs,
+  city
 FROM install_orders;
 
 GRANT SELECT ON install_orders_slim TO anon;
