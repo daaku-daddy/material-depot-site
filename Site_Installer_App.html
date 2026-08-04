@@ -59,6 +59,7 @@
   .b-scheduled{background:#e4f0fb;color:var(--blue);} .b-callpending{background:var(--amberbg);color:var(--amber);}
   .b-reschedule{background:var(--redbg);color:var(--red);} .b-onway{background:#e8f0ff;color:#2b54c2;}
   .b-atsite{background:var(--purplebg);color:var(--purple);} .b-completed{background:var(--greenbg);color:var(--green);}
+  .b-partial{background:#fff4e0;color:#7a5200;}
   .sechead{font-size:14px;font-weight:800;color:var(--muted);margin:16px 4px 10px;text-transform:uppercase;letter-spacing:.5px;}
   .empty{text-align:center;color:var(--muted);padding:50px 16px;font-size:16px;}
   /* full screens */
@@ -255,6 +256,7 @@ const STATUS={
   reschedule:{l:"To Reschedule",c:"b-reschedule"},
   onway:{l:"On The Way",c:"b-onway"},
   atsite:{l:"At Site",c:"b-atsite"},
+  partial:{l:"Partially completed",c:"b-partial"},
   completed:{l:"Completed",c:"b-completed"},
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
@@ -264,7 +266,7 @@ function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+enc
 // just returned (keep it) or the server has already caught up (drop the stale queue entry).
 // completed/reschedule share the terminal rank: this table is only ever consulted when the
 // server genuinely hasn't seen the write yet, never to arbitrate between two terminal states.
-const ACT_ORDER={callpending:1,onway:2,atsite:3,completed:4,reschedule:4};
+const ACT_ORDER={callpending:1,onway:2,atsite:3,partial:4,completed:5,reschedule:5};
 
 // roll the parent install_order status up from its sub-jobs (mirrors SM dashboard syncParent)
 function rollupStatus(subjobs,fallback){
@@ -272,6 +274,7 @@ function rollupStatus(subjobs,fallback){
   const sts=subjobs.map(s=>s.status);
   if(sts.every(s=>s==="completed"))return "completed";
   if(sts.some(s=>s==="completed")&&sts.some(s=>s!=="completed"))return "partial";
+  if(sts.some(s=>s==="partial"))return "partial"; // a resumable partial sub-job rolls the order to partial
   if(sts.some(s=>["onway","atsite"].includes(s)))return sts.find(s=>["onway","atsite"].includes(s));
   if(sts.some(s=>s==="reschedule"))return "reschedule";
   if(sts.some(s=>s==="callpending"))return "callpending";
@@ -289,7 +292,8 @@ let JOBS=[];
 // of the array held elsewhere; deduped by sign.img so repeated calls for the same completed
 // card are no-ops. Best-effort and must never throw or block the caller's real write path.
 async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
-  if(!orderId||!sjId||!jobcard||!jobcard.sign)return;
+  // Archive signed completions AND partial-completion snapshots (note 72 widened for Phase 3, note 88+1).
+  if(!orderId||!sjId||!jobcard||(!jobcard.sign&&!jobcard.partial))return;
   try{
     const rows=await sbGet('install_orders?id=eq.'+orderId+'&select=subjobs');
     if(!Array.isArray(rows)||!rows[0])return;
@@ -297,7 +301,10 @@ async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
     const sj=subjobs.find(s=>s.id===sjId);
     if(!sj)return;
     const hist=Array.isArray(sj.jobcard_history)?sj.jobcard_history:[];
-    if(hist.some(h=>h&&h.sign&&h.sign.img===jobcard.sign.img))return;
+    // Dedupe key: signed cards keep the sign.img check (note 72); unsigned partials use their
+    // own per-visit partialAt timestamp so each distinct visit archives exactly one row.
+    const key=(jobcard.sign&&jobcard.sign.img)||jobcard.partialAt;
+    if(hist.some(h=>h&&(((h.sign&&h.sign.img)||h.partialAt)===key)))return;
     hist.push(Object.assign({},jobcard,{archivedAt:new Date().toISOString(),archivedReason:reason||'completed'}));
     sj.jobcard_history=hist;
     await sbPatch('install_orders',orderId,{subjobs});
@@ -310,7 +317,7 @@ async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
 // (actq). Called after loadJobs()/_flushActionQueue()/_retryPendingInstallCompletions() so it
 // stays current without a dedicated interval.
 function _updatePendingSyncBanner(){
-  const n=Object.keys(localStorage).filter(k=>k.startsWith('md_install_actq_')||k.startsWith('md_install_ps_')||k.startsWith('md_install_pjc_')).length;
+  const n=Object.keys(localStorage).filter(k=>k.startsWith('md_install_actq_')||k.startsWith('md_install_ps_')||k.startsWith('md_install_pjc_')||k.startsWith('md_install_ppart_ps_')||k.startsWith('md_install_ppart_pjc_')).length;
   const b=document.getElementById('pendingSyncBanner');
   if(!b)return;
   document.body.classList.toggle('pending-sync-banner-show',n>0);
@@ -370,6 +377,45 @@ async function _retryPendingInstallCompletions(){
   }finally{_retryingInstallCompletion=false;_updatePendingSyncBanner();}
 }
 
+// Offline-retry queue for markPartialComplete's two writes — a SEPARATE queue from the completion
+// queue (ps_/pjc_) because that one hardcodes sj.status='completed' on flush; a partial must stay
+// 'partial'. Two keys per subjob (md_install_ppart_ps_ = {id,sjId,log}; md_install_ppart_pjc_ =
+// {id,sjId,jobcard}), each re-fetching fresh subjobs so a sibling installer's edit is never clobbered.
+let _retryingInstallPartial=false;
+async function _retryPendingInstallPartials(){
+  if(_retryingInstallPartial)return;_retryingInstallPartial=true;
+  try{
+    const psKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_install_ppart_ps_'));
+    for(const k of psKeys){
+      try{
+        const d=JSON.parse(localStorage.getItem(k));
+        const parentRows=await sbGet('install_orders?id=eq.'+d.id+'&select=subjobs,status');
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===d.sjId);
+        if(sj)sj.status='partial';
+        const parentStatus=rollupStatus(subjobs,parentRows[0].status||'partial');
+        await sbPatch('install_orders',d.id,{status:parentStatus,log:d.log});
+        localStorage.removeItem(k);
+      }catch(e){}
+    }
+    const pjcKeys=Object.keys(localStorage).filter(k=>k.startsWith('md_install_ppart_pjc_'));
+    for(const k of pjcKeys){
+      try{
+        const d=JSON.parse(localStorage.getItem(k));
+        const parentRows=await sbGet('install_orders?id=eq.'+d.id+'&select=subjobs');
+        if(!Array.isArray(parentRows)||!parentRows[0])throw new Error('fetch failed');
+        const subjobs=parentRows[0].subjobs||[];
+        const sj=subjobs.find(s=>s.id===d.sjId);
+        if(sj){sj.status='partial';sj.jobcard=d.jobcard;}
+        await sbPatchLong('install_orders',d.id,{subjobs});
+        localStorage.removeItem(k);
+        _archiveInstallJobcard(d.id,d.sjId,d.jobcard,'partial');
+      }catch(e){}
+    }
+  }finally{_retryingInstallPartial=false;_updatePendingSyncBanner();}
+}
+
 // Generalized offline-retry queue for adv()'s status transitions (callpending/onway/atsite/
 // reschedule) — one localStorage slot per subjob, holding the latest target status plus an
 // append-only list of not-yet-synced log entries (each keeping its own originally-captured
@@ -416,6 +462,7 @@ async function _flushActionQueue(){
 
 async function loadJobs(){
   _retryPendingInstallCompletions();
+  _retryPendingInstallPartials();
   _flushActionQueue();
   try{
     const rows=await sbGet('install_orders_slim?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)&order=created_at.desc');
@@ -470,7 +517,7 @@ async function loadJobs(){
 }
 setInterval(()=>{if(!document.hidden){loadJobs();_locPermTick();}},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadJobs();_locPermTick();}});
-window.addEventListener('online',()=>{_flushActionQueue();_retryPendingInstallCompletions();});
+window.addEventListener('online',()=>{_flushActionQueue();_retryPendingInstallCompletions();_retryPendingInstallPartials();});
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
@@ -588,6 +635,12 @@ function detailBody(j){
       <div class="say">Do the installation, then fill the card and take photos.</div>
       ${j.auditBy==='material_depot'?`<button class="bigbtn ghost" id="viewAuditBtn">View site audit report</button>`:''}
       <button class="bigbtn navy" id="openJC">${j.jobcard?'Continue installation card':'Start installation card'}</button>
+      ${reschedBtn}</div>`;
+  } else if(j.status==="partial"){
+    stage=`<div class="bigstage"><div class="lbl">In progress</div><div class="now" style="color:#7a5200">Partially completed</div>
+      <div class="say">Some of this job is done. Resume to add the remaining rooms and finish with the customer, or download the partial job card.</div>
+      <button class="bigbtn navy" id="openJC">Resume installation card</button>
+      <button class="bigbtn ghost" id="dlPdf">Download partial job card</button>
       ${reschedBtn}</div>`;
   } else if(j.status==="completed"){
     stage=`<div class="bigstage"><div class="lbl">Done</div><div class="now" style="color:var(--green)">Completed</div>
@@ -764,8 +817,9 @@ class SignPad{
 }
 
 let jcHadSign=false;
+let jcResumePartial=false;
 async function openJobCard(j){
-  jcJob=j;jcRooms=[];jcSeq=0;jcHadSign=false;
+  jcJob=j;jcRooms=[];jcSeq=0;jcHadSign=false;jcResumePartial=false;
   $("#jcSub").textContent=j.pi+" · "+j.name;
   $("#jcBody").innerHTML=`
     <div class="note blue">Fill one block per room. Each room needs a photo after installation. <span class="reqstar">★</span> = required.</div>
@@ -777,17 +831,30 @@ async function openJobCard(j){
   // status) used to destroy the signature the instant autosave fired, because autosave
   // unconditionally replaced sj.jobcard with {draft:true,rooms}. A fresh fetch here also guards
   // against the in-memory j.jobcard going stale (e.g. jcBack strips .sign off the local copy).
-  let rooms=null;
+  let rooms=null,isPartial=false;
   if(j.id){
     try{
       const r=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs');
       if(Array.isArray(r)&&r[0]){
         const sj=(r[0].subjobs||[]).find(s=>s.id===j.sjId);
-        if(sj&&sj.jobcard){j.jobcard=sj.jobcard;if(sj.jobcard.sign&&!sj.jobcard.draft)rooms=sj.jobcard.rooms;}
+        if(sj&&sj.jobcard){
+          j.jobcard=sj.jobcard;
+          // Check partial BEFORE the signed-lock (note 64): a partial card may even carry an
+          // optional signature, but it must RESUME (load prior rooms, allow more), never be
+          // treated as a terminal signed card that locks edits to on-device only.
+          if(sj.jobcard.partial){rooms=sj.jobcard.rooms;isPartial=true;}
+          else if(sj.jobcard.sign&&!sj.jobcard.draft)rooms=sj.jobcard.rooms;
+        }
       }
     }catch(e){}
   }
-  if(rooms){
+  if(isPartial){
+    jcResumePartial=true;
+    j.parentLog=j.parentLog||[];
+    const banner=el('div');banner.textContent='Resuming a partially completed job. Add the remaining rooms, then either save partial again or complete with the customer. Interim edits are saved on this device until you do.';
+    banner.style.cssText='background:#fff4e0;border:1px solid #f0c674;color:#7a5200;padding:10px 12px;border-radius:8px;margin:10px 0;font-size:13px;font-weight:600;';
+    $("#jcBody").insertBefore(banner,$("#roomsWrap"));
+  }else if(rooms){
     jcHadSign=true;
     // Backfill safety net: covers subjobs completed before jobcard_history existed, or any
     // completion whose archive write (below, at reallyDone time) itself failed.
@@ -876,9 +943,10 @@ function autosave(){
     if(_autosaveSeq!==mySeq)return;
     if(_completionWrite){showSaveStatus('saved');return;}
     if(!jcJob||!jcJob.id||!jcJob.sjId){showSaveStatus('local');return;}
-    // A job card that was already signed must never have its signature wiped by a draft
-    // autosave — edits stay on-device only until the redo flow captures a fresh signature.
-    if(jcHadSign){showSaveStatus('local');return;}
+    // A signed card (jcHadSign) or a resumed partial (jcResumePartial) must never have its stored
+    // jobcard wiped by a draft autosave — interim edits stay on-device only until the worker
+    // explicitly re-marks partial or completes (both fresh-fetch-and-splice writes).
+    if(jcHadSign||jcResumePartial){showSaveStatus('local');return;}
     try{
       const parentRows=await sbGet('install_orders?id=eq.'+jcJob.id+'&select=subjobs');
       if(_autosaveSeq!==mySeq||_completionWrite)return;
@@ -941,11 +1009,14 @@ function finishCard(j){
     </div>
     ${roomCards}
     ${j.isPrimary
-      ?`<button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Proceed to client &#8594;</button>`
+      ?`<button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Proceed to client &#8594;</button>
+       <button class="bigbtn amber" id="markPartialBtn" style="margin-bottom:12px">Save as partially completed</button>
+       <div class="note" style="margin-bottom:14px">Use "Partially completed" if the job isn't finished today — you or another installer can resume it later from where you left off.</div>`
       :`<div class="note" style="margin-bottom:14px">You are an <b>additional installer</b> — the primary installer handles the customer signature. Tap below to mark your part complete.</div>
        <button class="bigbtn green" id="proceedSign" style="margin-bottom:12px">Mark my part complete &#8594;</button>`}
     <button class="bigbtn ghost" id="backToRoomsFromPreview">&#8592; Back to rooms</button>`;
   $("#proceedSign").onclick=()=>{if(j.isPrimary){showPassToClientInst(j);}else{markAdditionalComplete(j);}};
+  if($("#markPartialBtn"))$("#markPartialBtn").onclick=()=>markPartialComplete(j);
   $("#backToRoomsFromPreview").onclick=()=>{
     document.querySelector(".footer").classList.remove("hide");
     const saved=collectRooms();
@@ -989,6 +1060,88 @@ async function markAdditionalComplete(j){
   $("#jcScreen").classList.add("hide");
   openDetail(j.pi+'|'+j.sjId);
   toast("Your part marked complete");
+}
+
+// ---- Partial completion (resumable): lightweight installer-only flow, mandatory note, optional
+// signature. Persisted with the SAME two-write + _completionWrite race protection as reallyDone,
+// and its OWN retry queues (md_install_ppart_*), so it can never be clobbered by an in-flight
+// draft autosave nor flip a partial to completed on retry.
+function markPartialComplete(j){
+  // Reached from the validated job-card preview, so rooms already pass finishCard's checks.
+  showCommentThen('Note for partial completion (required)',note=>{
+    note=(note||'').trim();
+    if(!note){toast('A note is required to save as partially completed');markPartialComplete(j);return;}
+    _partialSignScreen(j,note);
+  });
+}
+function _partialSignScreen(j,note){
+  document.querySelector(".footer").classList.add("hide");
+  $("#jcBody").innerHTML=`
+    <div class="panel"><h2 style="margin:0 0 8px">Partial completion — signature (optional)</h2>
+      <div class="note">You can capture the customer's signature for the work done so far, or skip it. The full signature + rating is taken later when the job is fully completed.</div>
+      <canvas class="sign" id="signCanvas"></canvas>
+      <button class="bigbtn ghost" id="signClear" style="margin-top:10px">Clear signature</button>
+      <div class="fieldgap" style="margin-top:12px"><label>Customer name</label><input id="signName" value="${j.name}"></div>
+    </div>
+    <button class="bigbtn green" id="savePartialSigned">Save partial (with signature)</button>
+    <button class="bigbtn navy" id="savePartialSkip" style="margin-top:10px">Skip signature &amp; save partial</button>
+    <button class="bigbtn ghost" id="backFromPartial" style="margin-top:10px">&#8592; Back to job card</button>`;
+  jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
+  $("#signClear").onclick=()=>jcSignPad.clear();
+  $("#backFromPartial").onclick=()=>finishCard(j);
+  $("#savePartialSigned").onclick=async()=>{
+    if(jcSignPad.isEmpty()){toast("Sign, or tap Skip signature");return;}
+    const btn=$("#savePartialSigned");btn.disabled=true;btn.textContent="Saving…";
+    let sig=jcSignPad.export();try{sig=await _uploadPhoto(sig);}catch(e){}
+    _writePartial(j,note,{img:sig,name:$("#signName").value});
+  };
+  $("#savePartialSkip").onclick=()=>{const b=$("#savePartialSkip");b.disabled=true;b.textContent="Saving…";_writePartial(j,note,null);};
+}
+async function _writePartial(j,note,sign){
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+  const jc={partial:true,rooms:collectRooms(),note,partialBy:ME.name,partialAt:new Date().toISOString()};
+  if(sign)jc.sign=sign;
+  j.jobcard=jc;j.status='partial';
+  j.parentLog=j.parentLog||[];
+  j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation partially completed — "+note,d:new Date().toISOString(),by:"auto",who:ME.name});
+  toast("Saving...");
+  if(j.id&&j.sjId){
+    // Step 1: status + log (small). Independently queued/retried, never reverted.
+    try{
+      const pr=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs,status');
+      if(!Array.isArray(pr)||!pr[0])throw new Error('fetch failed');
+      const subjobs=pr[0].subjobs||[];const sj=subjobs.find(s=>s.id===j.sjId);
+      if(sj)sj.status='partial';
+      const parentStatus=rollupStatus(subjobs,pr[0].status||'partial');
+      await sbPatch('install_orders',j.id,{status:parentStatus,log:j.parentLog});
+      try{localStorage.removeItem('md_install_ppart_ps_'+j.pi+'_'+j.sjId);}catch(e){}
+    }catch(e){
+      try{localStorage.setItem('md_install_ppart_ps_'+j.pi+'_'+j.sjId,JSON.stringify({id:j.id,sjId:j.sjId,log:j.parentLog}));}catch(e2){}
+    }
+    // Step 2: full jobcard (may be large) — re-fetches fresh subjobs, sets _completionWrite before
+    // the long write so an in-flight draft autosave re-issues instead of clobbering (note 2/64).
+    try{
+      const pr2=await sbGet('install_orders?id=eq.'+j.id+'&select=subjobs');
+      if(!Array.isArray(pr2)||!pr2[0])throw new Error('fetch failed');
+      const subjobs2=pr2[0].subjobs||[];const sj2=subjobs2.find(s=>s.id===j.sjId);
+      if(sj2){sj2.status='partial';sj2.jobcard=jc;}
+      const patch={subjobs:subjobs2};
+      _completionWrite=patch;
+      await sbPatchLong('install_orders',j.id,patch);
+      try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
+      try{localStorage.removeItem('md_install_ppart_pjc_'+j.pi+'_'+j.sjId);}catch(e){}
+      _archiveInstallJobcard(j.id,j.sjId,jc,'partial');
+    }catch(e){
+      try{localStorage.setItem('md_install_ppart_pjc_'+j.pi+'_'+j.sjId,JSON.stringify({id:j.id,sjId:j.sjId,jobcard:jc}));}catch(e2){}
+      toast("Saved on your phone — will finish syncing automatically");
+    }
+  }
+  stopLocationTracking();
+  await loadJobs();
+  document.querySelector(".footer").classList.remove("hide");
+  $("#jcScreen").classList.add("hide");
+  openDetail(j.pi+'|'+j.sjId);
+  toast("Saved as partially completed");
 }
 
 function _starRowInst(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
@@ -1178,12 +1331,15 @@ async function genPDF(j){
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
   const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
   const rooms=j.jobcard.rooms;
-  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Installation Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  const isPartial=!!(j.jobcard&&j.jobcard.partial);
+  const cardTitle='Installation Job Card'+(isPartial?' (Partial)':'');
+  function header(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text(cardTitle,M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
   header();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
     body:[['Proforma Invoice No.',j.pi],['Client Name',j.name],['Client Mobile',j.phone],['Site Address',j.addr],['BM',j.bm],['Installer',ME.name],['Type',j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(j.date)]]});
   y=doc.lastAutoTable.finalY+10;
-  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
+  if(isPartial&&j.jobcard.note){doc.setFont('helvetica','italic');doc.setFontSize(9.5);doc.setTextColor(...muted);const nl=doc.splitTextToSize('Partial completion note: '+j.jobcard.note,W-2*M);doc.text(nl,M,y+4);y+=nl.length*12+6;}
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text(isPartial?'Rooms installed so far':'Rooms installed',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.','Qty','H × W']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-',r.qty||'-',[r.height,r.width].filter(Boolean).join(' × ')||'-'])});
 
   for(let i=0;i<rooms.length;i++){const r=rooms[i];

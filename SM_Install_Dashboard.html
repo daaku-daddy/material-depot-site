@@ -660,7 +660,8 @@ let ORDERS=[],DELETED=[];
 // object itself. Does its own independent read-modify-write of subjobs; deduped by sign.img.
 // Best-effort — never throws or blocks the caller's real status-change write.
 async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
-  if(!orderId||!sjId||!jobcard||!jobcard.sign)return;
+  // Archive signed completions AND partial-completion snapshots (kept verbatim vs installer app; note 72 widened).
+  if(!orderId||!sjId||!jobcard||(!jobcard.sign&&!jobcard.partial))return;
   try{
     const rows=await sbGet('install_orders?id=eq.'+orderId+'&select=subjobs');
     if(!Array.isArray(rows)||!rows[0])return;
@@ -668,7 +669,8 @@ async function _archiveInstallJobcard(orderId,sjId,jobcard,reason){
     const sj=subjobs.find(s=>s.id===sjId);
     if(!sj)return;
     const hist=Array.isArray(sj.jobcard_history)?sj.jobcard_history:[];
-    if(hist.some(h=>h&&h.sign&&h.sign.img===jobcard.sign.img))return;
+    const key=(jobcard.sign&&jobcard.sign.img)||jobcard.partialAt;
+    if(hist.some(h=>h&&(((h.sign&&h.sign.img)||h.partialAt)===key)))return;
     hist.push(Object.assign({},jobcard,{archivedAt:new Date().toISOString(),archivedReason:reason||'completed'}));
     sj.jobcard_history=hist;
     await sbPatch('install_orders',orderId,{subjobs});
@@ -1929,7 +1931,7 @@ function wireDrawer(o){
         // Archive the signed snapshot before disconnecting it from its installer, at the moment
         // of the reset itself — the installer app also backfills this on reopen, but archiving
         // here too means the record survives even if nobody ever reopens the job card again.
-        if(sj.jobcard&&sj.jobcard.sign)_archiveInstallJobcard(o.id,sj.id,sj.jobcard,'status-changed-to-created');
+        if(sj.jobcard&&(sj.jobcard.sign||sj.jobcard.partial))_archiveInstallJobcard(o.id,sj.id,sj.jobcard,'status-changed-to-created');
         sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;
       });
     } else if(st==='completed'&&o.subjobs&&o.subjobs.length){
@@ -2270,6 +2272,7 @@ function syncParent(o){
   }
   if(sts.every(s=>s==="completed"))o.status="completed";
   else if(sts.some(s=>s==="completed")&&sts.some(s=>s!=="completed"))o.status="partial";
+  else if(sts.some(s=>s==="partial"))o.status="partial"; // a resumable partial sub-job rolls the order to partial
   else if(sts.some(s=>["onway","atsite"].includes(s)))o.status=sts.find(s=>["onway","atsite"].includes(s));
   else if(sts.some(s=>s==="reschedule"))o.status="reschedule";
   else if(sts.every(s=>s==="assigned"))o.status="assigned";

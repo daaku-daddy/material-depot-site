@@ -96,6 +96,7 @@
   .c-scheduled{background:#e4f0fb;color:var(--blue);}
   .c-onway{background:var(--amberbg);color:var(--amber);}
   .c-atsite{background:#fff4d6;color:#7a5800;}
+  .c-partial{background:#fff4e0;color:#7a5200;}
   .c-completed{background:var(--greenbg);color:var(--green);}
   .c-reschedule{background:var(--redbg);color:var(--red);}
 
@@ -346,6 +347,7 @@ const JOB_STATUS={
   scheduled:  {l:'Scheduled',       c:'c-scheduled'},
   onway:      {l:'On the Way',      c:'c-onway'},
   atsite:     {l:'At Site',         c:'c-atsite'},
+  partial:    {l:'Partially Completed', c:'c-partial'},
   completed:  {l:'Completed',       c:'c-completed'},
   reschedule: {l:'Reschedule',      c:'c-reschedule'},
 };
@@ -1050,6 +1052,7 @@ async function openJobDetail(pi,type){
       const sjsHtml=subjobs.map((sj,si)=>{
         const jc=sj.jobcard;const rooms=(jc&&jc.rooms)||[];const hasSign=jc&&jc.sign&&jc.sign.img;
         const hasCard=rooms.length||hasSign;
+        const isPartial=jc&&jc.partial;
         const isDraft=jc&&jc.draft&&!hasSign;
         const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer_email?[{installer_email:sj.installer_email,installer_name:'—'}]:[]);
         const names=asgns.map(a=>a.installer_name||a.installer_email||'—').join(', ');
@@ -1066,7 +1069,7 @@ async function openJobDetail(pi,type){
           ${history.map((h,i)=>i).reverse().map(idx=>{const h=history[idx];const dt=h.archivedAt?new Date(h.archivedAt).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
             return `<div class="jd-row" style="align-items:center">
               <span class="jd-label">${dt}</span>
-              <span>Signed by <b>${(h.sign&&h.sign.name)||'—'}</b> · ${(h.rooms||[]).length} room(s)${h.sign&&h.sign.ratings?` · ⭐ ${h.sign.ratings.q1}/10`:''}
+              <span>${h.partial?'Partial':'Signed'} by <b>${(h.sign&&h.sign.name)||h.partialBy||'—'}</b> · ${(h.rooms||[]).length} room(s)${h.sign&&h.sign.ratings?` · ⭐ ${h.sign.ratings.q1}/10`:''}
                 <button class="btn-ghost" style="font-size:11px;padding:4px 8px;margin-left:8px" onclick="downloadInstallHistoricalPDF(${si},${idx})">📥 PDF</button>
               </span>
             </div>`;}).join('')}
@@ -1074,7 +1077,9 @@ async function openJobDetail(pi,type){
         return `<div class="jd-section">
           <div class="jd-sec-head">${typeLabel} · ${jobChip(sj.status)}</div>
           <div class="jd-row"><span class="jd-label">Installer(s)</span><span>${names}</span></div>
-          ${isDraft
+          ${isPartial
+            ?`<div style="color:#7a5200;background:#fff4e0;border:1px solid #f0c674;font-size:12px;margin-top:8px;padding:8px 10px;border-radius:6px">🟡 Partially completed — resumable${jc.note?` · note: ${jc.note}`:''}${jc.partialBy?` · by ${jc.partialBy}`:''}</div>${rooms.length?`<div style="margin-top:10px">${roomsHtml}${signHtml}</div>`:''}`
+            :isDraft
             ?`<div style="color:var(--amber);font-size:12px;margin-top:8px">⚠️ Job card draft — client sign-off not yet completed${history.length?' (this sub-job was previously completed and signed — see Completed Job Card History below)':''}</div>${rooms.length?`<div style="margin-top:10px">${roomsHtml}</div>`:''}`
             :rooms.length?`<div style="margin-top:10px">${roomsHtml}${signHtml}</div>`
             :(!hasCard?`<div style="color:var(--muted);font-size:12px;margin-top:8px">No job card data yet.${history.length?' This sub-job was previously completed and signed — see Completed Job Card History below.':''}</div>`:'<div style="color:var(--amber);font-size:12px;margin-top:8px">⚠️ Job card draft — not yet completed</div>')}
@@ -1488,7 +1493,7 @@ function _anInstallCanon(installs,from,to){
   const out=[];
   for(const o of installs){
     for(const sj of (o.subjobs||[])){
-      const isDone=['completed','partial'].includes(sj.status);
+      const isDone=sj.status==='completed'; // sub-job 'partial' is in-progress (Phase 3), dated by scheduled date
       let repDate=null,matched=false;
 
       // Scheduled date candidate(s) — always computed, regardless of completion status. Used for
@@ -1712,7 +1717,7 @@ function _anAttachAuditRatings(completedRows,ratings){
 // installer emails first; if that's still ambiguous (same installer completed 2 subjobs on one
 // order), fall back to nearest completion-timestamp. Known limitation, documented in the footer.
 function _anAttachInstallRatings(canonRows,ratings){
-  const doneRows=canonRows.filter(r=>['completed','partial'].includes(r.status));
+  const doneRows=canonRows.filter(r=>r.status==='completed'); // ratings only attach to fully-completed sub-jobs
   const byOrder={};
   for(const r of ratings){ if(r.order_type==='install'){ const k=r.order_id||('pi:'+r.pi); (byOrder[k]=byOrder[k]||[]).push(r); } }
   const byOrderRows={};
@@ -1749,7 +1754,7 @@ function _anInstallerMap(canonRows,ratingMap,arrByName){
       if(!k) continue;
       if(!map[k]) map[k]={name:inst.installer_name||k,email:inst.installer_email||'',orders:0,completed:0,wfQty:0,wpRolls:0,wpSqft:0,q1:[],q2:[],q3:[]};
       map[k].orders++;
-      if(['completed','partial'].includes(row.status)) map[k].completed++;
+      if(row.status==='completed') map[k].completed++; // partial = in-progress, not a completed job
       for(const it of row.items){
         // SKU items now carry a single sqft measurement (no separate flooring qty / wallpaper rolls field).
         // Roll count is always derived: ceil(sqft/57). parseFloat guards against stray legacy non-numeric values.
@@ -1889,7 +1894,7 @@ function drawAnalytics(m){
   const aTotal=aFiltered.length;
 
   // Install calcs
-  const iDone=iCanon.filter(a=>['completed','partial'].includes(a.status)); // "reached site & started work"
+  const iDone=iCanon.filter(a=>a.status==='completed'); // Completion % numerator — partial is in-progress, excluded (Phase 3)
   // Log-mention count is a distinct, looser signal from confirmedDelayed below (date-field mismatch) —
   // it catches cases logged as delayed where nobody actually updated delivery_date, and vice versa.
   // Previously this reused the exact same hasDelay/date-comparison boolean as confirmedDelayed, so
@@ -2059,7 +2064,7 @@ function drawAnalytics(m){
   _anSetDrill('iMDaudit','Site Installation — Material Depot Audit %','Every subjob in range, phone-matched against all-time site audit orders.','install',
     iCanon.map(r=>({pi:r.pi,date:r.date,..._iRow(r.order),result:(r.order.phone&&auditPhones.has(r.order.phone))?'✓ Matched a Material Depot site audit':'✗ No matching site audit'})));
   _anSetDrill('iCompletion','Site Installation — Completion %','Every subjob in this date range.','install',
-    iCanon.map(r=>({pi:r.pi,date:r.date,..._iRow(r.order),result:['completed','partial'].includes(r.status)?'✓ '+(JOB_STATUS[r.status]?.l||r.status):'✗ Not yet completed ('+(JOB_STATUS[r.status]?.l||r.status)+')'})));
+    iCanon.map(r=>({pi:r.pi,date:r.date,..._iRow(r.order),result:r.status==='completed'?'✓ '+(JOB_STATUS[r.status]?.l||r.status):'✗ Not yet completed ('+(JOB_STATUS[r.status]?.l||r.status)+')'})));
   _anSetDrill('iRatings','Site Installation — Client Ratings','Every subjob with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','install',
     [...iRatingMap.entries()].map(([row,r])=>({pi:row.pi,date:row.date,..._iRow(row.order),result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
 
@@ -2229,7 +2234,7 @@ async function _drawLiveLocations(m){
           const dates=a.dates||(a.date?[a.date]:[]);
           if(!dates.includes(todayStr))continue;
           const slot=(a.slots&&a.slots[0])||sj.slot||null;
-          addOrd(a.installer_email,{pi:o.pi,addr:o.addr||'',slot,slotH:parseSlotH(slot),done:['completed','partial'].includes(sj.status)});
+          addOrd(a.installer_email,{pi:o.pi,addr:o.addr||'',slot,slotH:parseSlotH(slot),done:sj.status==='completed'});
         }
       }
     }
