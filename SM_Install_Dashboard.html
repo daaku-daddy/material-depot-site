@@ -614,10 +614,99 @@ const AUTO_STATUSES=["onway","atsite","completed"];
 // A mixed order is one whose subjobs include BOTH a flooring and a wallpaper sub-job — the only
 // case where delivery/production tracking forks into independent per-category tracks. Single-
 // category orders (the vast majority) are entirely unaffected by any of the sj*/mixed logic below.
+// "Forked" = an order tracked as 2+ independent sub-jobs. Generalized 2026-08-04 (Phase 4) from the
+// original note-71 "mixed = flooring AND wallpaper" to also cover a SINGLE category split per-SKU into
+// 2+ sub-jobs (e.g. a standard + a customized wallpaper delivered on different dates by different
+// installers). Safe because no single-category order EVER had length>=2 before this — the only orders
+// with 2+ sub-jobs were FL+WP mixed ones (which still behave identically). The whole note-71 per-sub-job
+// tracking infra (delivery/custom-wp/rollup/drawer cards/ops-calls) keys off this, not off the category
+// pair, so it all handles N same-type sub-jobs generically. Name kept for minimal churn across call sites.
 function isMixedOrder(o){
-  if(!o.subjobs||o.subjobs.length<2)return false;
-  const types=new Set(o.subjobs.map(sj=>sj.type));
-  return types.has('flooring')&&types.has('wallpaper');
+  return !!(o.subjobs&&o.subjobs.length>=2);
+}
+// True once a CATEGORY has been split into 2+ sub-jobs (per-SKU). Distinct from isMixedOrder (which is
+// also true for a plain 1-FL+1-WP order). Used to route SKU editing away from the flat editor.
+function isSplit(o){
+  if(!o.subjobs)return false;
+  const fl=o.subjobs.filter(sj=>sj.type==='flooring').length;
+  const wp=o.subjobs.filter(sj=>sj.type==='wallpaper').length;
+  return fl>1||wp>1;
+}
+// Mint a stable, collision-free sub-job id when splitting: base (sj_fl/sj_wp) counts as suffix 0; new
+// ids are max-existing-suffix + 1, so an id is never re-issued even after a merge-then-resplit (length
+// would collide). Never keyed on SKU code (codes can repeat).
+function mintSubjobId(o,baseType){
+  const base=baseType==='wallpaper'?'sj_wp':'sj_fl';
+  const re=new RegExp('^'+base+'(?:_(\\d+))?$');
+  let mx=-1;
+  (o.subjobs||[]).forEach(sj=>{const m=re.exec(sj.id||'');if(m)mx=Math.max(mx,m[1]?parseInt(m[1],10):0);});
+  return base+'_'+(mx+1);
+}
+// Short per-sub-job label to distinguish 2+ same-type sub-jobs in list/calendar UIs. Plain WP/FL when
+// the category isn't split; adds Custom/Std (or the first SKU) when it is.
+function sjShortLabel(o,sj){
+  const tag=sj.type==='wallpaper'?'WP':'FL';
+  const sameType=(o.subjobs||[]).filter(s=>s.type===sj.type).length;
+  if(sameType<2)return tag;
+  const suffix=sj.type==='wallpaper'?(sjCustomWp(o,sj)?'Custom':'Std'):((sj.items&&sj.items[0]&&sj.items[0].sku)||'');
+  return suffix?tag+' · '+suffix:tag;
+}
+// ---- Per-SKU split (opt-in): move some of a category sub-job's SKUs into their own new sub-job with
+// an independent installer/date/delivery/job card. Reuses the note-71 per-sub-job seeding verbatim.
+function openSplitPicker(pi,sjId){
+  const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  const sj=(o.subjobs||[]).find(s=>s.id===sjId);if(!sj||!(sj.items||[]).length)return;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:120;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;padding:20px;width:100%;max-width:440px;box-sizing:border-box;max-height:86vh;overflow:auto">
+    <div style="font-weight:800;font-size:16px;color:var(--navy);margin-bottom:6px">Split ${sj.type==='wallpaper'?'wallpaper':'flooring'} into separate visits</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:14px">Tick the SKU(s) to move into a NEW sub-job (its own installer, date and delivery). Leave at least one here.</div>
+    <div id="_splitList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+      ${sj.items.map((it,i)=>`<label style="display:flex;align-items:flex-start;gap:10px;border:1.5px solid var(--line);border-radius:10px;padding:10px;cursor:pointer">
+        <input type="checkbox" class="_splitck" data-sku="${it.sku}" style="margin-top:2px;width:18px;height:18px;accent-color:var(--navy)">
+        <span><b>${it.sku||'—'}</b>${it.name?' · '+it.name:''}${it.sqft?' · '+it.sqft+' sq.ft':''}</span></label>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+      <button id="_splitCancel" style="padding:13px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-weight:700;cursor:pointer">Cancel</button>
+      <button id="_splitOk" style="padding:13px;background:var(--navy);color:#fff;border:none;border-radius:12px;font-weight:700;cursor:pointer">Move to new sub-job</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_splitCancel').onclick=()=>ov.remove();
+  ov.querySelector('#_splitOk').onclick=()=>{
+    const moved=[...ov.querySelectorAll('._splitck:checked')].map(c=>c.dataset.sku);
+    if(!moved.length){toast('Tick at least one SKU to move');return;}
+    if(moved.length>=sj.items.length){toast('Leave at least one SKU in the original sub-job');return;}
+    ov.remove();splitSubjob(pi,sjId,moved);
+  };
+}
+async function splitSubjob(pi,sjId,movedSkus){
+  const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  const sj=(o.subjobs||[]).find(s=>s.id===sjId);if(!sj)return;
+  const moved=sj.items.filter(it=>movedSkus.includes(it.sku));
+  const remaining=sj.items.filter(it=>!movedSkus.includes(it.sku));
+  if(!moved.length||!remaining.length)return;
+  const newSj={id:mintSubjobId(o,sj.type),type:sj.type,items:moved,assignments:[],date:null,slot:null,installer:null,installer_email:null,status:'pending',deliveryDate:sjDeliveryDate(o,sj),originalDeliveryDate:sjDeliveryDate(o,sj)};
+  if(sj.type==='wallpaper'){newSj.customWp=sjCustomWp(o,sj);newSj.customWpStage='draft';newSj.customWpMeta={};}
+  sj.items=remaining;
+  o.subjobs.push(newSj);
+  syncParent(o);
+  o.log.push({t:(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' split — '+moved.length+' SKU(s) moved to a new sub-job ('+moved.map(m=>m.sku).join(', ')+') with its own delivery/installer',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+  try{await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});}catch(e){toast('Could not save split — try again');return;}
+  await loadOrders();toast('Split into separate visits');openOrder(o.pi);
+}
+async function mergeSubjob(pi,sjId){
+  const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  const sj=(o.subjobs||[]).find(s=>s.id===sjId);if(!sj)return;
+  if((sj.assignments&&sj.assignments.length)||sj.jobcard){toast('Cannot merge — this sub-job already has an installer or job card');return;}
+  // Merge into the lowest-id sibling of the same type (the base sj_fl/sj_wp).
+  const target=(o.subjobs||[]).filter(s=>s.type===sj.type&&s.id!==sj.id).sort((a,b)=>(a.id||'').localeCompare(b.id||''))[0];
+  if(!target){toast('No sibling sub-job to merge into');return;}
+  target.items=(target.items||[]).concat(sj.items||[]);
+  o.subjobs=o.subjobs.filter(s=>s.id!==sj.id);
+  syncParent(o);
+  o.log.push({t:(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' sub-job merged back ('+(sj.items||[]).map(m=>m.sku).join(', ')+')',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+  try{await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});}catch(e){toast('Could not merge — try again');return;}
+  await loadOrders();toast('Merged back');openOrder(o.pi);
 }
 // Fallback accessors — a mixed-order sub-job's own field wins once an SM has diverged it; until
 // then (including the 4 legacy mixed orders that predate this feature) it falls back to the
@@ -896,7 +985,7 @@ function subjobSummary(o){
   return `<div class="subjobs">`+o.subjobs.map(sj=>{
     const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_name:(installerById(sj.installer)||{name:'Unknown'}).name}]:[]);
     const names=asgns.map(a=>a.installer_name||'Unassigned').join(', ')||'Unassigned';
-    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span>${fmtDate(sj.date)} · ${names} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
+    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sjShortLabel(o,sj)}</span>${fmtDate(sj.date)} · ${names} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
   }).join("")+`</div>`;
 }
 
@@ -1434,7 +1523,9 @@ function drawerBody(o){
     <div class="k">Phone</div><div class="v">${o.phone}</div>
     <div class="k">Address</div><div class="v">${mapLink(o.addr)}</div></div></div>`;
 
-  if(o.service&&o.status!=='deliv_ontime') html+=editInstallServiceSection(o);
+  // Flat FL/WP SKU editor can't map back onto 2+ same-type sub-jobs — hidden once a category is split.
+  // (SKUs are set per sub-job at split time; merge a split-off sub-job back to re-edit via this editor.)
+  if(o.service&&o.status!=='deliv_ontime'&&!isSplit(o)) html+=editInstallServiceSection(o);
 
   // ---- AUDIT TYPE selector ----
   html+=`<div class="sec"><h3>Site audit type</h3>
@@ -1518,6 +1609,8 @@ function drawerBody(o){
           :`<div class="fl-fullday-note">Flooring — 1 full day per installer visit</div>`}
         ${sj.status==='completed'?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download Job Card PDF</button>`:''}
         ${inDeliveryPhase?'':`<div data-assignsection="${sj.id}"></div>`}
+        ${!['completed','partial'].includes(sj.status)&&(sj.items||[]).length>1?`<button class="btn ghost sm" data-splitcat="${sj.id}" style="margin-top:8px">✂ Split into separate visits…</button>`:''}
+        ${/_\d+$/.test(sj.id)&&(!sj.assignments||!sj.assignments.length)&&!sj.jobcard?`<button class="btn ghost sm" data-mergesj="${sj.id}" style="margin-top:8px">↩ Merge back into ${sj.type==='wallpaper'?'Wallpaper':'Flooring'}</button>`:''}
       </div>`;
     });
     html+=`</div>`;
@@ -2053,6 +2146,8 @@ function wireDrawer(o){
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Ready to schedule");openOrder(o.pi);
   });
+  document.querySelectorAll('[data-splitcat]').forEach(b=>b.onclick=()=>openSplitPicker(o.pi,b.dataset.splitcat));
+  document.querySelectorAll('[data-mergesj]').forEach(b=>b.onclick=()=>mergeSubjob(o.pi,b.dataset.mergesj));
   document.querySelectorAll('[data-cwpvendor]').forEach(sel=>sel.onchange=()=>{
     const sjId=sel.dataset.cwpvendor;const v=sel.value;
     const wrap=document.querySelector(`[data-cwpvendorotherwrap="${sjId}"]`);if(wrap)wrap.style.display=v==='Other'?'':'none';
