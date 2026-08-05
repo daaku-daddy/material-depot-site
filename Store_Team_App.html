@@ -180,6 +180,9 @@ const SLOT_DEFS=[
   {id:'16:00',label:'4:00 PM', rangeEnd:'5:00 PM', startMin:960,endMin:1020,group:'Evening'},
   {id:'17:00',label:'5:00 PM', rangeEnd:'6:00 PM', startMin:1020,endMin:1080,group:'Evening'},
 ];
+// Strong evening cutoff: after this time (local), the store can no longer pre-book TOMORROW's
+// morning slots (the two 'Morning' group slots below). SMs are unaffected — this is Store-Team-only.
+const MORNING_CUTOFF_MIN=18*60; // 6:00 PM
 const DAYS_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ── State ───────────────────────────────────────────────────────────────────── */
@@ -363,11 +366,20 @@ function renderSlots(date){
   const isToday=date===dstr(today());
   const nowMin=isToday?(()=>{const n=new Date();return n.getHours()*60+n.getMinutes();})():null;
 
+  // Strong 6 PM cutoff for TOMORROW's morning slots: after 18:00 the store can no longer
+  // pre-book tomorrow's 10–11 / 11–12 visits (the service manager leaves early and can't
+  // absorb a last-minute morning booking made the evening before). Later slots tomorrow and
+  // all slots on later days stay open. Uses local device clock, like the same-day filter above.
+  const tmr=today();tmr.setDate(tmr.getDate()+1);
+  const nowAbsMin=new Date().getHours()*60+new Date().getMinutes();
+  const morningCutoffHit=(date===dstr(tmr))&&nowAbsMin>=MORNING_CUTOFF_MIN;
+
   // Slot groups
   ['Morning','Afternoon','Evening'].forEach(grp=>{
-    const slots=SLOT_DEFS.filter(s=>s.group===grp&&(nowMin===null||s.startMin>nowMin));
+    const cutMorning=grp==='Morning'&&morningCutoffHit;
+    const slots=cutMorning?[]:SLOT_DEFS.filter(s=>s.group===grp&&(nowMin===null||s.startMin>nowMin));
     html+=`<div class="slot-group"><div class="slot-grp-title">${grp}</div>`;
-    if(!slots.length){html+='<div style="font-size:13px;color:var(--muted);padding:10px 4px">No upcoming slots</div></div>';return;}
+    if(!slots.length){html+=`<div style="font-size:13px;color:var(--muted);padding:10px 4px">${cutMorning?'Morning slots for tomorrow close at 6:00 PM. Please pick an afternoon/evening slot, or a morning slot on a later day.':'No upcoming slots'}</div></div>`;return;}
     slots.forEach(sl=>{
       const av=getAvailability(sl.id);
       const isFull=av.available<=0;

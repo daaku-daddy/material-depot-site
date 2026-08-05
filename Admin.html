@@ -282,6 +282,7 @@
       <button class="nav-item admin-only" data-view="jobs"><span class="ico">📋</span>Job Overview</button>
       <button class="nav-item admin-only" data-view="perf"><span class="ico">📊</span>Performance</button>
       <button class="nav-item" data-view="analytics"><span class="ico">📉</span>Analytics</button>
+      <button class="nav-item admin-only" data-view="payouts"><span class="ico">💰</span>Payouts</button>
       <button class="nav-item admin-only" data-view="live"><span class="ico">📍</span>Live</button>
     </nav>
 
@@ -385,6 +386,7 @@ async function renderView(v){
   else if(v==='jobs')    await renderJobs(m);
   else if(v==='perf')    await renderPerf(m);
   else if(v==='analytics') await renderAnalytics(m);
+  else if(v==='payouts')   await renderPayouts(m);
   else if(v==='live')      await renderLiveLocations(m);
 }
 
@@ -550,6 +552,7 @@ async function submitAddUser(){
 
 function openEditRole(u){
   const curType=u.installer_type||'flooring';
+  const pr=u.pay_rates||{};  // per-installer payout override (blank fields fall back to the global rate)
   window._editUser=u;  // stashed so the Training-schedule sub-modal can read training_stages without re-serialising
   showModal(`
     <div class="modal-head"><h3>Edit Role</h3><button class="modal-close" onclick="closeModal()">×</button></div>
@@ -560,7 +563,7 @@ function openEditRole(u){
         <div style="margin-left:auto">${roleBadge(u.role)}</div>
       </div>
       <div class="form-group"><label>New Role</label>
-        <select id="e-role" onchange="document.getElementById('e-itype-row').style.display=(this.value==='installer'||this.value==='auditor_installer')?'block':'none'">
+        <select id="e-role" onchange="var _s=(this.value==='installer'||this.value==='auditor_installer')?'block':'none';document.getElementById('e-itype-row').style.display=_s;document.getElementById('e-payrates-row').style.display=_s">
           <option value="service_mgr" ${u.role==='service_mgr'?'selected':''}>Service Manager</option>
           <option value="site_auditor" ${u.role==='site_auditor'?'selected':''}>Site Auditor</option>
           <option value="installer" ${u.role==='installer'?'selected':''}>Site Installer</option>
@@ -574,6 +577,14 @@ function openEditRole(u){
           <option value="flooring" ${curType==='flooring'?'selected':''}>Wooden Flooring</option>
           <option value="wallpaper" ${curType==='wallpaper'?'selected':''}>Wallpaper</option>
         </select>
+      </div>
+      <div class="form-group" id="e-payrates-row" style="display:${(u.role==='installer'||u.role==='auditor_installer')?'block':'none'}">
+        <label>Pay-rate override <span style="font-weight:400;color:var(--muted)">(optional — blank = use global default)</span></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Flooring ₹/sqft</div><input type="number" min="0" step="0.01" id="e-pr-fl" value="${pr.fl_sqft!=null?pr.fl_sqft:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+          <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Std WP ₹/roll</div><input type="number" min="0" step="0.01" id="e-pr-wpstd" value="${pr.wp_std_roll!=null?pr.wp_std_roll:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+          <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Custom WP ₹/sqft</div><input type="number" min="0" step="0.01" id="e-pr-wpcust" value="${pr.wp_custom_sqft!=null?pr.wp_custom_sqft:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+        </div>
       </div>
       ${CITY_ENABLED?`<div class="form-group"><label>City</label><select id="e-city"><option value="Bengaluru" ${(u.city||'Bengaluru')==='Bengaluru'?'selected':''}>Bengaluru</option><option value="Hyderabad" ${u.city==='Hyderabad'?'selected':''}>Hyderabad</option></select></div>`:''}
     </div>
@@ -645,10 +656,18 @@ async function resetPasscode(id,name){
 async function submitEditRole(id,name){
   const role=document.getElementById('e-role').value;
   const itypeEl=document.getElementById('e-itype');
-  const installer_type=(role==='installer'||role==='auditor_installer')&&itypeEl?itypeEl.value:'flooring';
+  const isInst=(role==='installer'||role==='auditor_installer');
+  const installer_type=isInst&&itypeEl?itypeEl.value:'flooring';
   const cityEl=document.getElementById('e-city');
+  // Payout override: numeric fields kept; a fully-blank override is stored as null (falls back to global).
+  let pay_rates=undefined;
+  if(isInst){
+    const rd=eid=>{const el=document.getElementById(eid);if(!el||el.value==='')return null;const v=parseFloat(el.value);return isNaN(v)?null:v;};
+    const pr={fl_sqft:rd('e-pr-fl'),wp_std_roll:rd('e-pr-wpstd'),wp_custom_sqft:rd('e-pr-wpcust')};
+    pay_rates=(pr.fl_sqft==null&&pr.wp_std_roll==null&&pr.wp_custom_sqft==null)?null:pr;
+  }
   try{
-    await sbPatch('profiles',id,{role,installer_type,...(CITY_ENABLED&&cityEl?{city:cityEl.value}:{})});
+    await sbPatch('profiles',id,{role,installer_type,...(pay_rates!==undefined?{pay_rates}:{}),...(CITY_ENABLED&&cityEl?{city:cityEl.value}:{})});
     closeModal();
     toast(`✓ ${name}'s role updated to ${ROLES[role]?.label||role}`);
     await renderUsers(document.getElementById('main'));
@@ -1404,6 +1423,199 @@ function _anParseDateText(text){
 // fetched in full regardless of the selected date range, since several metrics (Material Depot
 // Audit %, Site Audit → Order Conversion %) intentionally phone-match against all-time data —
 // re-running this later is what lets a conversion that only happens days after the audit show up.
+/* ============================================================================
+   INSTALLER PAYOUTS  (plan: ~/.claude/plans/payout-foam-slot-cutoff.md)
+   Self-contained on purpose — does NOT reuse _anInstallCanon/_anInstallerMap:
+   those credit the FULL sqft to every co-installer and treat 'partial' as
+   not-done. Payout instead splits a job's area EQUALLY across co-assigned
+   installers (600 sqft / 3 installers = 200 each) and pays partial work too.
+   ============================================================================ */
+let payoutFrom='', payoutTo='', payoutCity='all';
+const _PAY_DEF={fl_sqft:0,wp_std_roll:0,wp_custom_sqft:0};
+let _payoutGlobal={..._PAY_DEF}, _payoutGlobalId=null, _payoutOverrides={};
+
+// app_settings is a tiny key→jsonb table (see the SQL in the plan). knownId lets a re-save skip the lookup.
+async function _loadSetting(key){
+  try{const r=await sbGet('app_settings?key=eq.'+encodeURIComponent(key)+'&select=id,value');
+    if(Array.isArray(r)&&r.length)return{id:r[0].id,value:r[0].value||{}};}catch(e){}
+  return{id:null,value:{}};
+}
+async function _saveSetting(key,value,knownId){
+  if(knownId){await sbPatch('app_settings',knownId,{value,updated_at:new Date().toISOString()});return knownId;}
+  const ex=await sbGet('app_settings?key=eq.'+encodeURIComponent(key)+'&select=id').catch(()=>null);
+  if(Array.isArray(ex)&&ex.length){await sbPatch('app_settings',ex[0].id,{value,updated_at:new Date().toISOString()});return ex[0].id;}
+  const c=await sbPost('app_settings',{key,value});return Array.isArray(c)&&c[0]?c[0].id:null;
+}
+
+// A wallpaper sub-job is custom if its own flag is set (split/mixed orders), else the order-level flag.
+function _payIsCustomWp(o,sj){if(sj.type!=='wallpaper')return false;if(sj.customWp!==undefined&&sj.customWp!==null)return !!sj.customWp;return !!o.custom_wp;}
+// Real assignments; else a legacy single-installer sub-job; else nobody (unassigned — no one to pay).
+function _payAssignments(sj){
+  if(Array.isArray(sj.assignments)&&sj.assignments.length)return sj.assignments;
+  if(sj.installer_email||sj.installer||sj.installer_name)return[{installer_email:sj.installer_email||'',installer_name:sj.installer_name||sj.installer||''}];
+  return[];
+}
+// Effective ₹ rate for an installer+field = their per-person override if numeric, else the global default.
+function _payRate(email,name,field){
+  const ov=_payoutOverrides[(email||'').toLowerCase()]||_payoutOverrides['name:'+(name||'').toLowerCase()];
+  if(ov&&ov[field]!=null&&ov[field]!==''&&!isNaN(+ov[field]))return +ov[field];
+  return +(_payoutGlobal[field]||0);
+}
+// One row per DONE sub-job (completed OR partial) whose completion date lands in [from,to].
+// Completion date = the max "…installation (partially )completed" log entry (IST); falls back to
+// partialAt, then the latest scheduled date. (Orders created before 2026-07-01 carry no log in
+// _anData — same accepted analytics limitation — and fall back to scheduled date.)
+function _payoutRows(installs,from,to,city){
+  const rows=[];
+  for(const o of installs){
+    if(city&&city!=='all'&&(o.city||'Bengaluru')!==city)continue;
+    for(const sj of(o.subjobs||[])){
+      if(sj.status!=='completed'&&sj.status!=='partial')continue;
+      const isPartial=sj.status==='partial';
+      const key=(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' installation '+(isPartial?'partially completed':'completed');
+      let cd=null;
+      for(const l of(o.log||[])){if(l.t&&l.d&&l.t.startsWith(key)){const d=_anDateIST(l.d);if(!cd||d>cd)cd=d;}}
+      if(!cd&&isPartial&&sj.jobcard&&sj.jobcard.partialAt)cd=_anDateIST(sj.jobcard.partialAt);
+      if(!cd){const sc=[];if(sj.date)sc.push(sj.date);for(const a of(sj.assignments||[])){if(a.mode==='custom')(a.dates||[]).forEach(d=>sc.push(d));else if(a.date)sc.push(a.date);}cd=sc.length?sc.sort().slice(-1)[0]:null;}
+      if(!cd||cd<from||cd>to)continue;
+      rows.push({o,sj,date:cd,isPartial});
+    }
+  }
+  return rows;
+}
+// Sum per installer. Area/rolls are split equally across the sub-job's co-assigned installers.
+function _payoutAggregate(rows){
+  const map={};
+  for(const r of rows){
+    const sj=r.sj,o=r.o,asg=_payAssignments(sj);
+    if(!asg.length)continue;
+    const n=asg.length;
+    const totalSqft=(sj.items||[]).reduce((s,it)=>s+(parseFloat(it.sqft)||0),0);
+    const totalRolls=(sj.items||[]).reduce((s,it)=>{const q=parseFloat(it.sqft)||0;return s+(q?Math.ceil(q/SQFT_PER_ROLL):0);},0);
+    const shareSqft=totalSqft/n, shareRolls=totalRolls/n;
+    const isFl=sj.type==='flooring', isCustom=_payIsCustomWp(o,sj);
+    for(const a of asg){
+      const email=a.installer_email||'', name=a.installer_name||a.installer||email||'—';
+      const k=(email||('name:'+name)).toLowerCase();
+      if(!map[k])map[k]={name,email,jobs:new Set(),fl_sqft:0,fl_amt:0,wpstd_rolls:0,wpstd_amt:0,wpcust_sqft:0,wpcust_amt:0,total:0,lines:[]};
+      const M=map[k];M.jobs.add(o.pi);
+      const line={pi:o.pi,date:r.date,cat:isFl?'Flooring':(isCustom?'Custom WP':'Std WP'),partial:r.isPartial,co:n,share:0,unit:'',rate:0,amt:0};
+      let amt=0;
+      if(isFl){const rate=_payRate(email,name,'fl_sqft');amt=shareSqft*rate;M.fl_sqft+=shareSqft;M.fl_amt+=amt;line.share=shareSqft;line.unit='sqft';line.rate=rate;}
+      else if(isCustom){const rate=_payRate(email,name,'wp_custom_sqft');amt=shareSqft*rate;M.wpcust_sqft+=shareSqft;M.wpcust_amt+=amt;line.share=shareSqft;line.unit='sqft';line.rate=rate;}
+      else{const rate=_payRate(email,name,'wp_std_roll');amt=shareRolls*rate;M.wpstd_rolls+=shareRolls;M.wpstd_amt+=amt;line.share=shareRolls;line.unit='rolls';line.rate=rate;}
+      line.amt=amt;M.total+=amt;M.lines.push(line);
+    }
+  }
+  return Object.values(map).map(m=>({...m,jobs:m.jobs.size})).sort((a,b)=>b.total-a.total);
+}
+
+async function renderPayouts(m){
+  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  if(!payoutFrom){const t=new Date();payoutFrom=_anDstr(new Date(t.getFullYear(),t.getMonth(),1));payoutTo=_anDstr(t);}
+  try{
+    const g=await _loadSetting('payout_rates');_payoutGlobalId=g.id;_payoutGlobal={..._PAY_DEF,...(g.value||{})};
+    const profs=await sbGet('profiles?select=name,email,pay_rates&role=in.(installer,auditor_installer)').catch(()=>[]);
+    _payoutOverrides={};
+    if(Array.isArray(profs))for(const p of profs){if(p.pay_rates){if(p.email)_payoutOverrides[p.email.toLowerCase()]=p.pay_rates;if(p.name)_payoutOverrides['name:'+p.name.toLowerCase()]=p.pay_rates;}}
+    if(!window._anData||!window._anData.installs)await _anFetchData();
+    const installs=(window._anData&&window._anData.installs)?window._anData.installs:[];
+    // _anData's install select omits custom_wp (and city) — fetch just those and merge by pi (mirrors the original_delivery_date merge above).
+    const meta=await sbGet('install_orders?select=pi,custom_wp'+(CITY_ENABLED?',city':'')+'&status=neq.deleted').catch(()=>[]);
+    if(Array.isArray(meta)){const mm={};for(const r of meta)mm[r.pi]=r;for(const o of installs){const x=mm[o.pi];if(x){o.custom_wp=x.custom_wp;if(CITY_ENABLED)o.city=x.city;}}}
+    window._payoutInstalls=installs;
+  }catch(e){m.innerHTML='<div style="padding:30px;color:var(--red)">Could not load payout data — '+(e.message||'try again')+'</div>';return;}
+  drawPayouts(m);
+}
+
+function _payNum(id){const el=document.getElementById(id);const v=el?parseFloat(el.value):NaN;return isNaN(v)?0:v;}
+async function savePayoutRates(){
+  const v={fl_sqft:_payNum('pr-fl'),wp_std_roll:_payNum('pr-wpstd'),wp_custom_sqft:_payNum('pr-wpcust')};
+  try{_payoutGlobalId=await _saveSetting('payout_rates',v,_payoutGlobalId);_payoutGlobal={..._PAY_DEF,...v};toast('✓ Payout rates saved');drawPayouts(document.getElementById('main'));}
+  catch(e){toast('⚠ Could not save rates — '+(e.message||'the app_settings table may be missing (run the SQL)'));}
+}
+const _payRup=n=>'₹'+Math.round(n||0).toLocaleString('en-IN');
+const _paySq=n=>(Math.round((n||0)*10)/10).toLocaleString('en-IN');
+
+function drawPayouts(m){
+  const installs=window._payoutInstalls||[];
+  const rows=_payoutRows(installs,payoutFrom,payoutTo,payoutCity);
+  const agg=_payoutAggregate(rows);window._payoutAgg=agg;
+  const grand=agg.reduce((s,r)=>s+r.total,0);
+  const flTot=agg.reduce((s,r)=>s+r.fl_amt,0), wpTot=agg.reduce((s,r)=>s+r.wpstd_amt+r.wpcust_amt,0);
+  const gv=_payoutGlobal;
+  const ratesUnset=(gv.fl_sqft||0)===0&&(gv.wp_std_roll||0)===0&&(gv.wp_custom_sqft||0)===0;
+  const filtBtn='border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:7px;padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer';
+  const cityOpts=CITY_ENABLED?`<select onchange="payoutCity=this.value;drawPayouts(document.getElementById('main'))" style="padding:7px;border:1px solid var(--line);border-radius:7px;font-weight:700">
+      <option value="all"${payoutCity==='all'?' selected':''}>All cities</option>
+      <option value="Bengaluru"${payoutCity==='Bengaluru'?' selected':''}>Bengaluru</option>
+      <option value="Hyderabad"${payoutCity==='Hyderabad'?' selected':''}>Hyderabad</option></select>`:'';
+  let html=`
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+    <h2 style="margin:0;font-size:20px">💰 Installer Payouts</h2>${cityOpts}
+    <button onclick="downloadPayoutCSV()" style="margin-left:auto;border:0;background:var(--navy);color:#fff;border-radius:7px;padding:7px 13px;font-weight:800;font-size:12px;cursor:pointer">⬇ Download CSV</button>
+  </div>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.5">Pay for installation work <b>completed or partially completed</b> in the selected range. When several installers share one job, its area is split equally between them.</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:12px">
+    <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">From</label><input type="date" id="pay-from" value="${payoutFrom}" style="padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+    <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">To</label><input type="date" id="pay-to" value="${payoutTo}" style="padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+    <button onclick="payoutFrom=document.getElementById('pay-from').value;payoutTo=document.getElementById('pay-to').value;drawPayouts(document.getElementById('main'))" style="border:0;background:var(--navy);color:#fff;border-radius:7px;padding:8px 14px;font-weight:800;cursor:pointer">Apply</button>
+    <button onclick="(function(){const t=new Date();payoutFrom=_anDstr(new Date(t.getFullYear(),t.getMonth(),1));payoutTo=_anDstr(t);drawPayouts(document.getElementById('main'))})()" style="${filtBtn}">This month</button>
+    <button onclick="(function(){const t=new Date();payoutFrom=_anDstr(new Date(t.getFullYear(),t.getMonth()-1,1));payoutTo=_anDstr(new Date(t.getFullYear(),t.getMonth(),0));drawPayouts(document.getElementById('main'))})()" style="${filtBtn}">Last month</button>
+    <button onclick="(function(){const t=new Date();payoutTo=_anDstr(t);t.setDate(t.getDate()-29);payoutFrom=_anDstr(t);drawPayouts(document.getElementById('main'))})()" style="${filtBtn}">Last 30 days</button>
+  </div>
+  <details ${ratesUnset?'open':''} style="margin-bottom:14px;border:1px solid var(--line);border-radius:10px;padding:0 12px">
+    <summary style="cursor:pointer;padding:11px 0;font-weight:800;font-size:13px">⚙ Pay rates${ratesUnset?' <span style="color:var(--amber);font-weight:600">— not set yet</span>':''}</summary>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:end;padding:6px 0 14px">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Flooring (₹/sqft)</label><input type="number" min="0" step="0.01" id="pr-fl" value="${gv.fl_sqft||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Standard WP (₹/roll)</label><input type="number" min="0" step="0.01" id="pr-wpstd" value="${gv.wp_std_roll||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Custom WP (₹/sqft)</label><input type="number" min="0" step="0.01" id="pr-wpcust" value="${gv.wp_custom_sqft||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+      <button onclick="savePayoutRates()" style="border:0;background:var(--green);color:#fff;border-radius:7px;padding:8px 16px;font-weight:800;cursor:pointer">Save rates</button>
+      <div style="font-size:11.5px;color:var(--muted);flex-basis:100%">Global defaults. To pay a specific installer differently, set an override in <b>Users → Edit Role</b>.</div>
+    </div>
+  </details>
+  <div class="stats">
+    <div class="stat-card"><div class="val">${_payRup(grand)}</div><div class="lbl">Total payout</div></div>
+    <div class="stat-card"><div class="val">${agg.length}</div><div class="lbl">Installers</div></div>
+    <div class="stat-card"><div class="val">${_payRup(flTot)}</div><div class="lbl">Flooring</div></div>
+    <div class="stat-card"><div class="val">${_payRup(wpTot)}</div><div class="lbl">Wallpaper</div></div>
+  </div>`;
+  if(!agg.length){html+=`<div style="text-align:center;padding:40px 0;color:var(--muted)">No completed installation work in this range${payoutCity!=='all'?' for '+payoutCity:''}.</div>`;m.innerHTML=html;return;}
+  html+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px">
+    <thead><tr style="text-align:left;border-bottom:2px solid var(--line);color:var(--muted);font-size:11px">
+      <th style="padding:8px 6px">Installer</th><th style="text-align:right">Jobs</th>
+      <th style="text-align:right">Flooring<br>sqft · ₹</th><th style="text-align:right">Std WP<br>rolls · ₹</th>
+      <th style="text-align:right">Custom WP<br>sqft · ₹</th><th style="text-align:right;padding-right:6px">Total</th></tr></thead><tbody>`;
+  for(const r of agg){
+    const bd=r.lines.slice().sort((a,b)=>a.date<b.date?-1:1).map(l=>`<tr style="color:var(--muted)">
+        <td style="padding:3px 6px">${l.date}</td><td>${l.pi}</td>
+        <td>${l.cat}${l.partial?' <span style="color:var(--amber)">· partial</span>':''}${l.co>1?' · ÷'+l.co:''}</td>
+        <td style="text-align:right">${_paySq(l.share)} ${l.unit}</td><td style="text-align:right">× ${_payRup(l.rate)}</td>
+        <td style="text-align:right;padding-right:6px">${_payRup(l.amt)}</td></tr>`).join('');
+    html+=`<tr style="border-bottom:1px solid var(--line);font-weight:700">
+      <td style="padding:9px 6px"><details><summary style="cursor:pointer">${r.name||'—'}${r.email?' <span style="font-weight:400;color:var(--muted);font-size:11px">'+r.email+'</span>':''}</summary>
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0 4px">
+          <thead><tr style="text-align:left;color:var(--muted)"><th style="padding:3px 6px">Date</th><th>ENQ</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right;padding-right:6px">₹</th></tr></thead>
+          <tbody>${bd}</tbody></table></details></td>
+      <td style="text-align:right">${r.jobs}</td>
+      <td style="text-align:right">${r.fl_sqft?_paySq(r.fl_sqft)+' · '+_payRup(r.fl_amt):'—'}</td>
+      <td style="text-align:right">${r.wpstd_rolls?_paySq(r.wpstd_rolls)+' · '+_payRup(r.wpstd_amt):'—'}</td>
+      <td style="text-align:right">${r.wpcust_sqft?_paySq(r.wpcust_sqft)+' · '+_payRup(r.wpcust_amt):'—'}</td>
+      <td style="text-align:right;padding-right:6px">${_payRup(r.total)}</td></tr>`;
+  }
+  html+=`<tr style="border-top:2px solid var(--line);font-weight:900"><td style="padding:9px 6px">Grand total</td><td></td><td></td><td></td><td></td><td style="text-align:right;padding-right:6px">${_payRup(grand)}</td></tr></tbody></table></div>`;
+  if(ratesUnset)html+=`<div style="margin-top:12px;font-size:12px;color:var(--amber)">⚠ All pay rates are zero — set them in “Pay rates” above to compute amounts.</div>`;
+  m.innerHTML=html;
+}
+function downloadPayoutCSV(){
+  const rows=window._payoutAgg||[];
+  const header=['Installer','Email','Jobs','Flooring sqft','Flooring INR','Std WP rolls','Std WP INR','Custom WP sqft','Custom WP INR','Total INR'];
+  const lines=[header.join(',')];
+  for(const r of rows)lines.push([r.name,r.email,r.jobs,r.fl_sqft.toFixed(1),Math.round(r.fl_amt),r.wpstd_rolls.toFixed(1),Math.round(r.wpstd_amt),r.wpcust_sqft.toFixed(1),Math.round(r.wpcust_amt),Math.round(r.total)].map(_csvEscape).join(','));
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='payouts_'+payoutFrom+'_to_'+payoutTo+'.csv';document.body.appendChild(a);a.click();a.remove();
+}
+
 async function _anFetchData(){
   // Use install_orders_slim (no photos in subjobs) to avoid MB-scale payload timeouts.
   // original_delivery_date is not in the slim view — fetch it separately (tiny query).

@@ -321,6 +321,7 @@
     <div class="grp">SETUP</div>
     <a data-view="slots"><span class="ico">&#9716;</span>Slots &amp; timings</a>
     <a data-view="installers"><span class="ico">&#9673;</span>Installers</a>
+    <a data-view="foam"><span class="ico">&#129531;</span>Foam Rolls<span class="ct alert" id="cFoam"></span></a>
     <div class="grp">DATA</div>
     <a data-view="deleted"><span class="ico">🗑</span>Deleted Orders<span class="ct" id="cDeleted"></span></a>
     <a data-view="rectifications"><span class="ico">↩</span>Rectifications<span class="ct" id="cRect"></span></a>
@@ -943,6 +944,7 @@ function counts(){
   if($("#cRect"))$("#cRect").textContent=S.filter(o=>o.service&&o.service.rectification_of).length||'';
   const fuToday=S.filter(o=>o.service&&o.service.follow_up_date&&o.service.follow_up_date<=dstr(today)).length;
   if($("#cFollowUp"))$("#cFollowUp").textContent=fuToday||'';
+  if($("#cFoam")){const lc=foamLowCount();$("#cFoam").textContent=lc||'';}
 }
 
 /* ============== RENDER ============== */
@@ -961,6 +963,7 @@ function render(){
   else if(activeView==="deleted")m.innerHTML=deletedView();
   else if(activeView==="rectifications")m.innerHTML=rectificationsView();
   else if(activeView==="followups")m.innerHTML=followupsView();
+  else if(activeView==="foam"){m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';renderFoam(m);return;}
   else if(activeView==="live"){m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';renderLiveLocations(m);return;}
   wire();
 }
@@ -2830,8 +2833,158 @@ async function _drawLiveLocations(m){
 }
 
 render();
-detectCity().then(()=>Promise.all([loadInstallers(),loadOrders()])).then(()=>{
+/* ================= FOAM ROLL BALANCE (flooring installers) =================
+   Each flooring installer carries a personal foam-roll stock (foam ≈ 1 sqft of foam
+   per sqft of floor). Balance = Σ foam issued to them (foam_ledger) − Σ consumed.
+   Consumption is DERIVED from their completed/partial flooring sub-jobs dated on/after
+   the configured tracking-start, split equally across a job's co-assigned installers
+   (same rule as payouts). Below the (editable) threshold, the installer is flagged low. */
+let FOAM_LEDGER=[], FOAM_CFG={threshold:0,tracking_start:''}, _foamCfgId=null;
+
+async function _loadSetting(key){
+  try{const r=await sbGet('app_settings?key=eq.'+encodeURIComponent(key)+'&select=id,value');
+    if(Array.isArray(r)&&r.length)return{id:r[0].id,value:r[0].value||{}};}catch(e){}
+  return{id:null,value:{}};
+}
+async function _saveSetting(key,value,knownId){
+  if(knownId){await sbPatch('app_settings',knownId,{value,updated_at:new Date().toISOString()});return knownId;}
+  const ex=await sbGet('app_settings?key=eq.'+encodeURIComponent(key)+'&select=id').catch(()=>null);
+  if(Array.isArray(ex)&&ex.length){await sbPatch('app_settings',ex[0].id,{value,updated_at:new Date().toISOString()});return ex[0].id;}
+  const c=await sbPost('app_settings',{key,value});return Array.isArray(c)&&c[0]?c[0].id:null;
+}
+async function loadFoam(){
+  try{
+    const [led,cfg]=await Promise.all([sbGet('foam_ledger?select=*&order=created_at.desc'),_loadSetting('foam')]);
+    FOAM_LEDGER=Array.isArray(led)?led:[];
+    _foamCfgId=cfg.id;
+    FOAM_CFG={threshold:+(cfg.value.threshold||0),tracking_start:cfg.value.tracking_start||''};
+  }catch(e){/* foam_ledger / app_settings may not exist yet — stay empty until the SQL is run */}
+}
+function _foamIstDate(iso){try{return new Date(new Date(iso).getTime()+19800000).toISOString().substring(0,10);}catch(e){return null;}}
+// Completion date of a flooring sub-job: max matching log entry (IST), else partialAt, else latest scheduled date.
+function _foamSjDate(o,sj){
+  const key='Flooring installation '+(sj.status==='partial'?'partially completed':'completed');
+  let cd=null;
+  for(const l of(o.log||[])){if(l.t&&l.d&&l.t.startsWith(key)){const d=_foamIstDate(l.d);if(d&&(!cd||d>cd))cd=d;}}
+  if(!cd&&sj.status==='partial'&&sj.jobcard&&sj.jobcard.partialAt)cd=_foamIstDate(sj.jobcard.partialAt);
+  if(!cd){const sc=[];if(sj.date)sc.push(sj.date);for(const a of sjEffectiveAssignments(sj)){if(a.mode==='custom')(a.dates||[]).forEach(d=>d&&sc.push(d));else if(a.date)sc.push(a.date);}cd=sc.length?sc.sort().slice(-1)[0]:null;}
+  return cd;
+}
+// One canonical key per person: installer_id, else email:<e>, else name:<n>. Each ledger/consumption
+// entry lands under exactly one key, so summing a person's three possible keys never double-counts.
+function _foamKey(idLike,email,name){return idLike||(email?'email:'+String(email).toLowerCase():(name?'name:'+String(name).toLowerCase():null));}
+function _foamLookup(map,i){
+  return (i.id&&map[i.id]!=null?map[i.id]:0)+(i.email&&map['email:'+i.email.toLowerCase()]!=null?map['email:'+i.email.toLowerCase()]:0)+(map['name:'+(i.name||'').toLowerCase()]!=null?map['name:'+(i.name||'').toLowerCase()]:0);
+}
+function foamConsumption(){
+  const start=FOAM_CFG.tracking_start||'', by={};
+  for(const o of ORDERS)for(const sj of(o.subjobs||[])){
+    if(sj.type!=='flooring')continue;
+    if(sj.status!=='completed'&&sj.status!=='partial')continue;
+    const cd=_foamSjDate(o,sj);if(!cd||(start&&cd<start))continue;
+    const asg=sjEffectiveAssignments(sj).filter(a=>a.installer_id||a.installer_email||a.installer_name);
+    if(!asg.length)continue;
+    const share=(sj.items||[]).reduce((s,it)=>s+(parseFloat(it.sqft)||0),0)/asg.length;
+    for(const a of asg){const k=_foamKey(a.installer_id,a.installer_email,a.installer_name);if(k)by[k]=(by[k]||0)+share;}
+  }
+  return by;
+}
+function foamIssued(){
+  const by={};
+  for(const r of FOAM_LEDGER){const k=_foamKey(r.installer_id,r.installer_email,r.installer_name);if(!k)continue;by[k]=(by[k]||0)+(parseFloat(r.sqft)||0);}
+  return by;
+}
+function foamBalances(){
+  const cons=foamConsumption(), iss=foamIssued();
+  return installersInCity().filter(i=>i.type==='flooring').map(i=>{
+    const issued=_foamLookup(iss,i), consumed=_foamLookup(cons,i), balance=issued-consumed;
+    return {inst:i,issued,consumed,balance,low:balance<(FOAM_CFG.threshold||0)};
+  }).sort((a,b)=>a.balance-b.balance);
+}
+function foamLowCount(){return (FOAM_CFG.threshold>0)?foamBalances().filter(b=>b.low).length:0;}
+
+async function renderFoam(m){await loadFoam();drawFoam(m);}
+const _fSq=n=>(Math.round((n||0)*10)/10).toLocaleString('en-IN');
+function drawFoam(m){
+  const bals=foamBalances();
+  const lows=bals.filter(b=>b.low);
+  const flOpts=installersInCity().filter(i=>i.type==='flooring').map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  const cfgUnset=!(FOAM_CFG.threshold>0)||!FOAM_CFG.tracking_start;
+  let html=`
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+    <h2 style="margin:0;font-size:20px">&#129531; Foam Rolls</h2>
+    <span style="font-size:12px;color:var(--muted)">Flooring installers only</span>
+  </div>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.5">Foam used ≈ area installed (1 sqft foam per sqft of floor). Consumption is counted automatically from completed &amp; partial flooring jobs${FOAM_CFG.tracking_start?' since <b>'+FOAM_CFG.tracking_start+'</b>':''}; a shared job's foam is split equally between its installers. Record each foam hand-out below to keep the balance right.</div>`;
+  if(lows.length){
+    html+=`<div style="background:var(--redbg);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:13px"><b>&#9888; ${lows.length} installer${lows.length>1?'s':''} low on foam</b> — ${lows.map(b=>b.inst.name+' ('+_fSq(b.balance)+' sqft)').join(', ')}. Provide more foam.</div>`;
+  }
+  // Give foam + settings
+  html+=`<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px">
+    <div style="flex:1;min-width:280px;border:1px solid var(--line);border-radius:10px;padding:12px">
+      <div style="font-weight:800;font-size:13px;margin-bottom:9px">Give foam to an installer</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end">
+        <div style="flex:1;min-width:120px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Installer</div><select id="foam-inst" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:7px">${flOpts||'<option value="">No flooring installers</option>'}</select></div>
+        <div style="width:120px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Foam (sqft)</div><input type="number" min="1" step="1" id="foam-amt" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:7px"></div>
+      </div>
+      <input id="foam-note" placeholder="Note (optional — e.g. 2 rolls, batch #)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:7px;margin-top:8px">
+      <button onclick="giveFoam()" style="margin-top:9px;border:0;background:#1f7a3f;color:#fff;border-radius:7px;padding:9px 16px;font-weight:800;cursor:pointer">Record foam given</button>
+    </div>
+    <details ${cfgUnset?'open':''} style="flex:1;min-width:260px;border:1px solid var(--line);border-radius:10px;padding:0 12px;align-self:flex-start">
+      <summary style="cursor:pointer;padding:12px 0;font-weight:800;font-size:13px">&#9881; Settings${cfgUnset?' <span style="color:var(--amber);font-weight:600">— set these</span>':''}</summary>
+      <div style="padding:2px 0 14px">
+        <div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Low-balance threshold (sqft)</div>
+        <input type="number" min="0" step="1" id="foam-th" value="${FOAM_CFG.threshold||''}" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:7px;margin-bottom:9px">
+        <div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Count consumption from (date)</div>
+        <input type="date" id="foam-ts" value="${FOAM_CFG.tracking_start||''}" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:7px;margin-bottom:9px">
+        <button onclick="saveFoamCfg()" style="border:0;background:var(--navy);color:#fff;border-radius:7px;padding:8px 16px;font-weight:800;cursor:pointer">Save settings</button>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">Consumption before the start date is ignored, so historical jobs don't create a false negative balance.</div>
+      </div>
+    </details>
+  </div>`;
+  // Balance table
+  if(!bals.length){html+=`<div style="text-align:center;padding:30px 0;color:var(--muted)">No flooring installers${(CITY_ENABLED&&cityFilter!=='all')?' in '+cityFilter:''}.</div>`;m.innerHTML=html;return;}
+  html+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
+    <thead><tr style="text-align:left;border-bottom:2px solid var(--line);color:var(--muted);font-size:11px">
+      <th style="padding:8px 6px">Installer</th><th style="text-align:right">Issued (sqft)</th><th style="text-align:right">Consumed (sqft)</th><th style="text-align:right">Balance (sqft)</th><th style="text-align:right;padding-right:6px">Status</th></tr></thead><tbody>`;
+  for(const b of bals){
+    const led=FOAM_LEDGER.filter(r=>{const k=_foamKey(r.installer_id,r.installer_email,r.installer_name);return k===b.inst.id||k==='email:'+(b.inst.email||'').toLowerCase()||k==='name:'+(b.inst.name||'').toLowerCase();});
+    const ledHtml=led.length?led.map(r=>`<tr style="color:var(--muted)"><td style="padding:2px 6px">${fmtLog(r.created_at)}</td><td style="text-align:right">+${_fSq(r.sqft)}</td><td>${(r.note||'').replace(/</g,'&lt;')}${r.created_by?' <span style="font-size:10px">· '+r.created_by+'</span>':''}</td></tr>`).join(''):'<tr><td colspan="3" style="color:var(--muted);padding:4px 6px">No foam issued yet.</td></tr>';
+    html+=`<tr style="border-bottom:1px solid var(--line);font-weight:700${b.low?';background:var(--redbg)':''}">
+      <td style="padding:9px 6px"><details><summary style="cursor:pointer">${b.inst.name}</summary>
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0 4px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:2px 6px">Given</th><th style="text-align:right">sqft</th><th>Note</th></tr></thead><tbody>${ledHtml}</tbody></table></details></td>
+      <td style="text-align:right">${_fSq(b.issued)}</td>
+      <td style="text-align:right">${_fSq(b.consumed)}</td>
+      <td style="text-align:right;font-weight:900;color:${b.low?'var(--red)':'var(--ink)'}">${_fSq(b.balance)}</td>
+      <td style="text-align:right;padding-right:6px">${b.low?'<span style="color:var(--red);font-weight:800">&#9888; Low</span>':'<span style="color:#1f7a3f">OK</span>'}</td></tr>`;
+  }
+  html+=`</tbody></table></div>`;
+  if(!(FOAM_CFG.threshold>0))html+=`<div style="margin-top:12px;font-size:12px;color:var(--amber)">⚠ Set a low-balance threshold in Settings to get restock alerts.</div>`;
+  m.innerHTML=html;
+}
+async function giveFoam(){
+  const sel=document.getElementById('foam-inst'), amtEl=document.getElementById('foam-amt');
+  const amt=amtEl?parseFloat(amtEl.value):NaN;
+  if(!sel||!sel.value){toast('Pick an installer');return;}
+  if(!amt||amt<=0){toast('Enter a foam amount (sqft)');return;}
+  const inst=INSTALLERS.find(i=>i.id===sel.value);if(!inst){toast('Installer not found');return;}
+  const note=(document.getElementById('foam-note')||{}).value;
+  try{
+    await sbPost('foam_ledger',{installer_id:inst.id,installer_email:inst.email||'',installer_name:inst.name||'',sqft:amt,note:(note||'').trim()||null,created_by:SESSION.name});
+    toast('✓ Recorded '+amt+' sqft foam to '+inst.name);
+    await loadFoam();drawFoam(document.getElementById('main'));counts();
+  }catch(e){toast('⚠ Could not save — '+(e.message||'the foam_ledger table may be missing (run the SQL)'));}
+}
+async function saveFoamCfg(){
+  const th=parseFloat((document.getElementById('foam-th')||{}).value), ts=(document.getElementById('foam-ts')||{}).value||'';
+  const v={threshold:isNaN(th)?0:th,tracking_start:ts};
+  try{_foamCfgId=await _saveSetting('foam',v,_foamCfgId);FOAM_CFG=v;toast('✓ Foam settings saved');drawFoam(document.getElementById('main'));counts();}
+  catch(e){toast('⚠ Could not save — '+(e.message||'the app_settings table may be missing (run the SQL)'));}
+}
+
+detectCity().then(()=>Promise.all([loadInstallers(),loadOrders(),loadFoam()])).then(()=>{
   renderCityToggle();
+  counts();
   setInterval(()=>{if(!document.hidden)loadOrders();},60000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
 });
