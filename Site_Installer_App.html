@@ -1495,13 +1495,8 @@ function openArrivalModal(cb){
     },()=>{locSt.textContent='⚠ Location unavailable — photo still required';locSt.style.color='#fbbf24';},{timeout:10000,enableHighAccuracy:true});
   }else{locSt.textContent='Location not supported on this device';locSt.style.color='#fbbf24';}
 
-  let _photo=null;
-  function doSnap(){
-    const cvs=document.getElementById('arrCamCanvas');
-    const vw=vid.videoWidth||640,vh=vid.videoHeight||480;
-    const W=Math.min(vw,800),H=Math.round(vh*W/vw);
-    cvs.width=W;cvs.height=H;cvs.getContext('2d').drawImage(vid,0,0,W,H);
-    _photo=cvs.toDataURL('image/jpeg',0.6);
+  let _photo=null,_fileInput=null;
+  function showCaptured(){
     if(_arrStream){_arrStream.getTracks().forEach(t=>t.stop());_arrStream=null;}
     prev.src=_photo;prev.style.display='block';vid.style.display='none';
     snap.style.display='none';retake.style.display='';
@@ -1510,37 +1505,45 @@ function openArrivalModal(cb){
       navigator.geolocation.getCurrentPosition(p=>{capturedLat=p.coords.latitude;capturedLng=p.coords.longitude;locSt.textContent='📍 Location captured';locSt.style.color='#4ade80';},()=>{},{timeout:5000,enableHighAccuracy:true});
     }
   }
-
+  function doSnap(){
+    const cvs=document.getElementById('arrCamCanvas');
+    const vw=vid.videoWidth||640,vh=vid.videoHeight||480;
+    const W=Math.min(vw,800),H=Math.round(vh*W/vw);
+    cvs.width=W;cvs.height=H;cvs.getContext('2d').drawImage(vid,0,0,W,H);
+    _photo=cvs.toDataURL('image/jpeg',0.6);
+    showCaptured();
+  }
+  function nativeCapture(){
+    if(!_fileInput){_fileInput=document.createElement('input');_fileInput.type='file';_fileInput.accept='image/*';_fileInput.capture='user';_fileInput.style.display='none';document.body.appendChild(_fileInput);}
+    _fileInput.value='';
+    _fileInput.onchange=()=>{
+      if(!_fileInput.files||!_fileInput.files[0])return;
+      const rd=new FileReader();
+      rd.onload=ev=>{_photo=ev.target.result;showCaptured();};
+      rd.readAsDataURL(_fileInput.files[0]);
+    };
+    _fileInput.click();
+  }
   function startCam(){
     navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false})
-      .then(s=>{_arrStream=s;vid.srcObject=s;vid.style.display='block';})
-      .catch(()=>{
-        vid.style.display='none';snap.textContent='📷 Open Camera';
-        const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.capture='user';fi.style.display='none';document.body.appendChild(fi);
-        snap.onclick=()=>fi.click();
-        fi.onchange=()=>{
-          if(!fi.files[0])return;
-          const rd=new FileReader();
-          rd.onload=ev=>{
-            _photo=ev.target.result;
-            prev.src=_photo;prev.style.display='block';
-            snap.style.display='none';retake.style.display='';
-            confirm.disabled=false;confirm.style.opacity='1';
-            if(capturedLat===null&&navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>{capturedLat=p.coords.latitude;capturedLng=p.coords.longitude;locSt.textContent='📍 Location captured';locSt.style.color='#4ade80';},()=>{},{timeout:5000});
-          };
-          rd.readAsDataURL(fi.files[0]);
-          try{document.body.removeChild(fi);}catch(e){}
-        };
-      });
+      .then(s=>{_arrStream=s;vid.srcObject=s;vid.style.display='block';
+        try{const pr=vid.play();if(pr&&pr.catch)pr.catch(()=>{});}catch(e){}
+        vid.onloadeddata=()=>{snap.textContent='📷  Take Photo';};
+        snap.textContent='📷  Take Photo';})
+      .catch(()=>{_arrStream=null;vid.style.display='none';snap.textContent='📷  Open Camera';});
   }
   snap.textContent='📷  Take Photo';
-  snap.onclick=()=>{if(_arrStream&&vid.readyState>=2)doSnap();};
+  snap.onclick=()=>{
+    if(_photo)return;
+    if(_arrStream&&(vid.readyState>=2||vid.videoWidth>0)){doSnap();return;}
+    nativeCapture();
+  };
   retake.onclick=()=>{
     _photo=null;prev.style.display='none';
     snap.style.display='';retake.style.display='none';
     confirm.disabled=true;confirm.style.opacity='0.45';
     snap.textContent='📷  Take Photo';
-    startCam();snap.onclick=()=>{if(_arrStream&&vid.readyState>=2)doSnap();};
+    startCam();
   };
   confirm.onclick=async()=>{
     if(capturedLat===null&&navigator.geolocation&&_lastPermState!=='denied'){
