@@ -2832,14 +2832,18 @@ async function _drawLiveLocations(m){
   }
 }
 
-render();
 /* ================= FOAM ROLL BALANCE (flooring installers) =================
    Each flooring installer carries a personal foam-roll stock (foam ≈ 1 sqft of foam
    per sqft of floor). Balance = Σ foam issued to them (foam_ledger) − Σ consumed.
    Consumption is DERIVED from their completed/partial flooring sub-jobs dated on/after
    the configured tracking-start, split equally across a job's co-assigned installers
-   (same rule as payouts). Below the (editable) threshold, the installer is flagged low. */
+   (same rule as payouts). Below the (editable) threshold, the installer is flagged low.
+   NOTE: this declaration MUST stay ABOVE the early render() call below — counts()→
+   foamLowCount() reads FOAM_CFG, and render() runs synchronously during boot, so a
+   later `let` would be in the temporal dead zone and throw, blanking the whole board. */
 let FOAM_LEDGER=[], FOAM_CFG={threshold:0,tracking_start:''}, _foamCfgId=null;
+
+render();
 
 async function _loadSetting(key){
   try{const r=await sbGet('app_settings?key=eq.'+encodeURIComponent(key)+'&select=id,value');
