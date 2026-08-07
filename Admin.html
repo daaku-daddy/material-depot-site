@@ -1405,6 +1405,11 @@ async function dlJobCard(i,btn){
 // a single range for both sections even though an SM/admin often wants to look at a different
 // window for each (e.g. audits this week vs installs this month).
 let analyticsAuditFrom='', analyticsAuditTo='', analyticsInstallFrom='', analyticsInstallTo='', _anPollTid=null;
+// Analytics city segregation (Bengaluru/Hyderabad) — 'all' | 'Bengaluru' | 'Hyderabad'. Scopes BOTH
+// the Site Audit and Site Installation sections. Persisted to the app-wide md_city key so an SM who
+// picked a city in the SM dashboards lands here on the same city. Only honoured when CITY_ENABLED.
+let analyticsCity=(function(){try{return localStorage.getItem('md_city')||'all';}catch(e){return 'all';}})();
+function setAnalyticsCity(c){analyticsCity=c;try{localStorage.setItem('md_city',c);}catch(e){}drawAnalytics(document.getElementById('main'));}
 
 function _anDstr(d){const z=n=>n<10?'0'+n:n;return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());}
 function _anToIST(iso){return new Date(new Date(iso).getTime()+19800000);}
@@ -1628,8 +1633,8 @@ async function _anFetchData(){
       // separate query needed. Fixed 2026-07-25 (CLAUDE.md note 67) after phone-matching was
       // found to silently exclude install orders created before 1 Jul 2026 — that restriction
       // was only ever needed for `log` below, not for these fields.
-      sbGetLong('install_orders_slim?select=id,pi,status,subjobs,service,delivery_date,created_at,bm,customer_name,phone&status=neq.deleted'),
-      sbGetLong('audit_orders?select=id,pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at,bm,customer_name&status=not.in.(deleted,slot_reserved,slot_converted)'),
+      sbGetLong('install_orders_slim?select=id,pi,status,subjobs,service,delivery_date,created_at,bm,customer_name,phone'+(CITY_ENABLED?',city':'')+'&status=neq.deleted'),
+      sbGetLong('audit_orders?select=id,pi,status,date,slot,auditor_name,auditor_email,phone,log,created_at,bm,customer_name'+(CITY_ENABLED?',city':'')+'&status=not.in.(deleted,slot_reserved,slot_converted)'),
       sbGetLong('ratings?select=order_type,pi,order_id,q1_score,q2_score,q3_score,created_at,staff_name,staff_email'),
     ]);
   }catch(e){
@@ -2092,7 +2097,15 @@ function _anDateRowHtml(kind){
 }
 function drawAnalytics(m){
   window._anDrill={};
-  const {installs,audits,ratings}=window._anData||{installs:[],audits:[],ratings:[]};
+  let {installs,audits,ratings}=window._anData||{installs:[],audits:[],ratings:[]};
+  // City segregation: scope BOTH sections to the selected city. Null city defaults to Bengaluru
+  // (same convention as mapAuditRow/mapInstallRow and the Payouts tab). Filtering the two source
+  // arrays here scopes every downstream metric (canonical sets, arrival stats, phone-match
+  // conversion/MD-audit %, per-person tables) since they all derive from these two vars.
+  if(CITY_ENABLED&&analyticsCity!=='all'){
+    installs=installs.filter(o=>(o.city||'Bengaluru')===analyticsCity);
+    audits=audits.filter(o=>(o.city||'Bengaluru')===analyticsCity);
+  }
   const aFrom=analyticsAuditFrom, aTo=analyticsAuditTo, iFrom=analyticsInstallFrom, iTo=analyticsInstallTo;
   const todayStr=_anDstr(new Date());
   const TRACK_FROM='2026-07-02'; // arrival on time tracking start date
@@ -2293,10 +2306,21 @@ function drawAnalytics(m){
     {k:'scheduled',l:'Scheduled',c:'var(--muted)'},
   ];
 
+  // City segmented toggle (shown only when the city dimension is live) — scopes both sections.
+  const anCityToggle=CITY_ENABLED?`
+    <div style="display:flex;align-items:center;gap:10px;margin:0 0 16px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">City</span>
+      <div style="display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden">
+        ${[['all','All Cities'],['Bengaluru','Bengaluru'],['Hyderabad','Hyderabad']].map(([c,lbl],i)=>{const on=analyticsCity===c;return `<button onclick="setAnalyticsCity('${c}')" style="padding:8px 16px;border:0;${i?'border-left:1px solid var(--line);':''}cursor:pointer;font-weight:700;font-size:13px;background:${on?'var(--navy)':'#fff'};color:${on?'#fff':'var(--ink)'}">${lbl}</button>`;}).join('')}
+      </div>
+    </div>`:'';
+
   m.innerHTML=`
     <div class="page-head"><h1>Analytics</h1><p>Operational metrics. Each subjob counted exactly once per range, using its current status and most relevant date — reschedule history and multi-day spans never duplicate a row. Site Audit and Site Installation each have their own independent date range below.</p></div>
 
     <div style="color:var(--muted);font-size:11px;margin:0 0 12px">🔄 Auto-refreshing every 60s${window._anLastFetch?(' · Last updated '+new Date(window._anLastFetch).toLocaleTimeString()):''}</div>
+
+    ${anCityToggle}
 
     <!-- ══ SITE AUDIT ════════════════════════════════════════════════════ -->
     <div class="an-section">
