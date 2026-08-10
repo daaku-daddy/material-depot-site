@@ -819,7 +819,7 @@ class SignPad{
 let jcHadSign=false;
 let jcResumePartial=false;
 async function openJobCard(j){
-  jcJob=j;jcRooms=[];jcSeq=0;jcHadSign=false;jcResumePartial=false;
+  jcJob=j;jcRooms=[];jcSeq=0;jcHadSign=false;jcResumePartial=false;_completionWrite=null;
   $("#jcSub").textContent=j.pi+" · "+j.name;
   $("#jcBody").innerHTML=`
     <div class="note blue">Fill one block per room. Each room needs a photo after installation. <span class="reqstar">★</span> = required.</div>
@@ -909,16 +909,25 @@ function addRoom(restore){
     });
   }
   renderPhotoGrid();
-  const _resizeAndStore=(dataURL,push)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);const out=cv2.toDataURL('image/jpeg',0.88);_uploadPhoto(out).then(push).catch(()=>push(out));};im.onerror=()=>push(dataURL);im.src=dataURL;};
-  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
-  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
+  // Show the photo instantly (local base64), THEN upload to Storage in the background and swap the
+  // URL in when it lands. Previously the thumbnail only appeared after _uploadPhoto resolved — up to
+  // a 20s wait on a weak site connection — so workers thought the photo hadn't attached and re-took
+  // it. Optimistic display also lets "Finish" (which requires >=1 photo) proceed without waiting on
+  // the network, and keeps the on-device draft small once the base64 is replaced by the URL.
+  const _addRoomPhoto=base64=>{
+    room.photos.push(base64);renderPhotoGrid();autosave();
+    _uploadPhoto(base64).then(url=>{const i=room.photos.indexOf(base64);if(i>=0){room.photos[i]=url;renderPhotoGrid();autosave();}}).catch(()=>{});
+  };
+  const _resizeAndStore=(dataURL,add)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);const out=cv2.toDataURL('image/jpeg',0.88);add(out);};im.onerror=()=>add(dataURL);im.src=dataURL;};
+  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,_addRoomPhoto);};rd.readAsDataURL(f);};
+  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,_addRoomPhoto);};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const pbtns=el('div','photo-btns');
   const btnCam=el('button','btn ghost','📷 Camera');const btnGal=el('button','btn ghost','🖼 Gallery');
   const btnScan=el('button','btn ghost','📄 Scan');
   btnCam.onclick=()=>fileCam.click();btnGal.onclick=()=>fileGal.click();
-  btnScan.onclick=()=>openDocScanner(url=>{room.photos.push(url);renderPhotoGrid();autosave();});
+  btnScan.onclick=()=>openDocScanner(_addRoomPhoto);
   pbtns.appendChild(fileCam);pbtns.appendChild(fileGal);pbtns.appendChild(btnCam);pbtns.appendChild(btnGal);pbtns.appendChild(btnScan);
   f3.appendChild(photoGrid);f3.appendChild(pbtns);block.appendChild(f3);
 
@@ -931,11 +940,18 @@ function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forE
 function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,qty:r.qty||'',height:r.height||'',width:r.width||'',photos:r.photos||[],comments:r.comments}));}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
+let _localSaveTimer=null;
 let _completionWrite=null;
 function autosave(){
   if(!jcJob)return;
   const key='md_install_'+jcJob.pi+'_'+jcJob.sjId;
-  try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}
+  // Debounce the on-device draft write. collectRooms()+JSON.stringify serializes every room's
+  // photos (base64 until each upload swaps in its Storage URL), so doing it synchronously on every
+  // keystroke made SKU/quantity typing lag badly — even drop characters — on low-end phones. Coalesce
+  // to at most one write ~500ms after typing stops; the final jobcard on completion reads live DOM
+  // state directly, not this draft, so a sub-500ms gap only affects crash recovery.
+  clearTimeout(_localSaveTimer);
+  _localSaveTimer=setTimeout(()=>{try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}},500);
   showSaveStatus('saving');
   clearTimeout(_autosaveTimer);
   const mySeq=++_autosaveSeq;
@@ -1030,7 +1046,7 @@ function finishCard(j){
 }
 
 async function markAdditionalComplete(j){
-  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
   j.jobcard={rooms:collectRooms()};
   const prev=j.status;j.status="completed";
   toast("Saving...");
@@ -1098,7 +1114,7 @@ function _partialSignScreen(j,note){
   $("#savePartialSkip").onclick=()=>{const b=$("#savePartialSkip");b.disabled=true;b.textContent="Saving…";_writePartial(j,note,null);};
 }
 async function _writePartial(j,note,sign){
-  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
   const jc={partial:true,rooms:collectRooms(),note,partialBy:ME.name,partialAt:new Date().toISOString()};
   if(sign)jc.sign=sign;
   j.jobcard=jc;j.status='partial';
@@ -1147,7 +1163,7 @@ async function _writePartial(j,note,sign){
 function _starRowInst(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
 
 function showPassToClientInst(j){
-  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
   document.querySelector(".footer").classList.add("hide");
   $("#jcBody").innerHTML=`
     <div class="panel" style="text-align:center;padding:32px 16px;margin-top:12px">
@@ -1252,7 +1268,7 @@ function showInstallSignature(j,ratings){
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
     const btn=$("#reallyDone");btn.disabled=true;btn.textContent="Saving…";
-    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
     // Signature uploaded to Storage (same job-photos bucket as room photos) instead of embedded
     // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
     let sigImg=jcSignPad.export();
@@ -1316,7 +1332,10 @@ function showInstallSignature(j,ratings){
         try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e2){console.error('ratings write failed',e2);}
       }
     }
-    await genPDF(j);
+    // The job is already saved to the DB above — a PDF failure (jsPDF OOM on a low-end phone, a
+    // CORS-tainted image, etc.) must NEVER leave the worker stuck on a disabled "Saving…" button
+    // believing the job didn't finish. Mirrors the auditor app, which already guards genPDF.
+    try{await genPDF(j);}catch(e){console.error('PDF:',e);}
     await loadJobs();
     document.querySelector(".footer").classList.remove("hide");
     $("#jcScreen").classList.add("hide");

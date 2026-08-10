@@ -642,7 +642,7 @@ class SignPad{
 
 let jcHadSign=false;
 async function openJobCard(o){
-  jcOrder=o; jcRooms=[]; jcSeq=0; jcSign=null; jcHadSign=false;
+  jcOrder=o; jcRooms=[]; jcSeq=0; jcSign=null; jcHadSign=false; _completionWrite=null;
   $("#jcSub").textContent=`${o.pi} · ${o.name}`;
   $("#jcScreen").classList.remove("hide");
   $("#jcFooter").classList.remove("hide");
@@ -738,15 +738,23 @@ function addRoom(restore){
   renderPhotoGrid();
   const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
   const fileGal=document.createElement('input');fileGal.type='file';fileGal.accept='image/*';fileGal.multiple=true;fileGal.style.display='none';
-  const _resizeAndStore=(dataURL,push)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);const out=cv2.toDataURL('image/jpeg',0.88);_uploadPhoto(out).then(push).catch(()=>push(out));};im.onerror=()=>push(dataURL);im.src=dataURL;};
-  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
-  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,url=>{room.photos.push(url);renderPhotoGrid();autosave();});};rd.readAsDataURL(f);};
+  // Show the photo instantly (local base64), THEN upload to Storage in the background and swap the
+  // URL in when it lands. Previously the thumbnail only appeared after _uploadPhoto resolved — up to
+  // a 20s wait on a weak site connection — so auditors thought the photo hadn't attached and re-took
+  // it. Keeps the on-device draft small once the base64 is replaced by the URL.
+  const _addRoomPhoto=base64=>{
+    room.photos.push(base64);renderPhotoGrid();autosave();
+    _uploadPhoto(base64).then(url=>{const i=room.photos.indexOf(base64);if(i>=0){room.photos[i]=url;renderPhotoGrid();autosave();}}).catch(()=>{});
+  };
+  const _resizeAndStore=(dataURL,add)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);const out=cv2.toDataURL('image/jpeg',0.88);add(out);};im.onerror=()=>add(dataURL);im.src=dataURL;};
+  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,_addRoomPhoto);};rd.readAsDataURL(f);};
+  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,_addRoomPhoto);};rd.readAsDataURL(f);};
   fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
   fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
   const prow=el('div','photo-row');prow.style.marginTop='8px';
   const btnCam=el('button','btn ghost sm','📷 Camera');btnCam.style.flex='1';btnCam.onclick=()=>fileCam.click();
   const btnGal=el('button','btn ghost sm','🖼 Gallery');btnGal.style.flex='1';btnGal.onclick=()=>fileGal.click();
-  const btnScan=el('button','btn ghost sm','📄 Scan');btnScan.style.flex='1';btnScan.onclick=()=>openDocScanner(url=>{room.photos.push(url);renderPhotoGrid();autosave();});
+  const btnScan=el('button','btn ghost sm','📄 Scan');btnScan.style.flex='1';btnScan.onclick=()=>openDocScanner(_addRoomPhoto);
   prow.appendChild(fileCam);prow.appendChild(fileGal);prow.appendChild(btnCam);prow.appendChild(btnGal);prow.appendChild(btnScan);
   pW.appendChild(photoGrid);pW.appendChild(prow);card.appendChild(pW);
 
@@ -776,11 +784,17 @@ function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((
 function collectRooms(){return jcRooms.map(r=>({type:r.type,name:r.name,sku:r.sku,photos:r.photos||[],calc:Object.assign({},r.calc),notes:r.notes,sketchStrokes:r._sketch?r._sketch.strokes:[]}));}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
+let _localSaveTimer=null;
 let _completionWrite=null;
 function autosave(){
   if(!jcOrder)return;
   const key='md_audit_'+jcOrder.pi;
-  try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}
+  // Debounce the on-device draft write. collectRooms()+JSON.stringify serializes every room's
+  // photos (base64 until each upload swaps in its Storage URL) plus sketch strokes, so doing it
+  // synchronously on every keystroke made SKU/measurement typing lag on low-end phones. Coalesce to
+  // one write ~500ms after typing stops; completion reads live DOM state, not this draft.
+  clearTimeout(_localSaveTimer);
+  _localSaveTimer=setTimeout(()=>{try{localStorage.setItem(key,JSON.stringify({rooms:collectRooms(),ts:Date.now()}));}catch(e){}},500);
   showSaveStatus('saving');
   clearTimeout(_autosaveTimer);
   const mySeq=++_autosaveSeq;
@@ -857,7 +871,7 @@ function reviewAndSign(o){
 function _starRow(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
 
 function showPassToClientAudit(o){
-  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+  clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
   $("#jcFooter").classList.add("hide");
   $("#jcBody").innerHTML=`
     <div class="card" style="text-align:center;padding:32px 16px;margin-top:12px">
@@ -977,7 +991,7 @@ function showAuditSignature(o,ratings){
   $("#backToPreview").onclick=()=>signAndComplete(o);
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
-    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
     const btn=$("#finishAudit");btn.disabled=true;btn.textContent="Saving…";
     // Signature uploaded to Storage (same job-photos bucket as room photos) instead of embedded
     // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
