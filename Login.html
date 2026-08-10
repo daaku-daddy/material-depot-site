@@ -59,7 +59,6 @@ const ROLE_FILES={
   installer:          {label:"Site Installer",           file:"Site_Installer_App.html",color:"#1f7a3f",note:"Field installation app"},
   auditor_installer:  {label:"Site Auditor / Installer", file:"Site_Auditor_App.html",  color:"#0f6e74",note:"Audit + Install apps"},
   store_staff:        {label:"Store Team",               file:"Store_Team_App.html",    color:"#9a6200",note:"Experience centre slot booking"},
-  site_shadower:      {label:"Site Shadower",            file:"Site_Shadower_App.html", color:"#5b3aa6",note:"Training — shadow schedule"},
 };
 
 const $=s=>document.querySelector(s);
@@ -267,7 +266,7 @@ async function tryChangePasscode(){
 /* ---- Screen 3: success ---- */
 function successScreen(){
   const r=ROLE_FILES[state.user.role];
-  localStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role,training_stages:state.user.training_stages||[]}));
+  localStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role}));
   $("#card").innerHTML=`
     <h1>Welcome, ${state.user.name.split(' ')[0]}</h1>
     <p class="sub">You're signed in. Taking you to your dashboard…</p>

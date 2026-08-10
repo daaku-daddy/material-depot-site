@@ -264,6 +264,7 @@
     </div>
     <span class="admin-badge" id="hdr-badge">ADMIN</span>
     <div class="hdr-right">
+      <a id="myShadowing" href="Site_Shadower_App.html" title="Sites you're assigned to shadow" style="background:#efe9fb;color:var(--purple);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">👁 My shadowing</a>
       <span class="user-pill">Signed in as <b id="hdr-name">—</b></span>
       <button class="signout-btn" onclick="signOut()">Sign out</button>
     </div>
@@ -322,15 +323,13 @@ const ROLES = {
   installer:          {label:'Site Installer',           color:'#1f7a3f', file:'Site_Installer_App.html'},
   auditor_installer:  {label:'Auditor + Installer',      color:'#0f6e74', file:'Site_Auditor_App.html'},
   store_staff:        {label:'Store Team',               color:'#9a6200', file:'Store_Team_App.html'},
-  site_shadower:      {label:'Site Shadower',            color:'#5b3aa6', file:'Site_Shadower_App.html'},
 };
-const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪', site_shadower:'👁️'};
+const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪'};
 const ROLE_DESCS = {
   service_mgr:'Audit scheduling & installation tracking dashboard',
   site_auditor:'Field audit mobile app — site visits & reports',
   installer:'Field installation app — job checklist & progress',
   auditor_installer:'Both audit and installer apps — can switch between them',
-  site_shadower:'Training — read-only shadow schedule (secondary role for SM trainees)',
   store_staff:'Experience centre slot booking for walk-in clients',
 };
 
@@ -553,7 +552,6 @@ async function submitAddUser(){
 function openEditRole(u){
   const curType=u.installer_type||'flooring';
   const pr=u.pay_rates||{};  // per-installer payout override (blank fields fall back to the global rate)
-  window._editUser=u;  // stashed so the Training-schedule sub-modal can read training_stages without re-serialising
   showModal(`
     <div class="modal-head"><h3>Edit Role</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
@@ -590,60 +588,9 @@ function openEditRole(u){
     </div>
     <div class="modal-foot">
       <button class="btn-cancel" style="margin-right:auto;color:var(--amber);border-color:var(--amber);border:1px solid" onclick="resetPasscode('${u.id}','${u.name.replace(/'/g,"\\'")}')">Reset passcode</button>
-      ${u.role==='service_mgr'?`<button class="btn-cancel" style="color:var(--purple);border:1px solid var(--purple)" onclick="openTrainingSchedule()">🎓 Training schedule</button>`:''}
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-primary" onclick="submitEditRole('${u.id}','${u.name.replace(/'/g,"\\'")}')">Save Changes</button>
     </div>`);
-}
-
-// ---- Training schedule editor (dated secondary stages for SM trainees; see CLAUDE.md note 85) ----
-function _tsRowHtml(stage){
-  const role=(stage&&stage.role)||'site_shadower';
-  const start=(stage&&stage.start)||'';
-  const end=(stage&&stage.end)||'';
-  return `<div class="ts-row" style="display:grid;grid-template-columns:1.1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:10px">
-    <div class="form-group" style="margin:0"><label>Role</label><select class="ts-role">
-      <option value="site_shadower" ${role==='site_shadower'?'selected':''}>Site Shadower</option>
-      <option value="site_auditor" ${role==='site_auditor'?'selected':''}>Site Auditor</option>
-    </select></div>
-    <div class="form-group" style="margin:0"><label>Start</label><input type="date" class="ts-start" value="${start}"></div>
-    <div class="form-group" style="margin:0"><label>End</label><input type="date" class="ts-end" value="${end}"></div>
-    <button class="btn-cancel" title="Remove stage" onclick="this.closest('.ts-row').remove()" style="padding:9px 12px">✕</button>
-  </div>`;
-}
-function openTrainingSchedule(){
-  const u=window._editUser; if(!u)return;
-  const stages=Array.isArray(u.training_stages)?u.training_stages:[];
-  showModal(`
-    <div class="modal-head"><h3>Training schedule — ${u.name}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;line-height:1.5"><b>${u.name}</b> keeps <b>Service Manager</b> as their permanent primary role. Add dated stages below (e.g. Site Shadower for a few days, then Site Auditor). While a stage is active, they can toggle into that role's app from their SM dashboard. Once all stages have passed, they revert to Service Manager only.</div>
-      <div id="ts-rows">${stages.length?stages.map(_tsRowHtml).join(''):_tsRowHtml(null)}</div>
-      <button class="btn-cancel" onclick="document.getElementById('ts-rows').insertAdjacentHTML('beforeend', window._tsRowHtml(null))" style="width:100%">+ Add stage</button>
-    </div>
-    <div class="modal-foot">
-      <button class="btn-cancel" style="margin-right:auto" onclick="openEditRole(window._editUser)">← Back</button>
-      <button class="btn-primary" onclick="submitTrainingSchedule('${u.id}','${u.name.replace(/'/g,"\\'")}')">Save schedule</button>
-    </div>`);
-}
-async function submitTrainingSchedule(id,name){
-  const rows=[...document.querySelectorAll('#ts-rows .ts-row')];
-  const stages=[];
-  for(const r of rows){
-    const role=r.querySelector('.ts-role').value;
-    const start=r.querySelector('.ts-start').value;
-    const end=r.querySelector('.ts-end').value;
-    if(!start||!end)continue;                              // skip a half-filled row rather than saving junk
-    if(start>end){toast('⚠ A stage’s end date is before its start date');return;}
-    stages.push({role,start,end});
-  }
-  try{
-    await sbPatch('profiles',id,{training_stages:stages});
-    if(window._editUser&&window._editUser.id===id)window._editUser.training_stages=stages;
-    closeModal();
-    toast(`✓ ${name}'s training schedule saved (${stages.length} stage${stages.length!==1?'s':''})`);
-    await renderUsers(document.getElementById('main'));
-  }catch(e){toast('⚠ Could not save — '+(e.message||'the training_stages column may be missing (run the ALTER TABLE)'));}
 }
 
 async function resetPasscode(id,name){

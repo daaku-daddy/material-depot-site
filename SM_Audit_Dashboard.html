@@ -262,7 +262,7 @@
   </div>
   <div class="right">
     <span id="cityToggle" style="display:none"></span>
-    <a id="roleSwitch" href="#" title="Switch to your current training role" style="display:none;align-self:center;margin-right:12px;background:var(--yellow);color:var(--navy);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#8646;</a>
+    <a id="myShadowing" href="Site_Shadower_App.html" title="Sites you're assigned to shadow" style="align-self:center;margin-right:12px;background:#efe9fb;color:var(--purple);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#128064; My shadowing</a>
     <div class="who"><b id="smName">…</b><br>Service Manager</div>
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer" id="smAvatar">SM</div>
   </div>
@@ -463,30 +463,6 @@ window.addEventListener('popstate',()=>history.pushState(null,'',location.href))
 document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 (function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
 
-/* ===== Training secondary-role toggle (service_mgr trainees keep SM access + switch to today's stage) ===== */
-function _renderRoleSwitch(){
-  const sw=document.getElementById('roleSwitch'); if(!sw)return;
-  const sec=activeSecondaryRole(SESSION&&SESSION.training_stages);
-  if(sec==='site_shadower'){sw.innerHTML='&#8646; Shadower';sw.href='Site_Shadower_App.html';sw.style.display='';}
-  else if(sec==='site_auditor'){sw.innerHTML='&#8646; Auditor';sw.href='Site_Auditor_App.html';sw.style.display='';}
-  else{sw.style.display='none';}
-}
-_renderRoleSwitch();
-// Sessions never expire, so a schedule the Admin sets AFTER this trainee logged in won't be in md_user
-// yet. Refresh training_stages once in the background, then re-render the toggle. Best-effort; a plain
-// SM (or admin) with no stages just no-ops. Reuses the app's own sbGet (read-only).
-(async function(){
-  if(!SESSION||SESSION.role!=='service_mgr')return;
-  try{
-    const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(SESSION.email)+'&select=training_stages');
-    if(Array.isArray(rows)&&rows[0]){
-      SESSION.training_stages=rows[0].training_stages||[];
-      localStorage.setItem('md_user',JSON.stringify(SESSION));
-      _renderRoleSwitch();
-    }
-  }catch(e){}
-})();
-
 /* ============== CONFIG ============== */
 const AUDIT_SKU="SVC-AUDIT-001";
 // Flooring audit windows
@@ -584,14 +560,15 @@ async function loadAuditors(){
     AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
   }catch(e){console.error('loadAuditors',e);}
 }
-// Site shadowers = service_mgr trainees whose training schedule has them in a site_shadower stage
-// TODAY (see CLAUDE.md note 85). Kept a SEPARATE list from AUDITORS so it never touches the auditor
-// picker / cap / conflict logic — a shadower only observes, they are not an auditable resource.
+// Shadower pool = EVERYONE registered (any role can shadow any audit — admins, SMs, auditors,
+// installers, etc.). store_staff excluded (the Store app is open-access with no login session, so a
+// store person has no way to view a personal shadow schedule). Kept a SEPARATE list from AUDITORS so
+// it never touches the auditor picker / cap / conflict logic — a shadower only observes.
 let SHADOWERS=[];
 async function loadShadowers(){
   try{
-    const rows=await sbGet('profiles?role=eq.service_mgr&select=id,name,email,training_stages');
-    SHADOWERS=(Array.isArray(rows)?rows:[]).filter(r=>activeSecondaryRole(r.training_stages)==='site_shadower').map(r=>({id:r.id,name:r.name,email:r.email}));
+    const rows=await sbGet('profiles?role=neq.store_staff&select=id,name,email,role&order=name');
+    SHADOWERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,role:r.role}));
   }catch(e){console.error('loadShadowers',e);SHADOWERS=[];}
 }
 
@@ -642,6 +619,17 @@ function slotLabel(id){if(!id)return "—";const found=[...SLOTS_FL,...SLOTS_WP]
 const auditorById=id=>AUDITORS.find(a=>a.id===id);
 function getAuditorName(o){if(!o.auditor)return null;const a=auditorById(o.auditor);return a?a.name:(o.auditorName||'?');}
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+// Optional "Shadowed by" picker — pool is EVERYONE (any role, cross-role). Renders a <select id="shadowerSelect">.
+const _SH_ROLE={admin:'Admin',service_mgr:'SM',site_auditor:'Auditor',installer:'Installer',auditor_installer:'Auditor+Installer'};
+function shadowerSelectHtml(o){
+  const opts=SHADOWERS.slice();
+  if(o.shadowerEmail&&!opts.some(s=>s.email===o.shadowerEmail))opts.push({email:o.shadowerEmail,name:o.shadowerName||o.shadowerEmail});
+  return `<div class="field" style="margin-top:12px"><label>Shadowed by (optional) — anyone observing this audit</label>
+    <select id="shadowerSelect" style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
+      <option value="">None</option>
+      ${opts.map(s=>`<option value="${s.email}" ${o.shadowerEmail===s.email?'selected':''}>${s.name}${s.role&&_SH_ROLE[s.role]?' · '+_SH_ROLE[s.role]:''}</option>`).join('')}
+    </select></div>`;
+}
 function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="pin">&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
@@ -657,17 +645,6 @@ function requireNote(actionLabel,preface){
   if(!note){toast("A note is required — nothing was changed");return null;}
   return note;
 }
-// Training lifecycle: a service_mgr trainee keeps role=service_mgr (primary) plus dated secondary
-// stages {role,start,end} in profiles.training_stages (site_shadower then site_auditor). Returns the
-// secondary role active TODAY, or null when no stage covers today (→ pure SM, toggle hidden). Uses the
-// same lexicographic YYYY-MM-DD compare as active_from (notes 44/50); dstr() is a function declaration.
-function activeSecondaryRole(stages){
-  if(!Array.isArray(stages))return null;
-  const t=dstr(new Date());
-  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
-  return null;
-}
-
 const BOOKED=["scheduled","assigned","onway","atsite","completed"];
 // Statuses that occupy an auditor's time for CONFLICT detection — includes store pre-bookings
 // (slot_reserved). A slot_reserved with no auditor won't match o.auditor===aid, so no-auditor
@@ -1127,16 +1104,7 @@ function drawerBody(o){
         <button class="btn navy sm" id="saveSchSlot" style="margin-top:4px">Save time change</button>
       </div>
       <div class="note">Auditors with a time conflict (booking within 2 hours) are flagged in amber — you can still assign them if the two sites are close by, with a confirmation. Assigning SMSes the auditor's details to the customer.</div>
-      <div class="auditorlist" id="auditorList"></div>${(function(){
-        const opts=SHADOWERS.slice();
-        if(o.shadowerEmail&&!opts.some(s=>s.email===o.shadowerEmail))opts.push({email:o.shadowerEmail,name:o.shadowerName||o.shadowerEmail});
-        if(!opts.length)return '';
-        return `<div class="field" style="margin-top:12px"><label>Shadowed by (optional) — a trainee observing this audit</label>
-          <select id="shadowerSelect" style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
-            <option value="">None</option>
-            ${opts.map(s=>`<option value="${s.email}" ${o.shadowerEmail===s.email?'selected':''}>${s.name}</option>`).join('')}
-          </select></div>`;
-      })()}</div>`;
+      <div class="auditorlist" id="auditorList"></div>${shadowerSelectHtml(o)}</div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
     const slotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
@@ -1144,8 +1112,11 @@ function drawerBody(o){
     html+=`<div class="sec"><h3>Assignment</h3><div class="kv">
       <div class="k">Auditor</div><div class="v">${getAuditorName(o)} (${aPhone})</div>
       <div class="k">Time</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
-      <div class="k">Live status</div><div class="v">${chip(o.status)}</div></div>
+      <div class="k">Live status</div><div class="v">${chip(o.status)}</div>
+      ${o.shadowerName?`<div class="k">Shadowed by</div><div class="v">${o.shadowerName}</div>`:''}</div>
       <div class="note">Auditor's live steps appear here automatically.</div>
+      ${shadowerSelectHtml(o)}
+      <button class="btn navy sm" id="saveShadower" style="margin-top:8px">Save shadower</button>
       <div id="inlineSlotWrap" style="display:none;margin-top:10px">
         <div class="field"><label>New date</label><input type="date" id="inlineSlotDate" value="${dateDefault}"></div>
         <div class="field"><label>New time</label><input type="time" id="inlineSlotTime" value="${slotDefault}" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
@@ -1505,7 +1476,7 @@ function wireDrawer(o){
   if($("#assignAuditor"))$("#assignAuditor").onclick=async()=>{o.auditor=draft.auditor;o.status="assigned";const a=auditorById(o.auditor);
     const overrideNote=draft.auditorOverride?" · ⚠ assigned despite 2-hour scheduling conflict (SM override)":"";
     o.log.push({t:"Auditor assigned: "+a.name+overrideNote+" · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
-    // Optional shadower assignment (only present when a trainee is in a shadowing stage today).
+    // Optional shadower assignment — anyone registered can be picked to observe this audit.
     let shadPatch={};
     const shSel=$("#shadowerSelect");
     if(shSel){
@@ -1519,6 +1490,20 @@ function wireDrawer(o){
     }
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,...shadPatch,log:o.log});
     await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
+
+  // Add / change / remove a shadower on an already-assigned audit (no auditor change).
+  if($("#saveShadower"))$("#saveShadower").onclick=async()=>{
+    const shSel=$("#shadowerSelect"); if(!shSel)return;
+    const email=shSel.value||null;
+    const sh=email?SHADOWERS.find(s=>s.email===email):null;
+    const prev=o.shadowerEmail||null;
+    if(email===prev){toast("No change to shadower");return;}
+    o.shadowerEmail=email; o.shadowerName=sh?sh.name:null;
+    if(email&&sh)o.log.push({t:"Shadower assigned: "+sh.name+" (observing this audit)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    else if(!email&&prev)o.log.push({t:"Shadower removed",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{shadower_email:o.shadowerEmail,shadower_name:o.shadowerName,log:o.log});
+    await loadOrders();toast(email&&sh?("Shadower set: "+sh.name):"Shadower removed");openOrder(o.pi);
+  };
 
   if($("#editSchSlotBtn"))$("#editSchSlotBtn").onclick=()=>{
     const wrap=$("#schSlotEditWrap");

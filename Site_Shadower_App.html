@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-<title>Material Depot — Site Shadower</title>
+<title>Material Depot — My Shadowing</title>
 <link rel="manifest" href="/manifest_shadower.json"/>
 <meta name="theme-color" content="#1F3A5F"/>
 <meta name="mobile-web-app-capable" content="yes"/>
@@ -42,6 +42,9 @@
   .jcard .mr .ic{flex:0 0 auto;width:16px;text-align:center;opacity:.75;}
   .jcard .mr .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .jcard .svc{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;background:var(--tealbg);color:var(--teal);border-radius:6px;padding:3px 9px;}
+  .tbadge{font-size:10px;font-weight:800;letter-spacing:.4px;border-radius:6px;padding:3px 8px;white-space:nowrap;}
+  .tbadge.audit{background:#e4f0fb;color:var(--blue);}
+  .tbadge.install{background:var(--tealbg);color:var(--teal);}
   .jcard .shad{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:11.5px;font-weight:800;background:var(--purplebg);color:var(--purple);border-radius:6px;padding:3px 9px;}
   .jcard hr.div{border:0;border-top:1px solid var(--line);margin:10px 0;}
   .jcard .when{font-size:12.5px;color:var(--muted);font-weight:700;}
@@ -69,10 +72,10 @@
 <div class="app">
   <header>
     <div class="logo">MD</div>
-    <div><div class="t">MATERIAL DEPOT</div><div class="h">Site Shadower</div></div>
+    <div><div class="t">MATERIAL DEPOT</div><div class="h">My Shadowing</div></div>
     <div class="hright">
-      <button class="rolesw" id="switchSM" style="display:none">&#8646; Service Manager</button>
-      <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Site Shadower</div>
+      <button class="rolesw" id="backApp">&#8592; Back to my app</button>
+      <div class="me" id="signOut" style="cursor:pointer" title="Tap to sign out"><b id="meName">…</b><br>Shadowing schedule</div>
     </div>
   </header>
   <div class="wrap" id="listView"></div>
@@ -86,31 +89,23 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
-// Secondary training role active today (site_shadower|site_auditor) or null. Same YYYY-MM-DD compare
-// as active_from; dstr() is hoisted below. See CLAUDE.md note 85.
-function activeSecondaryRole(stages){
-  if(!Array.isArray(stages))return null;
-  const t=dstr(new Date());
-  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
-  return null;
-}
 
 const SESSION=getSession();
-// Admit a real site_shadower (future-proof — role stays service_mgr in the current model), OR a
-// service_mgr trainee whose training schedule puts them in a site_shadower stage TODAY. A plain
-// service_mgr (no stages → null) is rejected, same as every other role gate in this app.
-const _isShadowerTrainee=SESSION&&SESSION.role==='service_mgr'&&activeSecondaryRole(SESSION.training_stages)==='site_shadower';
-if(!SESSION||!(SESSION.role==='site_shadower'||_isShadowerTrainee)){window.location.href='Login.html';}
+// "My Shadowing" is reachable by ANYONE logged in (any role) — a shadower can be any registered
+// person. Just require a session; a signed-out visitor is bounced to Login.
+if(!SESSION||!SESSION.email){window.location.href='Login.html';}
 history.replaceState(null,'',location.href);
 window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
-const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:''};
+const ME={name:SESSION?SESSION.name:'',email:SESSION?(SESSION.email||''):''};
 document.getElementById('meName').textContent=ME.name;
-// A service_mgr here is always a trainee — give them a toggle back to their primary SM dashboard.
-if(SESSION&&SESSION.role==='service_mgr'){const sw=document.getElementById('switchSM');if(sw){sw.style.display='';sw.onclick=()=>{window.location.href='SM_Audit_Dashboard.html';};}}
+// Back button routes to the viewer's own primary app (mirrors Login's ROLE_FILES, minus site_shadower).
+const ROLE_HOME={admin:'Admin.html',service_mgr:'SM_Audit_Dashboard.html',site_auditor:'Site_Auditor_App.html',installer:'Site_Installer_App.html',auditor_installer:'Site_Auditor_App.html',store_staff:'Store_Team_App.html'};
+document.getElementById('backApp').onclick=()=>{window.location.href=ROLE_HOME[SESSION.role]||'Login.html';};
 document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localStorage.removeItem('md_user');window.location.href='Login.html';}};
 
 /* ============== DATA ============== */
-const SHAD_COLS='id,pi,skus,bm,customer_name,phone,addr,status,slot,date,auditor_name,shadower_email';
+const AUDIT_COLS='id,pi,skus,bm,customer_name,phone,addr,status,slot,date,auditor_name,shadower_email';
+const INSTALL_COLS='id,pi,bm,customer_name,phone,addr,status,subjobs';
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
 function addDays(n){const d=new Date(today);d.setDate(d.getDate()+n);return d;}
@@ -123,15 +118,19 @@ const SLOTS=(function(){
   return m;
 })();
 const STATUS={
+  pending:{l:"Pending",c:"c-created"},
   created:{l:"Service Created",c:"c-created"},
   scheduled:{l:"Scheduled",c:"c-scheduled"},
-  assigned:{l:"Auditor Assigned",c:"c-assigned"},
+  assigned:{l:"Assigned",c:"c-assigned"},
   callpending:{l:"Call Pending",c:"c-callpending"},
   reschedule:{l:"To Reschedule",c:"c-reschedule"},
   call_na:{l:"Call not picked",c:"c-call_na"},
   onway:{l:"On The Way",c:"c-onway"},
   atsite:{l:"At Site",c:"c-atsite"},
-  completed:{l:"Audit Completed",c:"c-completed"},
+  partial:{l:"Partially Completed",c:"c-atsite"},
+  deliv_ontime:{l:"Delivery on time",c:"c-scheduled"},
+  deliv_delayed:{l:"Delivery delayed",c:"c-callpending"},
+  completed:{l:"Completed",c:"c-completed"},
 };
 function mapUrl(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a);}
 function slotLabel(id){if(!id)return "—";if(SLOTS[id])return SLOTS[id].label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
@@ -139,23 +138,50 @@ function chip(st){const s=STATUS[st]||{l:st,c:'c-scheduled'};return `<span class
 function fmtDate(ds){if(!ds)return "—";const d=new Date(ds+'T00:00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 
+// Derive a shadowed install sub-job's date/slot/installer from its assignment (else the raw sj fields).
+function sjSched(sj){
+  const a=(sj.assignments&&sj.assignments.length)?sj.assignments.find(x=>x.primary)||sj.assignments[0]:null;
+  const date=(a&&a.date)||sj.date||null;
+  const slot=(a&&a.slots&&a.slots[0])||sj.slot||null;
+  const who=(a&&a.installer_name)||sj.installer_name||'Unassigned';
+  return {date,slot,who};
+}
+
 let ORDERS=[];
 async function loadJobs(){
   try{
-    const rows=await sbGet('audit_orders?shadower_email=eq.'+encodeURIComponent(ME.email)+'&select='+SHAD_COLS+'&status=neq.deleted&order=created_at.desc');
-    if(!Array.isArray(rows)){renderList();return;}
-    ORDERS=rows.map(r=>({
-      id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
+    const meEmail=encodeURIComponent(ME.email);
+    const [aRows,iRows]=await Promise.all([
+      sbGet('audit_orders?shadower_email=eq.'+meEmail+'&select='+AUDIT_COLS+'&status=neq.deleted&order=created_at.desc'),
+      // Install shadower lives inside the subjobs jsonb — PostgREST can't cheaply filter a nested array
+      // key, so fetch non-deleted install orders (slim strips photos) and match sub-jobs client-side.
+      sbGet('install_orders_slim?select='+INSTALL_COLS+'&status=neq.deleted&order=created_at.desc')
+    ]);
+    const out=[];
+    if(Array.isArray(aRows))aRows.forEach(r=>out.push({
+      kind:'audit', id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
       bm:r.bm||'', date:r.date||null, slot:r.slot||null, status:r.status,
-      skus:r.skus||[], auditorName:r.auditor_name||''
+      skus:r.skus||[], shadowingName:r.auditor_name||'', type:''
     }));
+    if(Array.isArray(iRows))iRows.forEach(r=>{
+      (r.subjobs||[]).forEach(sj=>{
+        if(!sj||sj.shadower_email!==ME.email)return;
+        const s=sjSched(sj);
+        out.push({
+          kind:'install', id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
+          bm:r.bm||'', date:s.date, slot:s.slot, status:sj.status||r.status,
+          skus:(sj.items||[]).map(it=>({c:it.sku||it.code||''})), shadowingName:s.who, type:sj.type||''
+        });
+      });
+    });
+    ORDERS=out;
     renderList();
   }catch(e){console.error('loadJobs',e);renderList();}
 }
 setInterval(()=>{if(!document.hidden)loadJobs();},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadJobs();});
 
-/* ============== LIST VIEW (schedule only — no job card; see CLAUDE.md note 85) ============== */
+/* ============== LIST VIEW (read-only schedule — no job card, no attendance) ============== */
 let selDay=dstr(today);
 function listView(){
   const todayStr=dstr(today);
@@ -170,13 +196,14 @@ function listView(){
   const done=list.filter(o=>o.status==="completed");
   const unscheduled=ORDERS.filter(o=>!o.date&&!['completed','reschedule'].includes(o.status));
   const card=(o,unsched)=>{
-    const skus=o.skus.filter(s=>!s.audit).map(s=>s.c).join(', ');
+    const skus=(o.skus||[]).filter(s=>!s.audit&&s.c).map(s=>s.c).join(', ');
+    const badge=o.kind==='install'?`<span class="tbadge install">INSTALL${o.type?' · '+o.type.toUpperCase():''}</span>`:`<span class="tbadge audit">AUDIT</span>`;
     return `<div class="jcard${unsched?' unsched':''}">
       <div class="top"><div class="nm">${o.name}</div>${chip(o.status)}</div>
-      <div class="tag">${o.pi} · BM ${o.bm}</div>
+      <div class="tag">${o.pi} · BM ${o.bm} &nbsp; ${badge}</div>
       <div class="mr"><span class="ic">&#128241;</span><span class="t">${o.phone}</span></div>
       <div class="mr"><span class="ic">&#128205;</span><a class="maplink t" href="${mapUrl(o.addr)}" target="_blank" rel="noopener">${o.addr}</a></div>
-      ${o.auditorName?`<span class="shad">&#128064; Shadowing: ${o.auditorName}</span>`:''}
+      ${o.shadowingName?`<span class="shad">&#128064; Shadowing: ${o.shadowingName}</span>`:''}
       ${skus?`<span class="svc">&#128230; ${skus}</span>`:''}
       <hr class="div">
       <div class="when"${unsched?' style="color:var(--amber)"':''}>${unsched?'Awaiting date from office':fmtDate(o.date)+' · '+slotLabel(o.slot)}</div>
@@ -184,11 +211,11 @@ function listView(){
         <a class="dir" href="${mapUrl(o.addr)}" target="_blank" rel="noopener">&#128205; Directions</a>
       </div></div>`;
   };
-  return `<div class="banner">&#128064; You're shadowing today. This is a read-only schedule of the audits assigned to you to observe — no job card yet.</div>
+  return `<div class="banner">&#128064; Read-only schedule of the sites you're assigned to shadow (audits and installations). No job card or attendance — just go along and observe.</div>
     <div class="daystrip">${strip}</div>
     ${unscheduled.length?`<div class="sechead" style="color:#9a6200">Awaiting schedule — no date set yet</div>${unscheduled.map(o=>card(o,true)).join("")}`:''}
     <div class="sechead">${selDay===todayStr?'Today':'Jobs'} — ${fmtDate(selDay)}</div>
-    ${todo.map(o=>card(o,false)).join("")||`<div class="empty">No jobs to shadow for this day.</div>`}
+    ${todo.map(o=>card(o,false)).join("")||`<div class="empty">No sites to shadow for this day.</div>`}
     ${done.length?`<div class="sechead">Completed</div>${done.map(o=>card(o,false)).join("")}`:""}`;
 }
 function renderList(){$("#listView").innerHTML=listView();wireList();}

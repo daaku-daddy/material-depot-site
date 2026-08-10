@@ -301,7 +301,7 @@
   </div>
   <div class="right">
     <span id="cityToggle" style="display:none"></span>
-    <a id="roleSwitch" href="#" title="Switch to your current training role" style="display:none;align-self:center;margin-right:12px;background:var(--yellow);color:var(--navy);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#8646;</a>
+    <a id="myShadowing" href="Site_Shadower_App.html" title="Sites you're assigned to shadow" style="align-self:center;margin-right:12px;background:#efe9fb;color:var(--purple);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#128064; My shadowing</a>
     <div class="who"><b id="smName">…</b><br>Service Manager</div>
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer">SM</div>
   </div>
@@ -521,30 +521,6 @@ history.replaceState(null,'',location.href);
 window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 document.getElementById('smName').textContent=SESSION?SESSION.name:'';
 (function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
-
-/* ===== Training secondary-role toggle (service_mgr trainees keep SM access + switch to today's stage) ===== */
-function _renderRoleSwitch(){
-  const sw=document.getElementById('roleSwitch'); if(!sw)return;
-  const sec=activeSecondaryRole(SESSION&&SESSION.training_stages);
-  if(sec==='site_shadower'){sw.innerHTML='&#8646; Shadower';sw.href='Site_Shadower_App.html';sw.style.display='';}
-  else if(sec==='site_auditor'){sw.innerHTML='&#8646; Auditor';sw.href='Site_Auditor_App.html';sw.style.display='';}
-  else{sw.style.display='none';}
-}
-_renderRoleSwitch();
-// Sessions never expire, so a schedule the Admin sets AFTER this trainee logged in won't be in md_user
-// yet. Refresh training_stages once in the background, then re-render the toggle. Best-effort; a plain
-// SM (or admin) with no stages just no-ops. Reuses the app's own sbGet (read-only).
-(async function(){
-  if(!SESSION||SESSION.role!=='service_mgr')return;
-  try{
-    const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(SESSION.email)+'&select=training_stages');
-    if(Array.isArray(rows)&&rows[0]){
-      SESSION.training_stages=rows[0].training_stages||[];
-      localStorage.setItem('md_user',JSON.stringify(SESSION));
-      _renderRoleSwitch();
-    }
-  }catch(e){}
-})();
 
 /* ============== CONFIG ============== */
 const INSTALL_SKU="SVC-INSTALL-001";
@@ -777,6 +753,16 @@ async function loadInstallers(){
     INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:'',city:r.city||'Bengaluru'}));
   }catch(e){console.error('loadInstallers',e);}
 }
+// Shadower pool = EVERYONE registered (any role can shadow any installation). store_staff excluded
+// (open-access app, no login session → no personal schedule view). Kept SEPARATE from INSTALLERS so it
+// never touches installersInCity()/flLoad/wpSlotLoad capacity logic — a shadower only observes.
+let SHADOWERS=[];
+async function loadShadowers(){
+  try{
+    const rows=await sbGet('profiles?role=neq.store_staff&select=id,name,email,role&order=name');
+    SHADOWERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,role:r.role}));
+  }catch(e){console.error('loadShadowers',e);SHADOWERS=[];}
+}
 // Auto-detects site audit type by exact phone match against audit_orders — same signal
 // already used (read-only, for reporting) by Admin.html's "Material Depot Audit %" metric.
 // Exact string match, no normalization: verified against live data that normalizing phone
@@ -836,6 +822,17 @@ const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return fmtD
 function slotLabel(id){if(!id)return "—";const found=[...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id);if(found)return found.label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
 const installerById=id=>INSTALLERS.find(a=>a.id===id);
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+// Optional per-sub-job "Shadowed by" picker — pool is EVERYONE (any role, cross-role). One shadower per sub-job.
+const _SH_ROLE={admin:'Admin',service_mgr:'SM',site_auditor:'Auditor',installer:'Installer',auditor_installer:'Auditor+Installer'};
+function shadowerSelectHtmlInstall(sj){
+  const opts=SHADOWERS.slice();
+  if(sj.shadower_email&&!opts.some(s=>s.email===sj.shadower_email))opts.push({email:sj.shadower_email,name:sj.shadower_name||sj.shadower_email});
+  return `<div style="margin-top:8px"><label class="lbl-sm">Shadowed by (optional) — anyone observing this installation</label>
+    <select id="shadowPick_${sj.id}" class="inp-sm">
+      <option value="">None</option>
+      ${opts.map(s=>`<option value="${s.email}" ${sj.shadower_email===s.email?'selected':''}>${s.name}${s.role&&_SH_ROLE[s.role]?' · '+_SH_ROLE[s.role]:''}</option>`).join('')}
+    </select></div>`;
+}
 function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
@@ -851,17 +848,6 @@ function requireNote(actionLabel,preface){
   if(!note){toast("A note is required — nothing was changed");return null;}
   return note;
 }
-// Training lifecycle: a service_mgr trainee keeps role=service_mgr (primary) plus dated secondary
-// stages {role,start,end} in profiles.training_stages (site_shadower then site_auditor). Returns the
-// secondary role active TODAY, or null when no stage covers today (→ pure SM, toggle hidden). Uses the
-// same lexicographic YYYY-MM-DD compare as active_from (notes 44/50); dstr() is a function declaration.
-function activeSecondaryRole(stages){
-  if(!Array.isArray(stages))return null;
-  const t=dstr(new Date());
-  for(const s of stages){ if(s&&s.role&&s.start&&s.end&&s.start<=t&&t<=s.end)return s.role; }
-  return null;
-}
-
 // Ops-call window: custom WP -> 3 days prior; else -> 1 day prior
 // Also fires for deliv_delayed so SM is reminded to re-confirm the new delivery date
 function subjobOpsCallDue(o,sj){
@@ -1681,6 +1667,7 @@ function renderAssignSection(o,sj,container){
         </div>`;
       });
       html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">&#65291; Add another installer</div>`;
+      html+=shadowerSelectHtmlInstall(sj);
       if(sj.status==='reschedule')html+=`<div style="margin-top:10px"><label class="lbl-sm">Reschedule reason <span style="color:var(--red)">*</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:64px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:4px"></textarea></div>`;
       html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:8px;width:100%">${sj.status==='reschedule'?'Save reschedule':'Save assignments'}</button>`;
 
@@ -1743,6 +1730,7 @@ function renderAssignSection(o,sj,container){
           </div>`;
         });
         html+=`<div class="add-assign-btn" id="addAssign_${sj.id}">&#65291; Add another installer</div>`;
+        html+=shadowerSelectHtmlInstall(sj);
         html+=`<button class="btn navy sm" id="saveAssign_${sj.id}" style="margin-top:4px;width:100%">Save assignment</button>`;
         html+=`</div></div>`; // .step-bd .step-block
       }
@@ -1775,7 +1763,7 @@ function renderAssignSection(o,sj,container){
       sj.date=d;sj.slot=t;
       if(wasResched){
         // Clear assignments on reschedule — installer must be re-assigned for the new date
-        sj.assignments=[];assigns=[];
+        sj.assignments=[];assigns=[];sj.shadower_email=null;sj.shadower_name=null;
       } else if(sj.assignments&&sj.assignments.length){
         sj.assignments.forEach(a=>{a.date=d;a.slots=[t];});
       }
@@ -1791,7 +1779,7 @@ function renderAssignSection(o,sj,container){
     const clearSlotBtn=container.querySelector('#clearSlot_'+sj.id);
     if(clearSlotBtn)clearSlotBtn.onclick=async()=>{
       if(!confirm(`Clear the ${sj.type} slot and remove all installer assignments? The order will return to "Service Created" status.`))return;
-      sj.date=null;sj.slot=null;sj.assignments=[];sj.status='created';
+      sj.date=null;sj.slot=null;sj.assignments=[];sj.shadower_email=null;sj.shadower_name=null;sj.status='created';
       o.log.push({t:`${sj.type} slot cleared and installer released`,d:new Date().toISOString(),by:'manual',who:SESSION.name});
       syncParent(o);
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
@@ -1846,6 +1834,16 @@ function renderAssignSection(o,sj,container){
       sj.date=customMode?(valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null):sj.date;
       sj.slot=customMode?(valid[0].slots&&valid[0].slots[0]||null):sj.slot;
       sj.status='assigned';
+      // Optional shadower (per sub-job) — anyone registered may be picked to observe this installation.
+      const shSel=container.querySelector('#shadowPick_'+sj.id);
+      if(shSel){
+        const email=shSel.value||null;
+        const sh=email?SHADOWERS.find(s=>s.email===email):null;
+        const prev=sj.shadower_email||null;
+        sj.shadower_email=email; sj.shadower_name=sh?sh.name:(email?sj.shadower_name:null);
+        if(email&&email!==prev&&sh)o.log.push({t:'Shadower assigned: '+sh.name+' (observing '+sj.type+' installation)',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+        else if(!email&&prev)o.log.push({t:'Shadower removed from '+sj.type+' installation',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      }
       syncParent(o);
       const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';
       o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', '),d:new Date().toISOString(),by:'manual',who:SESSION.name});
@@ -2028,7 +2026,7 @@ function wireDrawer(o){
         // of the reset itself — the installer app also backfills this on reopen, but archiving
         // here too means the record survives even if nobody ever reopens the job card again.
         if(sj.jobcard&&(sj.jobcard.sign||sj.jobcard.partial))_archiveInstallJobcard(o.id,sj.id,sj.jobcard,'status-changed-to-created');
-        sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;
+        sj.status='created';sj.assignments=[];sj.date=null;sj.slot=null;sj.shadower_email=null;sj.shadower_name=null;
       });
     } else if(st==='completed'&&o.subjobs&&o.subjobs.length){
       o.subjobs.forEach(sj=>{
@@ -2986,7 +2984,7 @@ async function saveFoamCfg(){
   catch(e){toast('⚠ Could not save — '+(e.message||'the app_settings table may be missing (run the SQL)'));}
 }
 
-detectCity().then(()=>Promise.all([loadInstallers(),loadOrders(),loadFoam()])).then(()=>{
+detectCity().then(()=>Promise.all([loadInstallers(),loadShadowers(),loadOrders(),loadFoam()])).then(()=>{
   renderCityToggle();
   counts();
   setInterval(()=>{if(!document.hidden)loadOrders();},60000);
