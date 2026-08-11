@@ -822,16 +822,26 @@ const fmtDate=ds=>{if(!ds)return "—";const d=new Date(ds+"T00:00");return fmtD
 function slotLabel(id){if(!id)return "—";const found=[...SLOTS_FL,...SLOTS_WP].find(s=>s.id===id);if(found)return found.label;if(/^\d{1,2}:\d{2}$/.test(id)){const[h,m]=id.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h===0?12:h>12?h-12:h;return h12+':'+(m<10?'0':'')+m+' '+ap;}return "—";}
 const installerById=id=>INSTALLERS.find(a=>a.id===id);
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-// Optional per-sub-job "Shadowed by" picker — pool is EVERYONE (any role, cross-role). One shadower per sub-job.
+// Optional per-sub-job "Shadowed by" — pool is EVERYONE (any role, cross-role). MULTIPLE shadowers per
+// sub-job, stored comma-joined in sj.shadower_email/shadower_name (rides subjobs jsonb, no schema change).
 const _SH_ROLE={admin:'Admin',service_mgr:'SM',site_auditor:'Auditor',installer:'Installer',auditor_installer:'Auditor+Installer'};
+const _attrEsc=s=>String(s||'').replace(/"/g,'&quot;');
+function parseShadowers(emailStr,nameStr){
+  const es=(emailStr||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const ns=(nameStr||'').split(',').map(s=>s.trim());
+  return es.map((e,i)=>({email:e,name:ns[i]||e}));
+}
+function joinShadowers(arr){return {email:arr.map(s=>s.email).join(','),name:arr.map(s=>s.name).join(',')};}
 function shadowerSelectHtmlInstall(sj){
+  const cur=parseShadowers(sj.shadower_email,sj.shadower_name);
+  const curSet=new Map(cur.map(s=>[s.email,s.name]));
   const opts=SHADOWERS.slice();
-  if(sj.shadower_email&&!opts.some(s=>s.email===sj.shadower_email))opts.push({email:sj.shadower_email,name:sj.shadower_name||sj.shadower_email});
-  return `<div style="margin-top:8px"><label class="lbl-sm">Shadowed by (optional) — anyone observing this installation</label>
-    <select id="shadowPick_${sj.id}" class="inp-sm">
-      <option value="">None</option>
-      ${opts.map(s=>`<option value="${s.email}" ${sj.shadower_email===s.email?'selected':''}>${s.name}${s.role&&_SH_ROLE[s.role]?' · '+_SH_ROLE[s.role]:''}</option>`).join('')}
-    </select></div>`;
+  cur.forEach(s=>{if(!opts.some(p=>p.email===s.email))opts.push({email:s.email,name:s.name});});
+  opts.sort((a,b)=>(curSet.has(b.email)?1:0)-(curSet.has(a.email)?1:0));
+  return `<div style="margin-top:8px"><label class="lbl-sm">Shadowed by (optional) — tick anyone observing this installation</label>
+    <div id="shadowBox_${sj.id}" style="max-height:170px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff">
+      ${opts.map(s=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:13.5px;cursor:pointer"><input type="checkbox" class="shadowchk" value="${_attrEsc(s.email)}" data-name="${_attrEsc(s.name)}" ${curSet.has(s.email)?'checked':''}> <span>${s.name}${s.role&&_SH_ROLE[s.role]?' · '+_SH_ROLE[s.role]:''}</span></label>`).join('')||'<div style="padding:6px 2px;color:var(--muted);font-size:13px">No people available</div>'}
+    </div></div>`;
 }
 function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>&#128205;</span>${addr}</a>`;}
@@ -1834,15 +1844,17 @@ function renderAssignSection(o,sj,container){
       sj.date=customMode?(valid[0].mode==='custom'?(valid[0].dates&&valid[0].dates[0])||null:valid[0].date||null):sj.date;
       sj.slot=customMode?(valid[0].slots&&valid[0].slots[0]||null):sj.slot;
       sj.status='assigned';
-      // Optional shadower (per sub-job) — anyone registered may be picked to observe this installation.
-      const shSel=container.querySelector('#shadowPick_'+sj.id);
-      if(shSel){
-        const email=shSel.value||null;
-        const sh=email?SHADOWERS.find(s=>s.email===email):null;
-        const prev=sj.shadower_email||null;
-        sj.shadower_email=email; sj.shadower_name=sh?sh.name:(email?sj.shadower_name:null);
-        if(email&&email!==prev&&sh)o.log.push({t:'Shadower assigned: '+sh.name+' (observing '+sj.type+' installation)',d:new Date().toISOString(),by:'manual',who:SESSION.name});
-        else if(!email&&prev)o.log.push({t:'Shadower removed from '+sj.type+' installation',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      // Optional shadowers (per sub-job) — anyone registered may be picked to observe this installation (multiple allowed).
+      const shBox=container.querySelector('#shadowBox_'+sj.id);
+      if(shBox){
+        const selSh=[...shBox.querySelectorAll('.shadowchk')].filter(b=>b.checked).map(b=>({email:b.value,name:b.getAttribute('data-name')||b.value}));
+        const prevSh=parseShadowers(sj.shadower_email,sj.shadower_name);
+        const j=joinShadowers(selSh);
+        sj.shadower_email=j.email||null; sj.shadower_name=j.name||null;
+        const prevSet=new Set(prevSh.map(s=>s.email)),newSet=new Set(selSh.map(s=>s.email));
+        const addedSh=selSh.filter(s=>!prevSet.has(s.email)),removedSh=prevSh.filter(s=>!newSet.has(s.email));
+        if(addedSh.length)o.log.push({t:'Shadower(s) assigned: '+addedSh.map(s=>s.name).join(', ')+' (observing '+sj.type+' installation)',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+        if(removedSh.length)o.log.push({t:'Shadower(s) removed from '+sj.type+' installation: '+removedSh.map(s=>s.name).join(', '),d:new Date().toISOString(),by:'manual',who:SESSION.name});
       }
       syncParent(o);
       const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';

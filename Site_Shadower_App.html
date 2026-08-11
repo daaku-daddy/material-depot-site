@@ -104,7 +104,9 @@ document.getElementById('backApp').onclick=()=>{window.location.href=ROLE_HOME[S
 document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localStorage.removeItem('md_user');window.location.href='Login.html';}};
 
 /* ============== DATA ============== */
-const AUDIT_COLS='id,pi,skus,bm,customer_name,phone,addr,status,slot,date,auditor_name,shadower_email';
+const AUDIT_COLS='id,pi,skus,bm,customer_name,phone,addr,status,slot,date,auditor_name,shadower_email,shadower_name';
+// Shadowers are stored comma-joined (multiple per audit / per install sub-job) — parse to an array of emails.
+function shadowerEmails(emailStr){return (emailStr||'').split(',').map(s=>s.trim()).filter(Boolean);}
 const INSTALL_COLS='id,pi,bm,customer_name,phone,addr,status,subjobs';
 const today=new Date();today.setHours(0,0,0,0);
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
@@ -150,22 +152,25 @@ function sjSched(sj){
 let ORDERS=[];
 async function loadJobs(){
   try{
-    const meEmail=encodeURIComponent(ME.email);
     const [aRows,iRows]=await Promise.all([
-      sbGet('audit_orders?shadower_email=eq.'+meEmail+'&select='+AUDIT_COLS+'&status=neq.deleted&order=created_at.desc'),
+      // A comma-joined shadower_email can't be matched with eq — fetch all shadowed audits, filter client-side.
+      sbGet('audit_orders?shadower_email=not.is.null&select='+AUDIT_COLS+'&status=neq.deleted&order=created_at.desc'),
       // Install shadower lives inside the subjobs jsonb — PostgREST can't cheaply filter a nested array
       // key, so fetch non-deleted install orders (slim strips photos) and match sub-jobs client-side.
       sbGet('install_orders_slim?select='+INSTALL_COLS+'&status=neq.deleted&order=created_at.desc')
     ]);
     const out=[];
-    if(Array.isArray(aRows))aRows.forEach(r=>out.push({
-      kind:'audit', id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
-      bm:r.bm||'', date:r.date||null, slot:r.slot||null, status:r.status,
-      skus:r.skus||[], shadowingName:r.auditor_name||'', type:''
-    }));
+    if(Array.isArray(aRows))aRows.forEach(r=>{
+      if(!shadowerEmails(r.shadower_email).includes(ME.email))return;
+      out.push({
+        kind:'audit', id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
+        bm:r.bm||'', date:r.date||null, slot:r.slot||null, status:r.status,
+        skus:r.skus||[], shadowingName:r.auditor_name||'', type:''
+      });
+    });
     if(Array.isArray(iRows))iRows.forEach(r=>{
       (r.subjobs||[]).forEach(sj=>{
-        if(!sj||sj.shadower_email!==ME.email)return;
+        if(!sj||!shadowerEmails(sj.shadower_email).includes(ME.email))return;
         const s=sjSched(sj);
         out.push({
           kind:'install', id:r.id, pi:r.pi||'', name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
