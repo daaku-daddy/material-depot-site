@@ -785,15 +785,7 @@ async function openAudit(j){
       $("#auBody").innerHTML=`<div class="note blue">No completed Material Depot site audit found for this phone number.</div>`;return;
     }
     _auTicked=a;_auOrder={pi:j.pi,name:j.name,phone:j.phone,addr:j.addr,bm:j.bm,date:rows[0].date||null};
-    const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
-    const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer needed','primer']];
-    const rooms=a.rooms.map((r,i)=>{
-      const fields=r.type==='wallpaper'?WP:FL;
-      const calc=fields.map(([lbl,k])=>r.calc&&r.calc[k]?`<div><b>${lbl}:</b> ${r.calc[k]}</div>`:'').join("");
-      return `<div class="auroom"><div class="rh">Room ${i+1}: ${r.name||'—'}</div>
-        <div class="calc">${calc||'<span style="color:var(--muted)">No measurements recorded.</span>'}</div>
-        ${r.notes?`<div class="note" style="margin:8px 0 0">${r.notes}</div>`:''}</div>`;
-    }).join("");
+    const rooms=a.rooms.map((r,i)=>mdAuditRoomHtml(r,i)).join("");
     $("#auBody").innerHTML=`<div class="note blue">Material Depot site audit — read only.</div>
       <div class="panel"><h2>Audit info</h2><div class="kvbig">
         <div class="k">Auditor</div><div class="v">${a.auditor||rows[0].auditor_name||'—'}</div>
@@ -1431,22 +1423,14 @@ async function genAuditPDF(){
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
-    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||r.type).pdfLabel,r.sku||'NA'])});
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
-    const fields=auFieldsFor(r.type);
+    const _cat=mdCategoryFor(r.category||r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
-    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-      head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc&&r.calc[f.k])||''])});
-    y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
     const sketchImg=auRenderSketch(r);
-    if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    const auPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
-    if(auPhotos.length){const p0=await compress(auPhotos[0],1600,0.88);if(p0){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(p0,'JPEG',M+colW+12,y+6,colW,ih);}catch(e){}}}
-    y+=ih+18;
-    for(let ap=1;ap<auPhotos.length;ap++){const ph=await compress(auPhotos[ap],1600,0.88);if(!ph)continue;if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(ph,'JPEG',M,y+6,aw,ah);}catch(e){}y+=ah+18;}
-    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.notes,W-2*M),M,y);}
+    y=await mdPdfAuditRoom(doc,r,y,{M,W,H,sketchImg,header:()=>mdPdfHeader(doc,{title:'Site Audit Job Card',right:o.pi,M})});
   }
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;

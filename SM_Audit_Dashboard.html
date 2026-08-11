@@ -1258,17 +1258,7 @@ function drawerBody(o){
     }
     const ticked=o.auditTicked;
     const hasRooms=ticked&&!Array.isArray(ticked)&&Array.isArray(ticked.rooms)&&ticked.rooms.length;
-    const FL=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
-    const WP=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer','primer']];
-    const roomsHtml=hasRooms?ticked.rooms.map((r,i)=>{
-      const fields=r.type==='wallpaper'?WP:FL;
-      const meas=fields.filter(([,k])=>r.calc&&r.calc[k]).map(([l,k])=>`<div class="k">${l}</div><div class="v">${r.calc[k]}</div>`).join('');
-      return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">
-        <div style="font-weight:800;color:var(--navy);margin-bottom:8px">Room ${i+1}: ${r.name||'—'} <span style="font-weight:600;color:var(--muted);font-size:11.5px">${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU: ${r.sku||'NA'}</span></div>
-        ${meas?`<div class="kv">${meas}</div>`:'<div style="color:var(--muted);font-size:12px">No measurements recorded.</div>'}
-        ${r.notes?`<div style="margin-top:8px;font-size:12px;color:var(--muted)">Notes: ${r.notes}</div>`:''}
-      </div>`;
-    }).join(''):'';
+    const roomsHtml=hasRooms?ticked.rooms.map((r,i)=>mdAuditRoomHtml(r,i)).join(''):'';
     html+=`<div class="sec"><h3>Completed</h3><div class="kv">
       <div class="k">Auditor</div><div class="v">${getAuditorName(o)||ticked?.auditor||'—'}</div>
       <div class="k">Completed</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
@@ -2043,22 +2033,14 @@ async function genAuditPDFSM(o,ticked){
     body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Auditor',ticked.auditor||'—'],['Date',fmtDate(o.date)]]});
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
-  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','Type','SKU']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','Type','SKU']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||r.type).pdfLabel,r.sku||'NA'])});
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;hdr();
-    const flds=r.type==='wallpaper'?_WP_SM:_FL_SM;
+    const _cat=mdCategoryFor(r.category||r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
-    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},head:[['Calculation','Value']],body:flds.map(f=>[f.label,(r.calc&&r.calc[f.k])||''])});
-    y=doc.lastAutoTable.finalY+12;
-    const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
     const sk=_renderSketchSM(r);
-    if(sk){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sk,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    const photos=r.photos||(r.photo?[r.photo]:[]);
-    if(photos.length){const p0=await _compressSM(photos[0]);if(p0){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+(sk?colW+12:0),y);try{doc.addImage(p0,'JPEG',M+(sk?colW+12:0),y+6,colW,ih);}catch(e){}}}
-    y+=ih+18;
-    for(let pi=1;pi<photos.length;pi++){const ph=await _compressSM(photos[pi]);if(ph){const pw=W-2*M,pih=pw*0.55;if(y+pih>H-M){doc.addPage();y=M;hdr();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Photo '+(pi+1),M,y);try{doc.addImage(ph,'JPEG',M,y+6,pw,pih);}catch(e){}y+=pih+14;}}
-    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.notes,W-2*M),M,y);}
+    y=await mdPdfAuditRoom(doc,r,y,{M,W,H,compress:_compressSM,sketchImg:sk,header:()=>mdPdfHeader(doc,{title:'Site Audit Job Card',right:o.pi,M})});
   }
   doc.addPage();y=M;hdr();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;

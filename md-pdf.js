@@ -58,4 +58,70 @@
       im.src=dataUrl;
     });
   };
+
+  // Brand-styled autoTable options (ink header, off-white label column, grey grid). Merge with per-call opts.
+  window.mdBrandGrid=function(extra){
+    return Object.assign({theme:'grid',
+      headStyles:{fillColor:window.MD_INK,textColor:[255,255,255],fontStyle:'bold',fontSize:9},
+      styles:{fontSize:9,cellPadding:5,lineColor:window.MD_LINE,textColor:[30,30,30]}}, extra||{});
+  };
+
+  // Renders ONE audit room's full body — data tables + prerequisites + per-segment photos + room
+  // sketch + notes — page-break aware. `room` may be a legacy {type,calc} shape OR a v2
+  // {v:2,segments:[…]} shape; it is normalized internally so both render through one code path.
+  // Returns the new y. opts: {M, W, H, compress(fn->Promise|dataURL), sketchImg(dataURL|null),
+  // header(fn returning the y after re-drawing the branded header on a page break)}.
+  window.mdPdfAuditRoom=async function(doc, room, y, opts){
+    opts=opts||{};
+    var M=opts.M||40, W=opts.W||doc.internal.pageSize.getWidth(), H=opts.H||doc.internal.pageSize.getHeight();
+    var compress=opts.compress||window.mdCompress;
+    var nroom=window.mdNormalizeRoom(room), cat=window.mdCategoryFor(nroom.category), isV2=nroom.v>=2;
+    var multi=isV2 && cat.segment && cat.segment.model==='multi';
+    function ensure(space){ if(y+space>H-M){ doc.addPage(); y=opts.header?opts.header():M; } }
+    if(opts.sketchImg){ ensure(160); doc.setFontSize(8.5);doc.setTextColor.apply(doc,window.MD_MUTED);doc.text('2D Diagram',M,y);
+      var sw=(W-2*M)*0.6, sh=sw*0.7; try{doc.addImage(opts.sketchImg,'JPEG',M,y+6,sw,sh);}catch(e){} y+=sh+16; }
+    var segs=nroom.segments||[];
+    for(var si=0; si<segs.length; si++){
+      var seg=segs[si];
+      if(multi){ ensure(24);
+        var st=(cat.segment.segLabel||'Segment')+' '+(si+1)+(seg.facing?' — '+seg.facing:'');
+        if(nroom.variant) st+='   ·   '+nroom.variant;
+        y=window.mdSectionTitle(doc, st, y+8, M)+4;
+      }
+      var rows;
+      if(isV2){
+        rows=cat.fields.filter(function(f){var v=seg.fields&&seg.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';})
+          .map(function(f){return [f.label, String(seg.fields[f.k])];});
+      }else{
+        rows=(cat.legacyFields||[]).filter(function(p){var v=seg.fields&&seg.fields[p[0]];return v!==undefined&&v!==null&&String(v)!=='';})
+          .map(function(p){return [p[1], String(seg.fields[p[0]])];});
+      }
+      if(rows.length){ ensure(34+rows.length*20);
+        doc.autoTable(window.mdBrandGrid({startY:y, margin:{left:M,right:M}, head:[['Measurement','Value']], body:rows,
+          columnStyles:{0:{cellWidth:250,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL}}}));
+        y=doc.lastAutoTable.finalY+8;
+      }
+      if(isV2 && seg.prereq && cat.prerequisites){
+        var prows=cat.prerequisites.filter(function(p){return seg.prereq[p.k]&&seg.prereq[p.k].status;})
+          .map(function(p){return [p.label, seg.prereq[p.k].status, seg.prereq[p.k].note||''];});
+        if(prows.length){ ensure(34+prows.length*20);
+          doc.autoTable(window.mdBrandGrid({startY:y, margin:{left:M,right:M}, head:[['Site readiness check','Status','Note']], body:prows,
+            columnStyles:{0:{cellWidth:250,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL},1:{cellWidth:74}}}));
+          y=doc.lastAutoTable.finalY+8;
+        }
+      }
+      var photos=(seg.photos||[]).filter(Boolean);
+      for(var ph=0; ph<photos.length; ph++){
+        var img=await compress(photos[ph]);
+        if(img){ var pw=W-2*M, phh=pw*0.56; ensure(phh+22);
+          doc.setFontSize(8.5);doc.setTextColor.apply(doc,window.MD_MUTED);
+          doc.text((multi&&seg.facing?seg.facing+' — ':'')+'Photo '+(ph+1),M,y);
+          try{doc.addImage(img,'JPEG',M,y+6,pw,phh);}catch(e){} y+=phh+16;
+        }
+      }
+    }
+    if(nroom.notes){ ensure(46); doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor.apply(doc,window.MD_INK);doc.text('Notes',M,y);y+=12;
+      doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);var ls=doc.splitTextToSize(nroom.notes,W-2*M);doc.text(ls,M,y);y+=ls.length*12+6; }
+    return y;
+  };
 })();

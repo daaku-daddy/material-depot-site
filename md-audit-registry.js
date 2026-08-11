@@ -98,4 +98,35 @@
       segments:[{ id:1, facing:null, fields:Object.assign({},room.calc||{}), photos:room.photos||(room.photo?[room.photo]:[]), prereq:{}, flagged:false }]
     };
   };
+
+  // Shared ON-SCREEN (DOM) renderer for one audit room — v2 segments + prerequisites + photos, or a
+  // legacy room via legacyFields. Returns an HTML string using CSS vars present in every consuming
+  // file (--line/--muted/--navy/--red/--green). Used by SM Audit drawer, Admin job detail, and the
+  // installer's read-only audit report so they all display v2 audits identically. `i` = room index.
+  window.mdAuditRoomHtml=function(room,i){
+    var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+    var KVW='<div style="display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:3px 12px;font-size:12.5px">';
+    var krow=function(l,v,col){return '<div style="color:var(--muted)">'+esc(l)+'</div><div'+(col?' style="color:'+col+'"':'')+'>'+v+'</div>';};
+    var nr=window.mdNormalizeRoom(room), cat=window.mdCategoryFor(nr.category), isV2=nr.v>=2;
+    var multi=isV2 && cat.segment && cat.segment.model==='multi';
+    var segHtml=(nr.segments||[]).map(function(s,si){
+      var rows;
+      if(isV2){ rows=cat.fields.filter(function(f){var v=s.fields&&s.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(function(f){return krow(f.label,esc(s.fields[f.k]));}).join(''); }
+      else { rows=(cat.legacyFields||[]).filter(function(p){var v=s.fields&&s.fields[p[0]];return v!==undefined&&v!==null&&String(v)!=='';}).map(function(p){return krow(p[1],esc(s.fields[p[0]]));}).join(''); }
+      var prq=isV2?(cat.prerequisites||[]).filter(function(p){return s.prereq&&s.prereq[p.k]&&s.prereq[p.k].status;}).map(function(p){var st=s.prereq[p.k].status;var col=st==='Not OK'?'var(--red)':(st==='OK'?'var(--green)':'var(--muted)');return krow(p.label,esc(st)+(s.prereq[p.k].note?' - '+esc(s.prereq[p.k].note):''),col);}).join(''):'';
+      var photos=(s.photos||[]).filter(Boolean).map(function(p){return '<img src="'+esc(p)+'" style="width:60px;height:60px;object-fit:cover;border-radius:7px;border:1px solid var(--line)">';}).join('');
+      var flagged=window.mdPrereqFlagged({prereq:s.prereq});
+      return '<div style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:8px">'
+        +(multi?'<div style="font-weight:800;font-size:12.5px;color:var(--navy);margin-bottom:6px">'+esc(cat.segment.segLabel)+' '+(si+1)+(s.facing?' - '+esc(s.facing):'')+(flagged?' <span style="color:var(--red)">&#9888;</span>':'')+'</div>':'')
+        +(rows?KVW+rows+'</div>':'<div style="color:var(--muted);font-size:12px">No measurements recorded.</div>')
+        +(prq?KVW.replace('grid-template','margin-top:6px;grid-template')+prq+'</div>':'')
+        +(photos?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+photos+'</div>':'')
+        +'</div>';
+    }).join('');
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">'
+      +'<div style="font-weight:800;color:var(--navy)">Room '+((i||0)+1)+': '+esc(nr.name||'-')+' <span style="font-weight:600;color:var(--muted);font-size:11.5px">'+esc(cat.pdfLabel)+(nr.variant?' &middot; '+esc(nr.variant):'')+' &middot; SKU: '+esc(nr.sku||'NA')+'</span></div>'
+      +segHtml
+      +(nr.notes?'<div style="margin-top:8px;font-size:12px;color:var(--muted)">Notes: '+esc(nr.notes)+'</div>':'')
+      +'</div>';
+  };
 })();

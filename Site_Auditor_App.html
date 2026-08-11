@@ -689,90 +689,136 @@ function renderJCHeader(){
        <div><label>Time slot</label><input value="${slotLabel(o.slot)}" disabled></div>
      </div>
    </div>
-   <div class="note">Add a room for every space audited. Pick the room type — calculation fields match Flooring or Wallpaper.</div>
+   <div class="note">Add a room for every space audited. Pick the product category — measurement fields and site-readiness checks adapt automatically.</div>
    <div id="roomsWrap"></div>`;
 }
 
 function addRoom(restore){
   const id=++jcSeq;
-  const initType=restore?restore.type:(jcOrder.skus[0]?jcOrder.skus[0].type:'flooring');
-  const room={id,type:initType,name:restore?restore.name:'',sku:restore?restore.sku:'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],calc:restore?Object.assign({},restore.calc):{},notes:restore?restore.notes:''};
+  // restore may be legacy {type,calc} OR v2 {v:2,segments}; normalize to one shape.
+  const nr=restore?mdNormalizeRoom(restore):null;
+  let category=nr?nr.category:(jcOrder.skus[0]?jcOrder.skus[0].type:'flooring');
+  if(!MD_CATEGORIES[category])category='flooring';
+  function blankSeg(catKey){const cat=MD_CATEGORIES[catKey],f={};(cat.fields||[]).forEach(x=>{if(x.default!==undefined)f[x.k]=x.default;});mdComputeDerived(cat,f);return {sid:0,facing:null,photos:[],fields:f,prereq:{}};}
+  const room={id,category,name:nr?nr.name:'',sku:nr?nr.sku:'',variant:nr?(nr.variant||null):null,notes:nr?nr.notes:'',
+    segments: nr?nr.segments.map(s=>({sid:0,facing:s.facing||null,photos:(s.photos||[]).slice(),fields:Object.assign({},s.fields||{}),prereq:Object.assign({},s.prereq||{})})):[blankSeg(category)],
+    _sketchStrokes: nr?(nr.sketchStrokes||[]):[]};
+  let _sc=0;room.segments.forEach(s=>s.sid=++_sc);room._nextSid=_sc;
+
   const card=el('div','card');card.dataset.id=id;
   const head=el('div','roomhead');head.appendChild(el('div','rn','Room / Space '+(jcRooms.length+1)));
   const rm=el('button','btn warn sm','Remove');rm.style.flex='0 0 auto';rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);card.remove();renumber();autosave();};head.appendChild(rm);card.appendChild(head);
 
-  // type toggle
-  const tog=el('div','typetog');
-  const bFl=el('button',initType==='flooring'?'on':'','Wooden Flooring');
-  const bWp=el('button',initType==='wallpaper'?'on':'','Wallpaper');
-  tog.appendChild(bFl);tog.appendChild(bWp);card.appendChild(tog);
+  // category (from the registry — new product categories appear here automatically)
+  const catRow=el('div');catRow.style.marginTop='4px';catRow.appendChild(el('label',null,'Product category'));
+  const catSel=document.createElement('select');Object.values(MD_CATEGORIES).forEach(c=>{const op=document.createElement('option');op.value=c.id;op.textContent=c.label;if(c.id===room.category)op.selected=true;catSel.appendChild(op);});
+  catRow.appendChild(catSel);card.appendChild(catRow);
 
+  // name + sku
   const g=el('div','grid2');
   const nW=el('div','full');nW.appendChild(el('label',null,'Room name'));const nI=el('input');nI.placeholder='e.g. Master Bedroom';nI.value=room.name;nI.oninput=()=>{room.name=nI.value;autosave();};nW.appendChild(nI);g.appendChild(nW);
   const sW=el('div','full');sW.appendChild(el('label',null,'SKU Code (write NA if none)'));const sI=el('input');sI.placeholder='e.g. '+(room.sku||'WP-9020 / NA');sI.value=room.sku;sI.oninput=()=>{room.sku=sI.value;autosave();};sW.appendChild(sI);g.appendChild(sW);
   card.appendChild(g);
 
-  // multi-photo with crop
-  const pW=el('div');pW.style.marginTop='10px';pW.appendChild(el('label',null,'Room photos'));
-  const photoGrid=el('div');photoGrid.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;';
-  function renderPhotoGrid(){
-    photoGrid.innerHTML='';
-    (room.photos||[]).forEach((ph,idx)=>{
-      const wrap=el('div');wrap.style.cssText='position:relative;width:80px;height:80px;flex:0 0 auto;';
-      const img=el('img');img.src=ph;img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:pointer;';
-      img.onclick=()=>{const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;display:flex;align-items:center;justify-content:center;cursor:pointer;';const pi=document.createElement('img');pi.src=ph;pi.style.cssText='max-width:94vw;max-height:94vh;border-radius:10px;display:block;object-fit:contain;';ov.appendChild(pi);ov.onclick=()=>document.body.removeChild(ov);document.body.appendChild(ov);};
-      const rmb=el('button');rmb.textContent='×';rmb.style.cssText='position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:14px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1;padding:0;';
-      rmb.onclick=e=>{e.stopPropagation();room.photos.splice(idx,1);renderPhotoGrid();autosave();};
-      wrap.appendChild(img);wrap.appendChild(rmb);photoGrid.appendChild(wrap);
+  // variant (per-room; only when the category defines variants, e.g. Standard/Customized wallpaper)
+  const varRow=el('div');varRow.style.marginTop='10px';card.appendChild(varRow);
+  function renderVariant(){varRow.innerHTML='';const cat=MD_CATEGORIES[room.category];if(cat.variants){varRow.appendChild(el('label',null,cat.label+' type'));const vs=document.createElement('select');[''].concat(cat.variants).forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v||'Select...';if((room.variant||'')===v)op.selected=true;vs.appendChild(op);});vs.onchange=()=>{room.variant=vs.value||null;autosave();};varRow.appendChild(vs);}else room.variant=null;}
+
+  // segments (walls for multi categories, single floor for single), add button, soft-flag banner
+  const segWrap=el('div');segWrap.style.marginTop='2px';card.appendChild(segWrap);
+  const addSegBtn=el('button','btn ghost sm','+ Add');addSegBtn.style.marginTop='8px';card.appendChild(addSegBtn);
+  const flagBar=el('div');flagBar.style.cssText='display:none;margin-top:10px;padding:8px 10px;border-radius:8px;background:#fdecec;color:#7a1515;font-size:12.5px;font-weight:600';flagBar.textContent='One or more site-readiness checks are marked Not OK - recorded for the SM to review.';card.appendChild(flagBar);
+  function anyFlag(){return room.segments.some(s=>mdPrereqFlagged({prereq:s.prereq}));}
+  function paintFlag(){flagBar.style.display=anyFlag()?'block':'none';}
+
+  // sketch (one per room)
+  const skW=el('div');skW.style.marginTop='14px';skW.appendChild(el('label',null,'2D diagram (draw on the dotted sheet)'));const cv=document.createElement('canvas');cv.className='sketch';skW.appendChild(cv);
+  const sbar=el('div','sketchbar');const undo=el('button','btn ghost sm','Undo');const clr=el('button','btn ghost sm','Clear');sbar.appendChild(undo);sbar.appendChild(clr);skW.appendChild(sbar);card.appendChild(skW);
+
+  // notes (room-level)
+  const ntW=el('div');ntW.style.marginTop='12px';ntW.appendChild(el('label',null,'Room notes'));const nt=document.createElement('textarea');nt.placeholder='Access, special instructions...';nt.value=room.notes;nt.oninput=()=>{room.notes=nt.value;autosave();};ntW.appendChild(nt);card.appendChild(ntW);
+
+  // ---- per-array photo block (same optimistic-upload behaviour as before, now scoped per segment) ----
+  function mkPhotos(arr){
+    const wrap=el('div');wrap.style.marginTop='6px';
+    const grid=el('div');grid.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-top:6px';
+    function rg(){grid.innerHTML='';(arr||[]).forEach((ph,idx)=>{const w=el('div');w.style.cssText='position:relative;width:76px;height:76px;flex:0 0 auto';const im=el('img');im.src=ph;im.style.cssText='width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:pointer';im.onclick=()=>{const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;display:flex;align-items:center;justify-content:center;cursor:pointer';const pv=document.createElement('img');pv.src=ph;pv.style.cssText='max-width:94vw;max-height:94vh;border-radius:10px;object-fit:contain';ov.appendChild(pv);ov.onclick=()=>document.body.removeChild(ov);document.body.appendChild(ov);};const x=el('button');x.textContent='×';x.style.cssText='position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:14px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1;padding:0';x.onclick=e=>{e.stopPropagation();arr.splice(idx,1);rg();autosave();};w.appendChild(im);w.appendChild(x);grid.appendChild(w);});}
+    rg();
+    const add=b64=>{arr.push(b64);rg();autosave();_uploadPhoto(b64).then(url=>{const i=arr.indexOf(b64);if(i>=0){arr[i]=url;rg();autosave();}}).catch(()=>{});};
+    const rs=dataURL=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const c2=document.createElement('canvas');c2.width=Math.round(im.width*s);c2.height=Math.round(im.height*s);c2.getContext('2d').drawImage(im,0,0,c2.width,c2.height);add(c2.toDataURL('image/jpeg',0.88));};im.onerror=()=>add(dataURL);im.src=dataURL;};
+    const fc=document.createElement('input');fc.type='file';fc.accept='image/*';fc.capture='environment';fc.style.display='none';fc.onchange=()=>{for(const f of fc.files){const rd=new FileReader();rd.onload=()=>rs(rd.result);rd.readAsDataURL(f);}fc.value='';};
+    const fgl=document.createElement('input');fgl.type='file';fgl.accept='image/*';fgl.multiple=true;fgl.style.display='none';fgl.onchange=()=>{for(const f of fgl.files){const rd=new FileReader();rd.onload=()=>rs(rd.result);rd.readAsDataURL(f);}fgl.value='';};
+    const row=el('div','photo-row');row.style.marginTop='6px';
+    const bc=el('button','btn ghost sm','📷 Camera');bc.style.flex='1';bc.onclick=()=>fc.click();
+    const bg=el('button','btn ghost sm','🖼 Gallery');bg.style.flex='1';bg.onclick=()=>fgl.click();
+    const bs=el('button','btn ghost sm','📄 Scan');bs.style.flex='1';bs.onclick=()=>openDocScanner(add);
+    row.appendChild(fc);row.appendChild(fgl);row.appendChild(bc);row.appendChild(bg);row.appendChild(bs);
+    wrap.appendChild(grid);wrap.appendChild(row);return wrap;
+  }
+  // ---- measurement fields (grouped; derived fields are read-only and update IN PLACE, no re-render) ----
+  function renderFields(seg,box){
+    box.innerHTML='';const cat=MD_CATEGORIES[room.category];const derivedNodes={};let curGroup=null,grid=null;
+    (cat.fields||[]).forEach(f=>{
+      if(f.showIf&&!f.showIf(seg.fields))return;
+      if(f.group!==curGroup){curGroup=f.group;const gl=el('div');gl.style.cssText='font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 2px';gl.textContent=f.group;box.appendChild(gl);grid=el('div','grid2');box.appendChild(grid);}
+      const wrap=el('div');wrap.appendChild(el('label',null,f.label));let inp;
+      if(f.input==='select'){inp=document.createElement('select');(f.opts||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;inp.appendChild(op);});if(seg.fields[f.k]===undefined||seg.fields[f.k]===null)seg.fields[f.k]=(f.opts&&f.opts[0])||'';inp.value=seg.fields[f.k];}
+      else{inp=document.createElement('input');if(f.input==='decimal')inp.setAttribute('inputmode','decimal');inp.value=(seg.fields[f.k]!==undefined&&seg.fields[f.k]!==null)?seg.fields[f.k]:'';}
+      if(f.derived){inp.readOnly=true;inp.style.background='#f4f6f8';inp.style.color='var(--muted)';derivedNodes[f.k]=inp;}
+      else if(f.input==='select'){inp.addEventListener('change',()=>{seg.fields[f.k]=inp.value;mdComputeDerived(cat,seg.fields);autosave();renderFields(seg,box);});}
+      else{const upd=()=>{seg.fields[f.k]=inp.value;mdComputeDerived(cat,seg.fields);Object.keys(derivedNodes).forEach(dk=>{const v=seg.fields[dk];derivedNodes[dk].value=(v===undefined||v===null)?'':v;});autosave();};inp.addEventListener('input',upd);inp.addEventListener('change',upd);}
+      wrap.appendChild(inp);grid.appendChild(wrap);
     });
   }
-  renderPhotoGrid();
-  const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
-  const fileGal=document.createElement('input');fileGal.type='file';fileGal.accept='image/*';fileGal.multiple=true;fileGal.style.display='none';
-  // Show the photo instantly (local base64), THEN upload to Storage in the background and swap the
-  // URL in when it lands. Previously the thumbnail only appeared after _uploadPhoto resolved — up to
-  // a 20s wait on a weak site connection — so auditors thought the photo hadn't attached and re-took
-  // it. Keeps the on-device draft small once the base64 is replaced by the URL.
-  const _addRoomPhoto=base64=>{
-    room.photos.push(base64);renderPhotoGrid();autosave();
-    _uploadPhoto(base64).then(url=>{const i=room.photos.indexOf(base64);if(i>=0){room.photos[i]=url;renderPhotoGrid();autosave();}}).catch(()=>{});
-  };
-  const _resizeAndStore=(dataURL,add)=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1600/im.width,1600/im.height);const cv2=document.createElement('canvas');cv2.width=Math.round(im.width*s);cv2.height=Math.round(im.height*s);cv2.getContext('2d').drawImage(im,0,0,cv2.width,cv2.height);const out=cv2.toDataURL('image/jpeg',0.88);add(out);};im.onerror=()=>add(dataURL);im.src=dataURL;};
-  const addPhFromCam=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,_addRoomPhoto);};rd.readAsDataURL(f);};
-  const addPhFromGal=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{_resizeAndStore(rd.result,_addRoomPhoto);};rd.readAsDataURL(f);};
-  fileCam.onchange=()=>{for(const f of fileCam.files)addPhFromCam(f);fileCam.value='';};
-  fileGal.onchange=()=>{for(const f of fileGal.files)addPhFromGal(f);fileGal.value=''};
-  const prow=el('div','photo-row');prow.style.marginTop='8px';
-  const btnCam=el('button','btn ghost sm','📷 Camera');btnCam.style.flex='1';btnCam.onclick=()=>fileCam.click();
-  const btnGal=el('button','btn ghost sm','🖼 Gallery');btnGal.style.flex='1';btnGal.onclick=()=>fileGal.click();
-  const btnScan=el('button','btn ghost sm','📄 Scan');btnScan.style.flex='1';btnScan.onclick=()=>openDocScanner(_addRoomPhoto);
-  prow.appendChild(fileCam);prow.appendChild(fileGal);prow.appendChild(btnCam);prow.appendChild(btnGal);prow.appendChild(btnScan);
-  pW.appendChild(photoGrid);pW.appendChild(prow);card.appendChild(pW);
-
-  // sketch
-  const skW=el('div');skW.style.marginTop='12px';skW.appendChild(el('label',null,'2D diagram (draw on the dotted sheet)'));const cv=document.createElement('canvas');cv.className='sketch';skW.appendChild(cv);
-  const bar=el('div','sketchbar');const undo=el('button','btn ghost sm','Undo');const clr=el('button','btn ghost sm','Clear');bar.appendChild(undo);bar.appendChild(clr);skW.appendChild(bar);card.appendChild(skW);
-
-  // calc (adaptive)
-  const cT=el('label',null,'Calculations');cT.style.marginTop='12px';card.appendChild(cT);
-  const cBox=el('div','grid2');card.appendChild(cBox);room._calcEl=cBox;
-
-  // notes
-  const ntW=el('div');ntW.style.marginTop='12px';ntW.appendChild(el('label',null,'Notes'));const nt=document.createElement('textarea');nt.placeholder='Site notes, access, special instructions…';nt.value=room.notes;nt.oninput=()=>{room.notes=nt.value;autosave();};ntW.appendChild(nt);card.appendChild(ntW);
+  // ---- per-segment prerequisite checklist (OK / Not OK / N/A + optional note) ----
+  function renderPrereq(seg,box){
+    box.innerHTML='';const cat=MD_CATEGORIES[room.category];if(!cat.prerequisites)return;
+    const hl=el('div');hl.style.cssText='font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:12px 0 2px';hl.textContent='Site readiness checks';box.appendChild(hl);
+    cat.prerequisites.forEach(p=>{
+      seg.prereq[p.k]=seg.prereq[p.k]||{status:'',note:''};
+      const row=el('div');row.style.cssText='display:flex;flex-direction:column;gap:4px;padding:7px 0;border-bottom:1px solid var(--line)';
+      const lab=el('div',null,p.label);lab.style.fontSize='13px';row.appendChild(lab);
+      const ctl=el('div');ctl.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap';
+      const sel=document.createElement('select');[['','Set...'],['OK','OK'],['Not OK','Not OK'],['N/A','N/A']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];if((seg.prereq[p.k].status||'')===o[0])op.selected=true;sel.appendChild(op);});sel.style.flex='0 0 auto';
+      const note=document.createElement('input');note.placeholder='Note (optional)';note.value=seg.prereq[p.k].note||'';note.style.flex='1';note.style.minWidth='130px';
+      sel.onchange=()=>{seg.prereq[p.k].status=sel.value;paintFlag();autosave();};
+      note.oninput=()=>{seg.prereq[p.k].note=note.value;autosave();};
+      ctl.appendChild(sel);ctl.appendChild(note);row.appendChild(ctl);box.appendChild(row);
+    });
+  }
+  function segCard(seg,idx){
+    const cat=MD_CATEGORIES[room.category];const multi=cat.segment.model==='multi';
+    const c=el('div');c.style.cssText='border:1.5px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;background:#fbfcfe';
+    const sh=el('div');sh.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px';
+    const st=el('div',null,(cat.segment.segLabel||'Segment')+(multi?' '+(idx+1):''));st.style.cssText='font-weight:800;color:var(--navy);font-size:14px';sh.appendChild(st);
+    if(multi){const del=el('button','btn warn sm','Remove');del.style.flex='0 0 auto';del.onclick=()=>{room.segments=room.segments.filter(x=>x!==seg);renderSegments();autosave();};sh.appendChild(del);}
+    c.appendChild(sh);
+    if(cat.segment.facing){const fr=el('div');fr.appendChild(el('label',null,'Facing direction'));const fs=document.createElement('select');[''].concat(cat.segment.facingOpts||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o||'Select...';if((seg.facing||'')===o)op.selected=true;fs.appendChild(op);});fs.onchange=()=>{seg.facing=fs.value||null;autosave();};fr.appendChild(fs);c.appendChild(fr);}
+    const fbox=el('div');c.appendChild(fbox);renderFields(seg,fbox);
+    const pl=el('label',null,(multi?(cat.segment.segLabel||'Wall')+' photos':'Photos'));pl.style.marginTop='10px';pl.style.display='block';c.appendChild(pl);
+    c.appendChild(mkPhotos(seg.photos));
+    const pbox=el('div');c.appendChild(pbox);renderPrereq(seg,pbox);
+    return c;
+  }
+  function renderSegments(){
+    segWrap.innerHTML='';const cat=MD_CATEGORIES[room.category];const multi=cat.segment.model==='multi';
+    room.segments.forEach((s,i)=>segWrap.appendChild(segCard(s,i)));
+    addSegBtn.style.display=multi?'inline-flex':'none';addSegBtn.textContent='+ '+(cat.segment.addLabel||'Add');
+    paintFlag();
+  }
+  addSegBtn.onclick=()=>{const s=blankSeg(room.category);s.sid=++room._nextSid;room.segments.push(s);renderSegments();autosave();};
+  catSel.onchange=()=>{room.category=catSel.value;const s=blankSeg(room.category);s.sid=1;room.segments=[s];room._nextSid=1;renderVariant();renderSegments();autosave();};
 
   $("#roomsWrap").appendChild(card);
   const sk=new Sketch(cv);room._sketch=sk;sk.onchange=autosave;undo.onclick=()=>{sk.undo();autosave();};clr.onclick=()=>{sk.clear();autosave();};window.addEventListener('resize',()=>sk.fit());setTimeout(()=>sk.fit(),60);
-  if(restore&&restore.sketchStrokes){room._sketch.strokes=restore.sketchStrokes;room._sketch.render();}
-
-  function renderCalc(){cBox.innerHTML='';fieldsFor(room.type).forEach(f=>{const wrap=el('div',f.type==='select'?'':'');wrap.appendChild(el('label',null,f.label));let inp;if(f.type==='select'){inp=document.createElement('select');f.opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;inp.appendChild(op);});}else{inp=document.createElement('input');inp.setAttribute('inputmode','decimal');if(f.ph)inp.placeholder=f.ph;}inp.value=room.calc[f.k]||'';const upd=()=>{room.calc[f.k]=inp.value;autosave();};inp.addEventListener('input',upd);inp.addEventListener('change',upd);wrap.appendChild(inp);cBox.appendChild(wrap);});}
-  renderCalc();
-  bFl.onclick=()=>{room.type='flooring';room.calc={};bFl.classList.add('on');bWp.classList.remove('on');renderCalc();autosave();};
-  bWp.onclick=()=>{room.type='wallpaper';room.calc={};bWp.classList.add('on');bFl.classList.remove('on');renderCalc();autosave();};
-
+  if(room._sketchStrokes&&room._sketchStrokes.length){room._sketch.strokes=room._sketchStrokes;room._sketch.render();}
+  renderVariant();renderSegments();
   jcRooms.push(room);
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((c,i)=>{const rn=c.querySelector('.rn');if(rn)rn.textContent='Room / Space '+(i+1);});}
-function collectRooms(){return jcRooms.map(r=>({type:r.type,name:r.name,sku:r.sku,photos:r.photos||[],calc:Object.assign({},r.calc),notes:r.notes,sketchStrokes:r._sketch?r._sketch.strokes:[]}));}
+function collectRooms(){return jcRooms.map(r=>({v:2,category:r.category,name:r.name,sku:r.sku,variant:r.variant||null,notes:r.notes,
+  sketchStrokes:r._sketch?r._sketch.strokes:(r._sketchStrokes||[]),
+  segments:(r.segments||[]).map(s=>({id:s.sid,facing:s.facing||null,fields:Object.assign({},s.fields),photos:(s.photos||[]).slice(),prereq:Object.assign({},s.prereq),flagged:mdPrereqFlagged({prereq:s.prereq})}))}));}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
 let _localSaveTimer=null;
@@ -798,7 +844,7 @@ function autosave(){
     // autosave — edits stay on-device only until the redo flow captures a fresh signature.
     if(jcHadSign){showSaveStatus('local');return;}
     try{
-      const draftRooms=collectRooms().map(({photos,...rest})=>rest);
+      const draftRooms=collectRooms().map(r=>({...r,segments:(r.segments||[]).map(({photos,...s})=>s)}));
       if(_autosaveSeq!==mySeq||_completionWrite)return;
       await sbPatch('audit_orders',jcOrder.id,{audit_ticked:{draft:true,rooms:draftRooms}});
       // Safety: if completion write landed while draft was in-flight, re-issue it
@@ -819,22 +865,31 @@ function reviewAndSign(o){
   if(jcRooms.length===0){toast("Add at least one room");return;}
   $("#jcFooter").classList.add("hide");
   const roomCards=jcRooms.map((r,i)=>{
-    const fields=fieldsFor(r.type);
-    const meas=fields.filter(f=>r.calc&&r.calc[f.k]).map(f=>`<div class="k">${f.label}</div><div class="v">${r.calc[f.k]}</div>`).join('');
-    const photos=(r.photos||[]).map(p=>`<img src="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:0 0 auto;">`).join('');
+    const cat=mdCategoryFor(r.category);const multi=cat.segment&&cat.segment.model==='multi';
+    const segHtml=(r.segments||[]).map((s,si)=>{
+      const meas=(cat.fields||[]).filter(f=>{const v=s.fields&&s.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(f=>`<div class="k">${f.label}</div><div class="v">${s.fields[f.k]}</div>`).join('');
+      const prq=(cat.prerequisites||[]).filter(p=>s.prereq&&s.prereq[p.k]&&s.prereq[p.k].status).map(p=>{const st=s.prereq[p.k].status;const col=st==='Not OK'?'var(--red)':(st==='OK'?'var(--green)':'var(--muted)');return `<div class="k">${p.label}</div><div class="v" style="color:${col}">${st}${s.prereq[p.k].note?' - '+s.prereq[p.k].note:''}</div>`;}).join('');
+      const photos=(s.photos||[]).map(p=>`<img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:0 0 auto;">`).join('');
+      const flagged=mdPrereqFlagged({prereq:s.prereq});
+      return `<div style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:8px">
+        ${multi?`<div style="font-weight:800;font-size:13px;color:var(--navy);margin-bottom:6px">${cat.segment.segLabel} ${si+1}${s.facing?' - '+s.facing:''}${flagged?' <span style="color:var(--red)">&#9888;</span>':''}</div>`:''}
+        ${meas?`<div class="kv">${meas}</div>`:'<div style="font-size:12px;color:var(--muted)">No measurements recorded.</div>'}
+        ${prq?`<div class="kv" style="margin-top:6px">${prq}</div>`:''}
+        ${photos?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">${photos}</div>`:''}
+      </div>`;
+    }).join('');
     let sketchImg='';
-    if(r._sketch&&r._sketch.strokes&&r._sketch.strokes.length){try{sketchImg=`<img src="${r._sketch.export()}" style="width:100%;border-radius:8px;border:1px solid var(--line);margin-bottom:8px;">`;}catch(e){}}
+    if(r._sketch&&r._sketch.strokes&&r._sketch.strokes.length){try{sketchImg=`<img src="${r._sketch.export()}" style="width:100%;border-radius:8px;border:1px solid var(--line);margin-top:8px;">`;}catch(e){}}
     return `<div class="card" style="margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:4px">
         <span style="background:var(--navy);color:#fff;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800">Room ${i+1}</span>
         <b style="font-size:15px">${r.name||'(unnamed)'}</b>
-        <span style="font-size:11px;background:${r.type==='wallpaper'?'var(--purplebg)':'#fff4d6'};color:${r.type==='wallpaper'?'var(--purple)':'#7a5800'};border-radius:6px;padding:2px 8px;font-weight:700">${r.type==='wallpaper'?'Wallpaper':'Flooring'}</span>
+        <span style="font-size:11px;background:#fff4d6;color:#7a5800;border-radius:6px;padding:2px 8px;font-weight:700">${cat.pdfLabel}${r.variant?' &middot; '+r.variant:''}</span>
         ${r.sku?`<span style="font-size:11.5px;color:var(--muted)">SKU: ${r.sku}</span>`:''}
       </div>
-      ${meas?`<div class="kv" style="margin-bottom:10px">${meas}</div>`:'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">No measurements recorded.</div>'}
+      ${segHtml}
       ${sketchImg}
-      ${photos?`<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px">${photos}</div>`:''}
-      ${r.notes?`<div style="font-size:12.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:9px">${r.notes}</div>`:''}
+      ${r.notes?`<div style="font-size:12.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:9px;margin-top:8px">${r.notes}</div>`:''}
     </div>`;
   }).join('');
   $("#jcBody").innerHTML=`
@@ -956,7 +1011,7 @@ function signAndComplete(o){
 }
 
 function showAuditSignature(o,ratings){
-  const roomSummary=jcRooms.map((r,i)=>`<div class="kv" style="margin-bottom:8px"><div class="k">Room ${i+1}</div><div class="v">${r.name||'(unnamed)'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU ${r.sku||'NA'}</div></div>`).join("");
+  const roomSummary=jcRooms.map((r,i)=>{const cat=mdCategoryFor(r.category);const n=(r.segments||[]).length;const segTxt=(cat.segment&&cat.segment.model==='multi')?' &middot; '+n+' '+(cat.segment.segLabel||'wall')+(n===1?'':'s'):'';return `<div class="kv" style="margin-bottom:8px"><div class="k">Room ${i+1}</div><div class="v">${r.name||'(unnamed)'} &middot; ${cat.pdfLabel}${r.variant?' ('+r.variant+')':''} &middot; SKU ${r.sku||'NA'}${segTxt}</div></div>`;}).join("");
   $("#jcBody").innerHTML=`
    <div class="card"><h2>Summary</h2><div class="kv">
      <div class="k">Client</div><div class="v">${o.name}</div>
@@ -993,7 +1048,7 @@ function showAuditSignature(o,ratings){
     o.status="completed";
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto",who:ME.name});
     if(o.id){
-      const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms.map(r=>({name:r.name,type:r.type,sku:r.sku,calc:r.calc||{},notes:r.notes||'',photos:r.photos||[],sketchStrokes:r.sketchStrokes||[]}))};
+      const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms};
       // Step 1: mark status completed immediately (small, fast — ensures order moves out of atsite in SM/admin)
       try{
         await sbPatch('audit_orders',o.id,{status:'completed',log:o.log});
@@ -1076,23 +1131,15 @@ async function genPDF(o){
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
-    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||r.type).pdfLabel,r.sku||'NA'])});
 
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
-    const fields=fieldsFor(r.type);
+    const _cat=mdCategoryFor(r.category||r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
-    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-      head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc[f.k]||'')])});
-    y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
     const sketchImg=renderSketchData(r);
-    const rPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
-    if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    if(rPhotos.length){const photo=await compressImg(rPhotos[0]);if(photo){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+(sketchImg?colW+12:0),y);try{doc.addImage(photo,'JPEG',M+(sketchImg?colW+12:0),y+6,colW,ih);}catch(e){}}}
-    y+=ih+18;
-    for(let pi=1;pi<rPhotos.length;pi++){const xp=await compressImg(rPhotos[pi]);if(xp){if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(pi+1),M,y);const xw=W-2*M,xh=xw*0.6;try{doc.addImage(xp,'JPEG',M,y+6,xw,xh);}catch(e){}y+=xh+18;}}
-    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
+    y=await mdPdfAuditRoom(doc,r,y,{M,W,H,compress:compressImg,sketchImg,header:()=>mdPdfHeader(doc,{title:'Site Audit Job Card',right:o.pi,M})});
   }
 
   // consent + signature page

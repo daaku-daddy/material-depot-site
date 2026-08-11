@@ -913,13 +913,7 @@ function setJobSearch(v){jobsSearch=v;drawJobs(document.getElementById('main'));
 /* ---- JOB DETAIL MODAL ---- */
 const AUDIT_FL_FIELDS=[['Area (sq.ft)','area'],['Boxes','boxes'],['Skirting (nos)','skirt'],['Skirting height (mm)','skirtH'],['L-profile','lprof'],['R-profile / Reducer','rprof'],['T-profile','tprof'],['Corner beading','corner']];
 const AUDIT_WP_FIELDS=[['Wall area (sq.ft)','warea'],['No. of rolls','rolls'],['Pattern repeat (mm)','repeat'],['Match type','match'],['Adhesive (packs)','adh'],['Primer','primer']];
-function jdRoomCard(r,i){
-  const fields=r.type==='wallpaper'?AUDIT_WP_FIELDS:AUDIT_FL_FIELDS;
-  const meas=fields.filter(([,k])=>r.calc&&r.calc[k]).map(([l,k])=>`<div class="jc-kv"><div class="jc-k">${l}</div><div class="jc-v">${r.calc[k]}</div></div>`).join('');
-  const photos=(r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]));
-  const photoHtml=photos.length?`<div class="jc-photos">${photos.slice(0,4).map(p=>`<img src="${p}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open(this.src)">`).join('')}</div>`:'';
-  return `<div class="jc-room"><div class="jc-room-head">Room ${i+1}: ${r.name||'—'} · ${r.type==='wallpaper'?'Wallpaper':'Flooring'} · SKU: ${r.sku||'NA'}</div>${meas?`<div class="jc-kvs">${meas}</div>`:''}${photoHtml}${r.notes?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Notes: ${r.notes}</div>`:''}</div>`;
-}
+function jdRoomCard(r,i){return mdAuditRoomHtml(r,i);}
 function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime())){const m=String(d).match(/\d{1,2}:\d{2}\s*(?:[AP]M)?/i);return m?m[0]+' (date unknown)':'—';}const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+ts;}
 function jdLog(log){return(log||[]).slice().reverse().slice(0,10).map(l=>{
   const mapLink=l.lat&&l.lng?`<a href="https://maps.google.com/?q=${l.lat},${l.lng}" target="_blank" rel="noopener" style="color:var(--blue);font-size:11px;margin-left:6px">📍 Map</a>`:'';
@@ -1208,22 +1202,14 @@ async function genAuditPDF(order,ticked){
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms summary',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},
-    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.type==='wallpaper'?'Wallpaper':'Flooring',r.sku||'NA'])});
+    head:[['#','Room','Type','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||r.type).pdfLabel,r.sku||'NA'])});
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
-    const fields=fieldsForA(r.type);
+    const _cat=mdCategoryFor(r.category||r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text((r.type==='wallpaper'?'Wallpaper':'Wooden Flooring')+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
-    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:9},styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:230,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-      head:[['Calculation','Value']],body:fields.map(f=>[f.label,(r.calc&&r.calc[f.k])||''])});
-    y=doc.lastAutoTable.finalY+12;const colW=(W-2*M-12)/2;const ih=colW*0.78;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'NA'),M,y+10);y+=24;
     const sketchImg=renderSketchA(r);
-    if(sketchImg){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('2D Diagram',M,y);try{doc.addImage(sketchImg,'JPEG',M,y+6,colW,ih);}catch(e){}}
-    const rPhotosA=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
-    if(rPhotosA.length){const p0=await _compressAdmin(rPhotosA[0]);if(p0){doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo',M+colW+12,y);try{doc.addImage(p0,'JPEG',M+colW+12,y+6,colW,ih);}catch(e){}}}
-    y+=ih+18;
-    for(let ap=1;ap<rPhotosA.length;ap++){const xp=await _compressAdmin(rPhotosA[ap]);if(!xp)continue;if(y+colW*0.78+20>H-M){doc.addPage();y=M;header();}doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text('Room Photo '+(ap+1),M,y);const aw=W-2*M,ah=aw*0.6;try{doc.addImage(xp,'JPEG',M,y+6,aw,ah);}catch(e){}y+=ah+18;}
-    if(r.notes){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Notes',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);const ls=doc.splitTextToSize(r.notes,W-2*M);doc.text(ls,M,y);}
+    y=await mdPdfAuditRoom(doc,r,y,{M,W,H,compress:_compressAdmin,sketchImg,header:()=>mdPdfHeader(doc,{title:'Site Audit Job Card',right:order.pi,M})});
   }
   doc.addPage();y=M;header();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
