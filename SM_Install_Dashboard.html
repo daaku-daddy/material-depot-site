@@ -549,6 +549,20 @@ async function detectCity(){
     CITY_ENABLED=rs.every(r=>Array.isArray(r));
   }catch(e){CITY_ENABLED=false;}
 }
+// Installer availability (weekly off + leave dates on profiles, shared with auditors). Deploy-safe:
+// inert until the columns exist. An off installer can't be assigned on that date.
+let AVAIL_ENABLED=false;
+async function detectAvail(){
+  try{const r=await sbGet('profiles?select=leave_dates&limit=1');AVAIL_ENABLED=Array.isArray(r);}catch(e){AVAIL_ENABLED=false;}
+}
+const _WDAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// True if this installer is off on YYYY-MM-DD: their weekly-off weekday, or a specific leave date.
+function isOffDay(a,ds){
+  if(!a||!AVAIL_ENABLED||!ds)return false;
+  if(a.weeklyOff!=null&&new Date(ds+'T00:00:00').getDay()===a.weeklyOff)return true;
+  if(Array.isArray(a.leaveDates)&&a.leaveDates.includes(ds))return true;
+  return false;
+}
 function cityScope(list){return (CITY_ENABLED&&cityFilter!=='all')?list.filter(o=>(o.city||'Bengaluru')===cityFilter):list;}
 function installersInCity(){return (CITY_ENABLED&&cityFilter!=='all')?INSTALLERS.filter(i=>(i.city||'Bengaluru')===cityFilter):INSTALLERS;}
 function renderCityToggle(){
@@ -749,8 +763,10 @@ function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner')
 /* ============== SUPABASE LOAD ============== */
 async function loadInstallers(){
   try{
-    const rows=await sbGet('profiles?role=in.(installer,auditor_installer)&select=id,name,email,installer_type'+(CITY_ENABLED?',city':''));
-    INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:'',city:r.city||'Bengaluru'}));
+    const rows=await sbGet('profiles?role=in.(installer,auditor_installer)&select=id,name,email,installer_type'+(CITY_ENABLED?',city':'')+(AVAIL_ENABLED?',weekly_off,leave_dates':''));
+    INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:'',city:r.city||'Bengaluru',weeklyOff:(r.weekly_off==null?null:r.weekly_off),leaveDates:Array.isArray(r.leave_dates)?r.leave_dates.slice():[]}));
+    // snapshot for the Installers-view Save diff (weekly_off / leave_dates)
+    INSTALLERS.forEach(a=>{a._orig={weeklyOff:a.weeklyOff,leaveDates:a.leaveDates.slice()};});
   }catch(e){console.error('loadInstallers',e);}
 }
 // Shadower pool = EVERYONE registered (any role can shadow any installation). store_staff excluded
@@ -1314,17 +1330,27 @@ function slotsView(){
 function installersView(){
   const rows=installersInCity().map(a=>{
     const load=a.type==="flooring"?flLoad(a.id,dstr(today))+"/"+FLOOR_DAY_CAP+" job":wpSlotLoad(a.id,dstr(today))+"/"+WP_DAY_SLOTS+" slots (3h each)";
+    const availCell=AVAIL_ENABLED?`<td style="min-width:200px">
+        <div style="font-size:11px;color:var(--muted)">Weekly off:</div>
+        <select data-weeklyoff="${a.id}" style="margin-top:3px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 6px;width:100%;background:#fff">
+          <option value="">No weekly off</option>
+          ${_WDAYS.map((w,i)=>`<option value="${i}"${a.weeklyOff===i?' selected':''}>Off every ${w}</option>`).join('')}
+        </select>
+        <div style="margin-top:6px;font-size:11px;color:var(--muted)">On leave (dates):</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${(a.leaveDates||[]).slice().sort().map(ld=>`<span style="display:inline-flex;align-items:center;gap:4px;background:#fdecea;color:var(--red);border-radius:12px;padding:2px 8px;font-size:11px">${fmtDate(ld)}<b data-delleave="${a.id}" data-ld="${ld}" style="cursor:pointer;font-size:13px;line-height:1">&times;</b></span>`).join('')||'<span style="font-size:11px;color:var(--muted)">none</span>'}</div>
+        <input type="date" data-addleave="${a.id}" style="margin-top:4px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 8px;width:100%" title="Pick a date to mark this installer on leave">
+      </td>`:'';
     return `<tr><td><div class="cust"><b>${a.name}</b><div>${a.phone}</div></div></td>
       <td><span class="skupill ${a.type==='wallpaper'?'cust':''}">${a.type==='wallpaper'?'Wallpaper':'Flooring'}</span></td>
       <td>${CITY_ENABLED?`<span class="chip" style="font-size:10px;padding:2px 8px;background:#e8eefb;color:var(--navy)">${a.city||'Bengaluru'}</span>`:a.zone}</td>
       <td>${a.type==="flooring"?"1 job/day":"3 slots/day (3h each)"}</td>
-      <td>${load} today</td></tr>`;
+      <td>${load} today</td>${availCell}</tr>`;
   }).join("");
   return `<div class="crumbs">Setup / Installers</div>
   <div class="pagehead"><div><h1>Installers</h1><p>Typed installers. Flooring jobs go only to flooring installers; wallpaper only to wallpaper installers.</p></div>
-  <div class="actions"><button class="btn navy sm" onclick="openAddStaff()">+ Add Staff</button></div></div>
-  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>3 slots per installer per day</b> — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h). Custom multi-day mode bypasses these limits.</div>
-  <div class="tablecard"><table><thead><tr><th>Installer</th><th>Type</th><th>Zone</th><th>Capacity</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button>${AVAIL_ENABLED?`<button class="btn navy sm" id="saveInstAvail">Save availability</button>`:''}</div></div>
+  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>3 slots per installer per day</b> — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h). Custom multi-day mode bypasses these limits.${AVAIL_ENABLED?' <b>Weekly off</b> / <b>On leave</b> dates remove the installer from assignment on those days — remember to click Save availability.':''}</div>
+  <div class="tablecard"><table><thead><tr><th>Installer</th><th>Type</th><th>Zone</th><th>Capacity</th><th>Load</th>${AVAIL_ENABLED?'<th>Availability</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ============== DRAWER ============== */
@@ -1633,6 +1659,11 @@ function renderAssignSection(o,sj,container){
   let customMode=assigns.length>0&&assigns[0].mode==='custom';
   // Start in slot-edit mode when rescheduling or no slot booked yet
   if(container._editingSlot===undefined)container._editingSlot=sj.status==='reschedule'||!sj.date;
+  // Build installer <option>s, flagging anyone on leave / weekly off for the booking date (dateForOff).
+  // Label only (a live date change won't re-render) — the authoritative block is at Save.
+  function instOptions(a,dateForOff){
+    return pool.map(p=>{const off=isOffDay(p,dateForOff);const tag=off?(Array.isArray(p.leaveDates)&&p.leaveDates.includes(dateForOff)?' · on leave':' · weekly off'):'';return `<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}${tag}</option>`;}).join('');
+  }
 
   function draw(){
     const rolls=totalRolls(sj);const slotsN=slotsForWp(rolls);
@@ -1663,7 +1694,7 @@ function renderAssignSection(o,sj,container){
             <div><label class="lbl-sm">Installer</label>
               <select data-instpick="${idx}" class="inp-sm">
                 <option value="">— pick installer —</option>
-                ${pool.map(p=>`<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}</option>`).join('')}
+                ${instOptions(a,(a.dates&&a.dates[0])||a.date||'')}
               </select>
             </div>
             <div class="dr-row">
@@ -1733,7 +1764,7 @@ function renderAssignSection(o,sj,container){
               <div><label class="lbl-sm">Installer</label>
                 <select data-instpick="${idx}" class="inp-sm">
                   <option value="">&#8212; pick installer &#8212;</option>
-                  ${pool.map(p=>`<option value="${p.id}" ${a.installer_id===p.id?'selected':''}>${p.name}</option>`).join('')}
+                  ${instOptions(a,sj.date||'')}
                 </select>
               </div>
             </div>
@@ -1834,6 +1865,15 @@ function renderAssignSection(o,sj,container){
         // Standard mode: slot already booked — stamp date/time onto each assignment
         const d=sj.date;const t=sj.slot&&/^\d{1,2}:\d{2}$/.test(sj.slot)?sj.slot:'09:00';
         valid.forEach(a=>{a.date=d;a.slots=[t];a.mode='standard';});
+      }
+      // Availability guard — an installer on their weekly off / a leave date can't be assigned that day.
+      if(AVAIL_ENABLED){
+        for(const a of valid){
+          const inst=installerById(a.installer_id);if(!inst)continue;
+          const ds=(a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]));
+          const bad=ds.find(d=>isOffDay(inst,d));
+          if(bad){toast(inst.name+' is unavailable on '+fmtDate(bad)+' ('+((inst.leaveDates||[]).includes(bad)?'on leave':'weekly off')+') — pick another date or installer.');return;}
+        }
       }
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
@@ -2439,6 +2479,24 @@ function wire(){
   document.querySelectorAll(".daycol[data-calday]").forEach(col=>col.onclick=e=>{if(e.target.closest(".calmini"))return;calSelDay=col.dataset.calday;render();});
   document.querySelectorAll(".calmini[data-pi]").forEach(m=>m.onclick=e=>{e.stopPropagation();openOrder(m.dataset.pi);});
   document.querySelectorAll(".caldet-card[data-pi]").forEach(c=>c.onclick=e=>{if(e.target.closest(".maplink"))return;openOrder(c.dataset.pi);});
+  // Installers view — availability editor (weekly off + leave dates)
+  document.querySelectorAll("[data-weeklyoff]").forEach(sel=>sel.onchange=()=>{const a=INSTALLERS.find(x=>x.id===sel.dataset.weeklyoff);if(a){a.weeklyOff=(sel.value===''?null:parseInt(sel.value));render();}});
+  document.querySelectorAll("[data-addleave]").forEach(inp=>inp.onchange=()=>{const a=INSTALLERS.find(x=>x.id===inp.dataset.addleave);if(!a||!inp.value)return;if(!Array.isArray(a.leaveDates))a.leaveDates=[];if(!a.leaveDates.includes(inp.value))a.leaveDates.push(inp.value);render();});
+  document.querySelectorAll("[data-delleave]").forEach(b=>b.onclick=()=>{const a=INSTALLERS.find(x=>x.id===b.dataset.delleave);if(!a)return;a.leaveDates=(a.leaveDates||[]).filter(d=>d!==b.dataset.ld);render();});
+  if($("#saveInstAvail"))$("#saveInstAvail").onclick=async()=>{
+    const btn=$("#saveInstAvail");btn.disabled=true;btn.textContent="Saving…";
+    const patches=[];
+    INSTALLERS.forEach(a=>{
+      const o=a._orig||{};const body={};
+      if((a.weeklyOff==null?null:a.weeklyOff)!==(o.weeklyOff==null?null:o.weeklyOff))body.weekly_off=(a.weeklyOff==null?null:a.weeklyOff);
+      const lc=(a.leaveDates||[]).slice().sort(),lo=(o.leaveDates||[]).slice().sort();
+      if(JSON.stringify(lc)!==JSON.stringify(lo))body.leave_dates=lc;
+      if(Object.keys(body).length)patches.push(sbPatch('profiles',a.id,body).then(()=>{a._orig={weeklyOff:a.weeklyOff,leaveDates:(a.leaveDates||[]).slice()};}).catch(()=>{}));
+    });
+    await Promise.all(patches);
+    btn.disabled=false;btn.textContent="Save availability";
+    toast("Installer availability saved");render();
+  };
 }
 
 document.querySelectorAll("#rail a").forEach(a=>{
@@ -2996,7 +3054,7 @@ async function saveFoamCfg(){
   catch(e){toast('⚠ Could not save — '+(e.message||'the app_settings table may be missing (run the SQL)'));}
 }
 
-detectCity().then(()=>Promise.all([loadInstallers(),loadShadowers(),loadOrders(),loadFoam()])).then(()=>{
+Promise.all([detectCity(),detectAvail()]).then(()=>Promise.all([loadInstallers(),loadShadowers(),loadOrders(),loadFoam()])).then(()=>{
   renderCityToggle();
   counts();
   setInterval(()=>{if(!document.hidden)loadOrders();},60000);
