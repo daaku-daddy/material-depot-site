@@ -45,7 +45,8 @@ Role-based web app for Material Depot's field operations. Plain HTML/CSS/JS, no 
 - No RLS — anon key has full read+write access
 
 ### Table: `profiles`
-- Columns: `id` (uuid), `name`, `email`, `role`, `passcode`, `installer_type`, `created_at`, `active_from` (text, nullable), `training_stages` (jsonb, default `[]`), `pay_rates` (jsonb), `city` (text)
+- Columns: `id` (uuid), `name`, `email`, `role`, `passcode`, `installer_type`, `created_at`, `active_from` (text, nullable), `training_stages` (jsonb, default `[]`), `pay_rates` (jsonb), `city` (text), `weekly_off` (int, 0=Sun..6=Sat, nullable — recurring weekly off day), `leave_dates` (jsonb array of `YYYY-MM-DD`, default `[]` — specific leave dates)
+- `weekly_off`/`leave_dates` (auditor availability, added 2026-08-11): set by the SM in `SM_Audit_Dashboard.html` → Auditors & Caps (weekly-off dropdown + leave-date chips). An auditor who is on their weekly off or a leave date is removed from availability everywhere it matters: `capFor()` returns 0 (so the SM assignment picker treats them as full/unavailable), and `Store_Team_App.html`'s `AUDITOR_COUNT` excludes them for that date. Deploy-safe / probe-gated (`AVAIL_ENABLED`, same pattern as `CITY_ENABLED` note 88 — stays fully inert until both columns exist). Weekly off is any weekday per auditor (a "floating off"), not hardcoded Sunday. Opt-out model: everyone available by default, SM marks exceptions.
 - Roles: `admin`, `service_mgr`, `site_auditor`, `installer`, `auditor_installer`, `store_staff`
 - `training_stages`: **INERT as of note 97** — the entire training/secondary-role lifecycle (and the `site_shadower` role) was removed when shadowing was generalized. The column is left in place (harmless, no DROP) but nothing reads or writes it anymore. `site_shadower` is no longer a role value at all.
 - `installer_type`: `'flooring'` or `'wallpaper'` (required for installer + auditor_installer)
@@ -66,6 +67,12 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS active_from text;
 -- Training lifecycle (note 85) — INERT as of note 97 (shadowing generalized, training removed).
 -- The column already exists; nothing reads/writes it now. No DROP (harmless). Kept for the record:
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS training_stages jsonb DEFAULT '[]'::jsonb;
+
+-- Auditor availability (added 2026-08-11) — weekly off day + specific leave dates. Probe-gated
+-- (AVAIL_ENABLED), so the app stays inert and behaves exactly as before until BOTH columns exist;
+-- it self-activates (no redeploy) once these run. Run in the Supabase SQL Editor:
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS weekly_off int;                          -- 0=Sun .. 6=Sat, null=none
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS leave_dates jsonb DEFAULT '[]'::jsonb;    -- ["YYYY-MM-DD", ...]
 
 -- City segregation (note 88) — Bengaluru/Hyderabad on profiles + both order tables:
 -- ✅ RUN + ACTIVATED 2026-08-04 (all 3 probes now return arrays; backfill = 297 audit / 251 install

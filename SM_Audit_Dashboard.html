@@ -494,6 +494,20 @@ async function detectCity(){
     CITY_ENABLED=rs.every(r=>Array.isArray(r));
   }catch(e){CITY_ENABLED=false;}
 }
+// Auditor availability (weekly off + leave dates on profiles). Deploy-safe: stays inert until the
+// `weekly_off`/`leave_dates` columns exist (probe returns a non-array error object otherwise).
+let AVAIL_ENABLED=false;
+async function detectAvail(){
+  try{const r=await sbGet('profiles?select=leave_dates&limit=1');AVAIL_ENABLED=Array.isArray(r);}catch(e){AVAIL_ENABLED=false;}
+}
+const _WDAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// True if the auditor is off on this YYYY-MM-DD: their weekly-off weekday, or a specific leave date.
+function isOffDay(a,ds){
+  if(!a||!AVAIL_ENABLED)return false;
+  if(a.weeklyOff!=null&&new Date(ds+'T00:00:00').getDay()===a.weeklyOff)return true;
+  if(Array.isArray(a.leaveDates)&&a.leaveDates.includes(ds))return true;
+  return false;
+}
 // City-scope a list of orders for the active toggle (identity when city is off or 'all').
 function cityScope(list){return (CITY_ENABLED&&cityFilter!=='all')?list.filter(o=>(o.city||'Bengaluru')===cityFilter):list;}
 function auditorsInCity(){return (CITY_ENABLED&&cityFilter!=='all')?AUDITORS.filter(a=>(a.city||'Bengaluru')===cityFilter):AUDITORS;}
@@ -520,6 +534,7 @@ const CAPS={};
 function capFor(aid,ds){
   const a=AUDITORS.find(x=>x.id===aid);
   if(a&&a.activeFrom&&ds<a.activeFrom)return 0; // not yet active on this date
+  if(a&&isOffDay(a,ds))return 0; // on leave / weekly off this date
   const c=CAPS[aid];if(c&&c[ds]!==undefined)return c[ds];return DEFAULT_CAP;
 }
 function setCap(aid,ds,v){if(!CAPS[aid])CAPS[aid]={};CAPS[aid][ds]=v;try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}}
@@ -555,8 +570,10 @@ function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner')
 /* ============== SUPABASE LOAD ============== */
 async function loadAuditors(){
   try{
-    const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email,active_from'+(CITY_ENABLED?',city':''));
-    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null,city:r.city||'Bengaluru'}));
+    const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email,active_from'+(CITY_ENABLED?',city':'')+(AVAIL_ENABLED?',weekly_off,leave_dates':''));
+    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null,city:r.city||'Bengaluru',weeklyOff:(r.weekly_off==null?null:r.weekly_off),leaveDates:Array.isArray(r.leave_dates)?r.leave_dates.slice():[]}));
+    // snapshot for the Auditors & Caps Save diff (active_from / weekly_off / leave_dates)
+    AUDITORS.forEach(a=>{a._orig={activeFrom:a.activeFrom,weeklyOff:a.weeklyOff,leaveDates:a.leaveDates.slice()};});
     AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
   }catch(e){console.error('loadAuditors',e);}
 }
@@ -954,7 +971,10 @@ function auditorsView(){
     const cells=days.map(d=>{
       const ds=dstr(d);
       const inactive=a.activeFrom&&ds<a.activeFrom;
-      return `<td><input type="number" min="0" value="${capFor(a.id,ds)}" data-cap="${a.id}" data-date="${ds}"${inactive?' disabled style="opacity:.35;background:#f5f5f5"':''}></td>`;
+      const off=isOffDay(a,ds);
+      const dim=inactive||off;
+      const offTitle=off?((a.leaveDates||[]).includes(ds)?' title="On leave"':' title="Weekly off"'):'';
+      return `<td><input type="number" min="0" value="${capFor(a.id,ds)}" data-cap="${a.id}" data-date="${ds}"${dim?' disabled style="opacity:.35;background:#f5f5f5"'+offTitle:''}></td>`;
     }).join("");
     return `<tr>
       <td class="audname" style="min-width:160px">
@@ -964,6 +984,15 @@ function auditorsView(){
         </div>
         <div style="margin-top:6px;font-size:11px;color:var(--muted)">Active from:</div>
         <input type="date" style="margin-top:3px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 8px;outline:none;width:100%" value="${a.activeFrom||''}" data-activefrom="${a.id}" title="Leave blank = active immediately. Set a future date = available from that date.">
+        ${AVAIL_ENABLED?`
+        <div style="margin-top:8px;font-size:11px;color:var(--muted)">Weekly off:</div>
+        <select data-weeklyoff="${a.id}" style="margin-top:3px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 6px;outline:none;width:100%;background:#fff">
+          <option value="">No weekly off</option>
+          ${_WDAYS.map((w,i)=>`<option value="${i}"${a.weeklyOff===i?' selected':''}>Off every ${w}</option>`).join('')}
+        </select>
+        <div style="margin-top:8px;font-size:11px;color:var(--muted)">On leave (dates):</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${(a.leaveDates||[]).slice().sort().map(ld=>`<span style="display:inline-flex;align-items:center;gap:4px;background:#fdecea;color:var(--red);border-radius:12px;padding:2px 8px;font-size:11px">${fmtDate(ld)}<b data-delleave="${a.id}" data-ld="${ld}" style="cursor:pointer;font-size:13px;line-height:1">&times;</b></span>`).join('')||'<span style="font-size:11px;color:var(--muted)">none</span>'}</div>
+        <input type="date" data-addleave="${a.id}" style="margin-top:4px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 8px;outline:none;width:100%" title="Pick a date to mark this auditor on leave">`:''}
       </td>
       ${cells}
     </tr>`;
@@ -971,7 +1000,7 @@ function auditorsView(){
   return `<div class="crumbs">Setup / Auditors &amp; caps</div>
   <div class="pagehead"><div><h1>Auditors &amp; daily caps</h1><p>Mark each auditor as active (with optional start date) and set their daily order cap.</p></div>
    <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button><button class="btn navy sm" id="saveCaps">Save</button></div></div>
-  <div class="note"><b>Active from</b>: leave blank = active now. Set a future date = auditor starts accepting orders from that date. <b>Daily cap</b>: max audit orders per day (default ${DEFAULT_CAP}). Set to 0 to make unavailable on a specific day. Greyed cells = before start date.</div>
+  <div class="note"><b>Active from</b>: leave blank = active now. Set a future date = auditor starts accepting orders from that date. <b>Daily cap</b>: max audit orders per day (default ${DEFAULT_CAP}). Set to 0 to make unavailable on a specific day. Greyed cells = before start date${AVAIL_ENABLED?', on a weekly off, or on leave':''}.${AVAIL_ENABLED?' <b>Weekly off</b> / <b>On leave</b> dates remove the auditor from availability everywhere (assignment picker and the Store Team count) — remember to click Save.':''}</div>
   <div class="tablecard capgrid"><table><thead><tr><th class="audname" style="min-width:160px">Auditor</th>${headDays}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1716,20 +1745,27 @@ function wire(){
     catch(e){toast("Restore failed — "+e.message);b.disabled=false;b.textContent="Restore";}
   });
   document.querySelectorAll("[data-cap]").forEach(inp=>inp.onchange=()=>{setCap(inp.dataset.cap,inp.dataset.date,parseInt(inp.value)||0);});
+  // Keep in-memory active_from in sync so a re-render (adding a leave date / weekly off) can't revert an unsaved edit.
+  document.querySelectorAll("[data-activefrom]").forEach(inp=>inp.onchange=()=>{const a=AUDITORS.find(x=>x.id===inp.dataset.activefrom);if(a)a.activeFrom=inp.value||null;});
+  document.querySelectorAll("[data-weeklyoff]").forEach(sel=>sel.onchange=()=>{const a=AUDITORS.find(x=>x.id===sel.dataset.weeklyoff);if(a){a.weeklyOff=(sel.value===''?null:parseInt(sel.value));render();}});
+  document.querySelectorAll("[data-addleave]").forEach(inp=>inp.onchange=()=>{const a=AUDITORS.find(x=>x.id===inp.dataset.addleave);if(!a||!inp.value)return;if(!Array.isArray(a.leaveDates))a.leaveDates=[];if(!a.leaveDates.includes(inp.value))a.leaveDates.push(inp.value);render();});
+  document.querySelectorAll("[data-delleave]").forEach(b=>b.onclick=()=>{const a=AUDITORS.find(x=>x.id===b.dataset.delleave);if(!a)return;a.leaveDates=(a.leaveDates||[]).filter(d=>d!==b.dataset.ld);render();});
   if($("#saveCaps"))$("#saveCaps").onclick=async()=>{
     const btn=$("#saveCaps");btn.disabled=true;btn.textContent="Saving…";
     try{localStorage.setItem('md_audit_caps',JSON.stringify(CAPS));}catch(e){}
-    // Persist active_from changes to DB for each auditor
-    const activeFromInputs=document.querySelectorAll("[data-activefrom]");
+    // Read latest active_from inputs into memory (onchange may not have fired if the field wasn't blurred).
+    document.querySelectorAll("[data-activefrom]").forEach(inp=>{const a=AUDITORS.find(x=>x.id===inp.dataset.activefrom);if(a)a.activeFrom=inp.value||null;});
+    // Persist active_from + (when enabled) weekly_off / leave_dates for each auditor, diffed against its snapshot.
     const patches=[];
-    activeFromInputs.forEach(inp=>{
-      const aid=inp.dataset.activefrom;
-      const a=AUDITORS.find(x=>x.id===aid);
-      const newVal=inp.value||null;
-      if(a&&a.activeFrom!==newVal){
-        a.activeFrom=newVal; // update in-memory
-        patches.push(sbPatch('profiles',aid,{active_from:newVal}).catch(()=>{}));
+    AUDITORS.forEach(a=>{
+      const o=a._orig||{};const body={};
+      if((a.activeFrom||null)!==(o.activeFrom||null))body.active_from=a.activeFrom||null;
+      if(AVAIL_ENABLED){
+        if((a.weeklyOff==null?null:a.weeklyOff)!==(o.weeklyOff==null?null:o.weeklyOff))body.weekly_off=(a.weeklyOff==null?null:a.weeklyOff);
+        const lc=(a.leaveDates||[]).slice().sort(),lo=(o.leaveDates||[]).slice().sort();
+        if(JSON.stringify(lc)!==JSON.stringify(lo))body.leave_dates=lc;
       }
+      if(Object.keys(body).length)patches.push(sbPatch('profiles',a.id,body).then(()=>{a._orig={activeFrom:a.activeFrom,weeklyOff:a.weeklyOff,leaveDates:(a.leaveDates||[]).slice()};}).catch(()=>{}));
     });
     await Promise.all(patches);
     btn.disabled=false;btn.textContent="Save";
@@ -2107,7 +2143,7 @@ async function _drawLiveLocations(m){
 }
 
 render();
-detectCity().then(()=>Promise.all([loadAuditors(),loadShadowers(),loadOrders()])).then(()=>{
+Promise.all([detectCity(),detectAvail()]).then(()=>Promise.all([loadAuditors(),loadShadowers(),loadOrders()])).then(()=>{
   renderCityToggle();
   setInterval(()=>{if(!document.hidden)loadOrders();},30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});

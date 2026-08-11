@@ -199,6 +199,19 @@ async function detectCity(){
     CITY_ENABLED=rs.every(r=>Array.isArray(r));
   }catch(e){CITY_ENABLED=false;}
 }
+// Auditor availability (weekly off + leave dates on profiles, set by the SM). Deploy-safe: inert until
+// the columns exist. When enabled, an off auditor is excluded from AUDITOR_COUNT for that date.
+let AVAIL_ENABLED=false;
+async function detectAvail(){
+  try{const r=await sbGet('profiles?select=leave_dates&limit=1');AVAIL_ENABLED=Array.isArray(r);}catch(e){AVAIL_ENABLED=false;}
+}
+// True if this auditor row is off on YYYY-MM-DD: their weekly-off weekday, or a specific leave date.
+function auditorOff(a,ds){
+  if(!AVAIL_ENABLED)return false;
+  if(a.weekly_off!=null&&new Date(ds+'T00:00:00').getDay()===a.weekly_off)return true;
+  if(Array.isArray(a.leave_dates)&&a.leave_dates.includes(ds))return true;
+  return false;
+}
 
 /* ── Utilities ───────────────────────────────────────────────────────────────── */
 function dstr(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
@@ -279,7 +292,7 @@ async function startApp(){
   if(MYSTORE&&!STORES.includes(MYSTORE)){localStorage.removeItem('md_store');MYSTORE=null;}
   document.getElementById('appMain').style.display='block';
   renderHeader();
-  await detectCity();
+  await Promise.all([detectCity(),detectAvail()]);
   if(!MYSTORE){showStorePicker(false);return;}
   initDateNav();
   loadDay(SELECTED_DATE||dstr(today()));
@@ -340,22 +353,23 @@ function initDateNav(){
 /* ── Load day data ───────────────────────────────────────────────────────────── */
 async function loadDay(date,silent=false){
   SELECTED_DATE=date;
-  // detectCity() runs once at boot; if that probe hit a transient network failure, city scoping would
-  // stay off for the ENTIRE session (never re-checked on the 30s refresh) and the auditor count would
-  // pool BOTH cities. Retry detection here while it's still disabled so it self-heals on the next load.
+  // detectCity()/detectAvail() run once at boot; if a probe hit a transient network failure the feature
+  // would stay off for the ENTIRE session (never re-checked on the 30s refresh) — city scoping would
+  // pool BOTH cities, or leave/weekly-off wouldn't subtract. Retry while disabled so it self-heals.
   if(!CITY_ENABLED)await detectCity();
+  if(!AVAIL_ENABLED)await detectAvail();
   if(!silent)document.getElementById('slotContent').innerHTML='<div class="loading-box"><span class="spin dark"></span><div style="margin-top:12px">Loading availability…</div></div>';
   try{
     const [orders,auditors]=await Promise.all([
       sbGet('audit_orders?select=id,pi,po,customer_name,phone,status,slot,date,auditor_id,bm,audit_ticked,log&date=eq.'+date+'&status=neq.deleted'),
-      sbGet('profiles?select=id,active_from'+(CITY_ENABLED?',city':'')+'&role=in.(site_auditor,auditor_installer)'),
+      sbGet('profiles?select=id,active_from'+(CITY_ENABLED?',city':'')+(AVAIL_ENABLED?',weekly_off,leave_dates':'')+'&role=in.(site_auditor,auditor_installer)'),
     ]);
     DAY_ORDERS=Array.isArray(orders)?orders:[];
-    // Only count auditors active on this date (active_from null = always active, note 44) AND — when
-    // city is enabled — only auditors in THIS store's city (a Hyderabad store counts Hyderabad auditors).
+    // Count auditors who are actually available on this date: active (active_from null = always, note 44),
+    // in THIS store's city (when enabled), and NOT on a weekly off / leave date (when enabled).
     const myCity=CITY_ENABLED?STORE_CITY[MYSTORE]:null;
     if(CITY_ENABLED&&MYSTORE&&!myCity)console.warn('Store "'+MYSTORE+'" has no city mapping — auditor count is NOT city-scoped (counting all cities).');
-    const activeAuditors=(Array.isArray(auditors)?auditors:[]).filter(a=>(!a.active_from||a.active_from<=date)&&(!myCity||(a.city||'Bengaluru')===myCity));
+    const activeAuditors=(Array.isArray(auditors)?auditors:[]).filter(a=>(!a.active_from||a.active_from<=date)&&(!myCity||(a.city||'Bengaluru')===myCity)&&!auditorOff(a,date));
     AUDITOR_COUNT=activeAuditors.length||1;
     renderSlots(date);
   }catch(e){
