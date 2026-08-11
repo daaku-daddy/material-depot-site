@@ -285,9 +285,31 @@
   @media(max-width:900px){.rail{display:none;}.stats{grid-template-columns:repeat(2,1fr);}.calgrid{grid-template-columns:repeat(4,1fr);}}
 #connBanner{position:sticky;top:56px;z-index:39;background:#7a1515;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;display:none;align-items:center;justify-content:center;gap:12px;}
 #connBanner.show{display:flex;}
+  /* Searchable shadower multiselect */
+  .shsel{position:relative;}
+  .shsel-head{display:flex;align-items:center;gap:8px;min-height:40px;border:1.5px solid var(--line);border-radius:9px;padding:6px 10px;background:#fff;cursor:pointer;}
+  .shsel-head:hover{border-color:var(--navy);}
+  .shsel.open .shsel-head{border-color:var(--navy);box-shadow:0 0 0 3px rgba(31,58,95,.09);}
+  .shsel-summary{flex:1;display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-width:0;}
+  .shsel-ph{color:var(--muted);font-size:13.5px;}
+  .shsel-chip{display:inline-flex;align-items:center;background:var(--navy);color:#fff;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;line-height:1.3;}
+  .shsel-chip.shsel-more{background:var(--muted);}
+  .shsel-caret{color:var(--muted);font-size:11px;transition:transform .15s;flex-shrink:0;}
+  .shsel.open .shsel-caret{transform:rotate(180deg);}
+  .shsel-panel{display:none;margin-top:6px;border:1.5px solid var(--line);border-radius:9px;background:#fff;overflow:hidden;}
+  .shsel.open .shsel-panel{display:block;}
+  .shsel-search{width:100%;border:none;border-bottom:1px solid var(--line);padding:9px 12px;font-size:13.5px;outline:none;box-sizing:border-box;}
+  .shsel-list{max-height:210px;overflow-y:auto;padding:4px 6px;}
+  .shsel-opt{display:flex;align-items:center;gap:9px;padding:7px 6px;font-size:13.5px;cursor:pointer;border-radius:6px;}
+  .shsel-opt:hover{background:#f1f4f9;}
+  .shsel-opt input{width:16px;height:16px;flex-shrink:0;cursor:pointer;margin:0;}
+  .shsel-none,.shsel-empty{padding:10px 10px;color:var(--muted);font-size:13px;}
+  .shsel-empty{display:none;border-top:1px solid var(--line);}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="/md-audit-registry.js"></script>
+<script src="/md-pdf.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
@@ -848,17 +870,54 @@ function parseShadowers(emailStr,nameStr){
   return es.map((e,i)=>({email:e,name:ns[i]||e}));
 }
 function joinShadowers(arr){return {email:arr.map(s=>s.email).join(','),name:arr.map(s=>s.name).join(',')};}
+// Searchable dropdown multiselect. Inner list keeps id="shadowBox_<sjid>" + .shadowchk boxes, so the
+// inline reader in renderAssignSection (container.querySelector('#shadowBox_'+sj.id)) is unchanged.
 function shadowerSelectHtmlInstall(sj){
   const cur=parseShadowers(sj.shadower_email,sj.shadower_name);
   const curSet=new Map(cur.map(s=>[s.email,s.name]));
   const opts=SHADOWERS.slice();
   cur.forEach(s=>{if(!opts.some(p=>p.email===s.email))opts.push({email:s.email,name:s.name});});
   opts.sort((a,b)=>(curSet.has(b.email)?1:0)-(curSet.has(a.email)?1:0));
-  return `<div style="margin-top:8px"><label class="lbl-sm">Shadowed by (optional) — tick anyone observing this installation</label>
-    <div id="shadowBox_${sj.id}" style="max-height:170px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff">
-      ${opts.map(s=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:13.5px;cursor:pointer"><input type="checkbox" class="shadowchk" value="${_attrEsc(s.email)}" data-name="${_attrEsc(s.name)}" ${curSet.has(s.email)?'checked':''}> <span>${s.name}${s.role&&_SH_ROLE[s.role]?' · '+_SH_ROLE[s.role]:''}</span></label>`).join('')||'<div style="padding:6px 2px;color:var(--muted);font-size:13px">No people available</div>'}
-    </div></div>`;
+  return `<div style="margin-top:8px"><label class="lbl-sm">Shadowed by (optional) — search & tick anyone observing this installation</label>
+    ${shadowerWidgetHtml('shadowBox_'+sj.id,opts,curSet)}</div>`;
 }
+// Shared builder for the searchable dropdown. boxId is the inner list's id (the read logic keys off it).
+function shadowerWidgetHtml(boxId,opts,curSet){
+  const names=[...curSet.values()];
+  const summary=names.length
+    ? names.slice(0,3).map(n=>`<span class="shsel-chip">${n}</span>`).join('')+(names.length>3?`<span class="shsel-chip shsel-more">+${names.length-3}</span>`:'')
+    : '<span class="shsel-ph">Select people…</span>';
+  const rows=opts.map(s=>`<label class="shsel-opt" data-sname="${_attrEsc((s.name||'').toLowerCase())}"><input type="checkbox" class="shadowchk" value="${_attrEsc(s.email)}" data-name="${_attrEsc(s.name)}" ${curSet.has(s.email)?'checked':''} onchange="_shadowSummary('${boxId}')"> <span>${s.name}${s.role&&_SH_ROLE[s.role]?' · '+_SH_ROLE[s.role]:''}</span></label>`).join('');
+  return `<div class="shsel" id="${boxId}_wrap">
+      <div class="shsel-head" onclick="_shadowToggle('${boxId}')"><div class="shsel-summary" id="${boxId}_summary">${summary}</div><span class="shsel-caret">&#9662;</span></div>
+      <div class="shsel-panel">
+        <input type="text" class="shsel-search" id="${boxId}_search" placeholder="Search name…" oninput="_shadowFilter('${boxId}',this.value)" onclick="event.stopPropagation()">
+        <div class="shsel-list" id="${boxId}">${rows}</div>
+        ${opts.length?`<div class="shsel-empty" id="${boxId}_empty">No matches</div>`:'<div class="shsel-none">No people available</div>'}
+      </div>
+    </div>`;
+}
+// Open/close the dropdown (only one open at a time); focus & reset the search on open.
+function _shadowToggle(id){
+  const w=document.getElementById(id+'_wrap');if(!w)return;
+  const wasOpen=w.classList.contains('open');
+  document.querySelectorAll('.shsel.open').forEach(x=>x.classList.remove('open'));
+  if(!wasOpen){w.classList.add('open');const s=document.getElementById(id+'_search');if(s){s.value='';_shadowFilter(id,'');setTimeout(()=>{try{s.focus();}catch(e){}},30);}}
+}
+// Filter the rows by name; show a "No matches" line when nothing is visible.
+function _shadowFilter(id,q){
+  q=(q||'').trim().toLowerCase();const list=document.getElementById(id);if(!list)return;let vis=0;
+  list.querySelectorAll('.shsel-opt').forEach(o=>{const n=o.getAttribute('data-sname')||'';const show=!q||n.indexOf(q)>=0;o.style.display=show?'':'none';if(show)vis++;});
+  const emp=document.getElementById(id+'_empty');if(emp)emp.style.display=vis?'none':'block';
+}
+// Refresh the head summary chips from the currently-checked boxes.
+function _shadowSummary(id){
+  const list=document.getElementById(id);const sum=document.getElementById(id+'_summary');if(!list||!sum)return;
+  const names=[...list.querySelectorAll('.shadowchk')].filter(b=>b.checked).map(b=>b.getAttribute('data-name')||b.value);
+  sum.innerHTML=names.length?names.slice(0,3).map(n=>`<span class="shsel-chip">${n}</span>`).join('')+(names.length>3?`<span class="shsel-chip shsel-more">+${names.length-3}</span>`:''):'<span class="shsel-ph">Select people…</span>';
+}
+// Close any open dropdown when clicking outside it (wired once).
+if(!window._shadowOutsideWired){window._shadowOutsideWired=true;document.addEventListener('click',e=>{if(!e.target.closest('.shsel'))document.querySelectorAll('.shsel.open').forEach(x=>x.classList.remove('open'));});}
 function chip(st){const s=STATUS[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>&#128205;</span>${addr}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
@@ -2748,11 +2807,11 @@ async function _compressInst(dataUrl){
 async function genInstallPDFSM(o,sj,jobcard){
   const {jsPDF}=window.jspdf;const doc=new jsPDF('p','pt','a4');
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40;let y=M;
-  const navy=[31,58,95],blue=[46,108,168],muted=[90,100,120];
+  const navy=MD_INK,blue=MD_INK,muted=MD_MUTED;
   const rooms=jobcard.rooms||[];
   const primaryAssign=sj.assignments&&(sj.assignments.find(a=>a.primary)||sj.assignments[0]);
   const installerName=(primaryAssign&&primaryAssign.installer_name)||(sj.installer&&(installerById(sj.installer)||{}).name)||(sj.installer_email||'—');
-  function hdr(){doc.setFillColor(...navy);doc.rect(M,y,34,34,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('MD',M+9,y+22);doc.setFontSize(10);doc.setTextColor(...blue);doc.text('MATERIAL DEPOT',M+44,y+13);doc.setFontSize(15);doc.setTextColor(...navy);doc.text('Installation Job Card',M+44,y+30);y+=46;doc.setDrawColor(...navy);doc.setLineWidth(1.2);doc.line(M,y,W-M,y);y+=14;}
+  function hdr(){y=mdPdfHeader(doc,{title:'Installation Job Card',right:o.pi,M});}
   hdr();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
     body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Installer',installerName],['Type',sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(sj.date)]]});
