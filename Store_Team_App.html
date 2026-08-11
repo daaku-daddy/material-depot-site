@@ -273,6 +273,10 @@ function setStore(s){localStorage.setItem('md_store',s);}
 /* ── App boot ────────────────────────────────────────────────────────────────── */
 async function startApp(){
   MYSTORE=getStore();
+  // Guard against a stale/renamed store string saved by an older app version: if it isn't one of the
+  // current STORES it has no STORE_CITY mapping, which silently disables city scoping (myCity undefined
+  // -> auditor count pools BOTH cities and over-counts). Drop it and force a fresh pick.
+  if(MYSTORE&&!STORES.includes(MYSTORE)){localStorage.removeItem('md_store');MYSTORE=null;}
   document.getElementById('appMain').style.display='block';
   renderHeader();
   await detectCity();
@@ -336,6 +340,10 @@ function initDateNav(){
 /* ── Load day data ───────────────────────────────────────────────────────────── */
 async function loadDay(date,silent=false){
   SELECTED_DATE=date;
+  // detectCity() runs once at boot; if that probe hit a transient network failure, city scoping would
+  // stay off for the ENTIRE session (never re-checked on the 30s refresh) and the auditor count would
+  // pool BOTH cities. Retry detection here while it's still disabled so it self-heals on the next load.
+  if(!CITY_ENABLED)await detectCity();
   if(!silent)document.getElementById('slotContent').innerHTML='<div class="loading-box"><span class="spin dark"></span><div style="margin-top:12px">Loading availability…</div></div>';
   try{
     const [orders,auditors]=await Promise.all([
@@ -346,6 +354,7 @@ async function loadDay(date,silent=false){
     // Only count auditors active on this date (active_from null = always active, note 44) AND — when
     // city is enabled — only auditors in THIS store's city (a Hyderabad store counts Hyderabad auditors).
     const myCity=CITY_ENABLED?STORE_CITY[MYSTORE]:null;
+    if(CITY_ENABLED&&MYSTORE&&!myCity)console.warn('Store "'+MYSTORE+'" has no city mapping — auditor count is NOT city-scoped (counting all cities).');
     const activeAuditors=(Array.isArray(auditors)?auditors:[]).filter(a=>(!a.active_from||a.active_from<=date)&&(!myCity||(a.city||'Bengaluru')===myCity));
     AUDITOR_COUNT=activeAuditors.length||1;
     renderSlots(date);
