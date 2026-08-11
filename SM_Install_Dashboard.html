@@ -1866,13 +1866,20 @@ function renderAssignSection(o,sj,container){
         const d=sj.date;const t=sj.slot&&/^\d{1,2}:\d{2}$/.test(sj.slot)?sj.slot:'09:00';
         valid.forEach(a=>{a.date=d;a.slots=[t];a.mode='standard';});
       }
-      // Availability guard — an installer on their weekly off / a leave date can't be assigned that day.
+      // Availability guard — assigning an installer on their weekly off / leave date is allowed only
+      // with a logged override reason (soft-gate, mirrors the 2-hour conflict override, note 52).
+      let availOverrideNote='';
       if(AVAIL_ENABLED){
+        const conflicts=[];
         for(const a of valid){
           const inst=installerById(a.installer_id);if(!inst)continue;
           const ds=(a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[]));
-          const bad=ds.find(d=>isOffDay(inst,d));
-          if(bad){toast(inst.name+' is unavailable on '+fmtDate(bad)+' ('+((inst.leaveDates||[]).includes(bad)?'on leave':'weekly off')+') — pick another date or installer.');return;}
+          ds.forEach(d=>{if(isOffDay(inst,d))conflicts.push(inst.name+' on '+fmtDate(d)+' ('+((inst.leaveDates||[]).includes(d)?'on leave':'weekly off')+')');});
+        }
+        if(conflicts.length){
+          const note=requireNote("Reason for assigning despite unavailability","⚠ Unavailable: "+conflicts.join('; ')+".");
+          if(note===null)return;
+          availOverrideNote=" · ⚠ assigned despite unavailability ("+conflicts.join('; ')+") — SM override: \""+note+"\"";
         }
       }
       const wasResched=sj.status==='reschedule';
@@ -1898,7 +1905,7 @@ function renderAssignSection(o,sj,container){
       }
       syncParent(o);
       const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';
-      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', '),d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', ')+availOverrideNote,d:new Date().toISOString(),by:'manual',who:SESSION.name});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       await loadOrders();toast(wasResched?'Rescheduled':'Assignments saved');openOrder(o.pi);
     };
