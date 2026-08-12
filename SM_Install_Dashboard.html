@@ -310,6 +310,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="/md-audit-registry.js"></script>
 <script src="/md-pdf.js"></script>
+<script src="/md-wp-track.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
@@ -1445,8 +1446,28 @@ function openOrder(pi){
   $("#dwFoot").innerHTML=drawerFoot(o);
   $("#scrim").classList.add("show");$("#drawer").classList.add("show");
   wireDrawer(o);
+  loadCoeWpMirror(o);
 }
 function closeDrawer(){$("#scrim").classList.remove("show");$("#drawer").classList.remove("show");currentPI=null;render();}
+
+// Read-only mirror of the Category Ops per-PO production ladder (note 102). Fetched on drawer
+// open rather than in the poll — it's one narrow row and only custom_wp orders ever need it.
+// Deliberately a plain function with no module-level `let`: nothing here can be touched by the
+// synchronous boot render(), so the note-94 temporal-dead-zone trap can't apply.
+async function loadCoeWpMirror(o){
+  const mount=document.getElementById('coeWpMirror');
+  if(!mount||!o||!o.pi||!window.mdWpLadderHtml)return;
+  let rows=null;
+  try{rows=await sbGet('wp_production?select=*&pi=eq.'+encodeURIComponent(o.pi)+'&order=created_at.asc');}
+  catch(e){return;}                                  // table not created yet — stay on the legacy tracker
+  if(!Array.isArray(rows)||!rows.length)return;      // this enquiry isn't tracked by Category Ops
+  if(currentPI!==o.pi)return;                        // drawer moved on while we were fetching
+  mount.innerHTML='<div class="sec"><h3>Custom Wallpaper Production — tracked by Category Ops</h3>'
+    +rows.map(r=>'<div style="padding:10px 0;border-top:1px solid var(--line)">'+window.mdWpLadderHtml(r)+'</div>').join('')
+    +'<div class="note">Read-only here. Category Operations updates these steps — this is a live view of the same record, so it can never drift from theirs.</div></div>';
+  const legacy=document.getElementById('cwpLegacy');
+  if(legacy)legacy.style.display='none';
+}
 
 // ---- Custom wallpaper production tracker (custom_wp orders only) ----
 function cwpBackHalfDone(o,key){
@@ -1590,7 +1611,7 @@ function sjCustomWpProductionSection(o,sj){
 const DELIVERY_PHASE_STATUSES=['pending','deliv_ontime','deliv_delayed','call_na'];
 function sjDeliveryBlock(o,sj){
   let html='';
-  if(sjCustomWp(o,sj))html+=sjCustomWpProductionSection(o,sj);
+  if(sjCustomWp(o,sj))html+=`<div id="coeWpMirror"></div><div id="cwpLegacy">${sjCustomWpProductionSection(o,sj)}</div>`;
   const dDate=sjDeliveryDate(o,sj);
   const dd=dDate?new Date(dDate+"T00:00"):null;
   const dleft=dd?Math.round((dd-today)/86400000):null;
@@ -1645,7 +1666,11 @@ function drawerBody(o){
 
   if(!mixed){
     // ---- CUSTOM WALLPAPER PRODUCTION TRACKER (before delivery — happens earlier in the lifecycle) ----
-    if(o.customWp)html+=customWpProductionSection(o);
+    // Category Ops owns the granular per-PO production ladder (note 102). When a wp_production
+    // row exists for this enquiry, #coeWpMirror is filled with its read-only ladder and the
+    // legacy 3-stage tracker below is hidden — one source of truth, no dual-write. Orders with
+    // no COE row (legacy, or not custom-print) keep the note-62 tracker exactly as it was.
+    if(o.customWp)html+=`<div id="coeWpMirror"></div><div id="cwpLegacy">${customWpProductionSection(o)}</div>`;
 
     // ---- DELIVERY stage (first) ----
     const dd=new Date(o.deliveryDate+"T00:00");const dleft=Math.round((dd-today)/86400000);

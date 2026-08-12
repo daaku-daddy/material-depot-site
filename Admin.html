@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="/md-audit-registry.js"></script>
 <script src="/md-pdf.js"></script>
+<script src="/md-wp-track.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -1069,12 +1070,31 @@ async function openJobDetail(pi,type){
           <div class="jd-row"><span class="jd-label">BM</span><span>${o.bm||'—'}</span></div>
           <div class="jd-row"><span class="jd-label">Delivery</span><span>${fdt(o.delivery_date)}</span></div>
         </div>
-        ${o.custom_wp?adminCwpSection(o):''}
+        ${o.custom_wp?'<div id="jdCoeWp"></div>':''}
+        ${o.custom_wp?`<div id="jdCwpLegacy">${adminCwpSection(o)}</div>`:''}
         ${sjsHtml}
         <div class="jd-btns"><button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button></div>
         ${o.log&&o.log.length?`<div class="jd-section"><div class="jd-sec-head">Activity</div><div class="jd-log">${jdLog(o.log)}</div></div>`:''}`;
+      if(o.custom_wp)loadAdminCoeWp(o.pi);
     }
   }catch(e){showModal(`<div style="padding:24px;color:var(--red)">Error: ${e.message}</div><div style="padding:0 24px 20px"><button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button></div>`);}
+}
+// Read-only mirror of Category Ops' per-PO wallpaper production ladder (note 102). Same
+// oversight-only convention as the bm_journey section above: Admin renders, never edits.
+// Replaces the coarse note-62 tracker for any enquiry Category Ops actually tracks, so the
+// two can't show different states of the same order.
+async function loadAdminCoeWp(pi){
+  const mount=document.getElementById('jdCoeWp');
+  if(!mount||!pi||!window.mdWpLadderHtml)return;
+  let rows=null;
+  try{rows=await sbGet('wp_production?select=*&pi=eq.'+encodeURIComponent(pi)+'&order=created_at.asc');}
+  catch(e){return;}
+  if(!Array.isArray(rows)||!rows.length||!document.getElementById('jdCoeWp'))return;
+  mount.innerHTML=`<div class="jd-section"><div class="jd-sec-head">🖼️ Custom Wallpaper Production — Category Ops</div>`
+    +rows.map(r=>`<div style="padding:10px 0;border-top:1px solid var(--line)">${window.mdWpLadderHtml(r)}</div>`).join('')
+    +`</div>`;
+  const legacy=document.getElementById('jdCwpLegacy');
+  if(legacy)legacy.style.display='none';
 }
 function adminDlInstall(sjIdx){
   const d=window._jdInstall;if(!d)return;

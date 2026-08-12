@@ -128,6 +128,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="/md-audit-registry.js"></script>
+<script src="/md-wp-track.js"></script>
 <script>
 /* ============== SUPABASE ============== */
 const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
@@ -286,6 +287,9 @@ async function openOrder(pi){
         ${(o.log&&o.log.length)?o.log.slice().reverse().map(l=>`<div class="logitem"><div class="lt">${l.who?`<b>${l.who}</b> · `:''}${l.t||''}</div><div class="ls">${fmtLog(l.d)}${l.by?' · '+(l.by==='auto'?'system':l.by):''}</div></div>`).join(''):'<div style="color:var(--muted);font-size:12.5px">No activity logged yet.</div>'}
       </div>
       <div class="sec" id="jcSection"><h3>Job Card</h3><div id="jcBody" style="color:var(--muted);font-size:12.5px">${o.status==='completed'?'Loading…':'Not available yet — the site audit has not been completed.'}</div></div>
+      <div class="sec" id="wpProdSection" style="display:none"><h3>Custom Wallpaper Production</h3>
+        <div id="wpProdBody"></div>
+      </div>
       <div class="sec" id="journeySection"><h3>Customer Journey</h3>
         <div id="journeyBody" style="color:var(--muted);font-size:12.5px">Loading…</div>
         <div id="journeyAddWrap" style="margin-top:10px"></div>
@@ -295,6 +299,24 @@ async function openOrder(pi){
   drawer.classList.add('show');$("#scrim").classList.add('show');
   if(o.status==='completed')loadJobCard(o);
   loadJourney(o);
+  loadWpProduction(o);
+}
+
+// Read-only view of Category Ops' custom-wallpaper production ladder for this enquiry (note 102).
+// Two of its eleven steps are the BM's own ("Render shared with BM", "Shared with client by BM"),
+// so this is mainly here to show a BM when the ball is in their court. Shown only when a
+// production record actually exists — the section stays hidden otherwise, and stays hidden if
+// the table hasn't been created yet.
+async function loadWpProduction(o){
+  const sec=$("#wpProdSection"),body=$("#wpProdBody");
+  if(!sec||!body||!o.pi||!window.mdWpLadderHtml)return;
+  let rows=null;
+  try{rows=await sbGet('wp_production?select=*&pi=eq.'+encodeURIComponent(o.pi)+'&order=created_at.asc');}
+  catch(e){return;}
+  if(!Array.isArray(rows)||!rows.length)return;
+  if(!_jcOrder||_jcOrder.pi!==o.pi)return;   // drawer moved on while fetching
+  body.innerHTML=rows.map(r=>`<div style="padding:8px 0;border-top:1px solid var(--line)">${window.mdWpLadderHtml(r)}</div>`).join('');
+  sec.style.display='';
 }
 
 async function loadJobCard(o){
