@@ -179,6 +179,45 @@
     {k:'cancelled', l:'Cancelled',          cls:''}
   ];
 
+  /* ---------- completed-step durations, for the delay analytics ----------
+     One entry per stage that actually happened, with the hours it took from whatever
+     legitimately preceded it. EVERY render round contributes its own data points — a job
+     that took three renders is three observations of "how long a render takes", not one.
+     Lives here (not in the dashboard) so the analytics can never disagree with the ladder
+     about what preceded what. */
+  window.mdWpDurations=function(row){
+    if(!row)return [];
+    var out=[],rounds=window.mdWpRounds(row),st=stages(row);
+    var start=row.order_placed_at||row.created_at||null;
+    function push(k,at,prev,n){
+      if(!at||!prev)return;
+      var h=(new Date(at).getTime()-new Date(prev).getTime())/3600000;
+      if(!isFinite(h)||h<0)return;                 // out-of-order/backfilled data — skip, never negative
+      out.push({k:k,hours:h,round:n||null,vendor:row.vendor||'other'});
+    }
+    push('dimensions_shared',st.dimensions_shared&&st.dimensions_shared.at,start);
+    var prevChain=(st.dimensions_shared&&st.dimensions_shared.at)||start;
+    rounds.forEach(function(r,i){
+      var base=i===0?prevChain:((rounds[i-1].approval&&rounds[i-1].approval.at)||null);
+      var rg=r.render_generated&&r.render_generated.at;
+      var rb=r.render_to_bm&&r.render_to_bm.at;
+      var rc=r.render_to_client&&r.render_to_client.at;
+      var ap=r.approval&&r.approval.at;
+      push('render_generated',rg,base,i+1);
+      push('render_to_bm',rb,rg,i+1);
+      push('render_to_client',rc,rb,i+1);
+      push('client_approval',ap,rc,i+1);
+    });
+    var last=rounds[rounds.length-1]||{};
+    var prev=(last.approval&&last.approval.at)||null;
+    ['sent_for_printing','dispatched','at_warehouse','out_for_delivery','delivered','install_scheduled'].forEach(function(k){
+      var at=st[k]&&st[k].at;
+      push(k,at,prev);
+      if(at)prev=at;
+    });
+    return out;
+  };
+
   function fmtTs(t){
     if(!t)return '';
     var d=new Date(t);if(isNaN(d.getTime()))return '';
