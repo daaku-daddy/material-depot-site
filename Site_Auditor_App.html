@@ -365,9 +365,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadJobs(
 window.addEventListener('online',()=>{_flushActionQueue();_retryPendingCompletions();});
 
 /* ============== JOBCARD FIELD DEFINITIONS (from original, split by type) ============== */
-const FLOOR_FIELDS=[{k:'area',label:'Area (sq.ft)',ph:'e.g. 180'},{k:'boxes',label:'Boxes'},{k:'skirt',label:'Skirting (nos)'},{k:'skirtH',label:'Skirting height (mm)'},{k:'lprof',label:'L-profile (nos)'},{k:'rprof',label:'R-profile / Reducer (nos)'},{k:'tprof',label:'T-profile (nos)'},{k:'corner',label:'Corner beading (nos)'}];
-const WALL_FIELDS=[{k:'warea',label:'Wall area (sq.ft)'},{k:'rolls',label:'No. of rolls'},{k:'repeat',label:'Pattern repeat (mm)'},{k:'match',label:'Match type',type:'select',opts:['Straight','Offset','Free']},{k:'adh',label:'Adhesive (packs)'},{k:'primer',label:'Primer needed',type:'select',opts:['No','Yes']}];
-const fieldsFor=t=>t==='wallpaper'?WALL_FIELDS:FLOOR_FIELDS;
+/* Legacy audit field dicts removed (note 98) — superseded by MD_CATEGORIES in md-audit-registry.js. */
 
 /* ============== HELPERS ============== */
 const $=s=>document.querySelector(s);
