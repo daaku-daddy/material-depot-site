@@ -1292,7 +1292,101 @@ function drawerBody(o){
 
   if(o.service&&o.service.rectification_raised)html+=`<div class="note" style="border-color:var(--amber);background:var(--amberbg);color:var(--amber)">↩ Rectification raised — new order <b>${o.service.rectification_pi||''}</b> (${o.service.rectification_type==='install'?'Re-installation':'Re-audit'}). See the Rectifications tab.</div>`;
   html+=`<div class="sec"><h3>Activity</h3><div class="timeline">${o.log.slice().reverse().map(l=>`<div class="tl ${l.by||''}"><div class="tt">${(l.who?'<span style="color:var(--navy);font-weight:800">'+l.who+'</span> &middot; ':'')+l.t}</div><div class="td">${fmtLog(l.d)}${l.by==='auto'?' · auditor':l.by==='manual'?' · SM':''}</div></div>`).join("")}</div></div>`;
+  // Customer Journey (BM Dashboard Phase 3b) — the downstream stages after this audit (order
+  // placed -> render -> approval -> printing -> delivery -> install), logged manually by BM/SM/Admin.
+  // Shown regardless of status, same as the Activity log above.
+  html+=`<div class="sec"><h3>Customer Journey</h3>
+    <div id="journeyBody" style="color:var(--muted);font-size:12.5px">Loading…</div>
+    <div id="journeyAddWrap" style="margin-top:10px"></div></div>`;
   return html;
+}
+
+/* ============== CUSTOMER JOURNEY (BM Dashboard Phase 3b) ============== */
+// Duplicated (not shared) from BM_Dashboard.html per this repo's no-shared-write-path-JS convention
+// (see e.g. note 72's _archiveInstallJobcard). Stores the fetched array on the order object itself
+// (o._journey) rather than a new module global, matching how this file already attaches ad-hoc
+// fields to `o` elsewhere (e.g. o.auditTicked, set on-demand above).
+async function loadJourney(o){
+  try{
+    const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=bm_journey');
+    o._journey=(Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].bm_journey))?rows[0].bm_journey:[];
+  }catch(e){console.error('loadJourney',e);o._journey=[];}
+  renderJourneySection(o);
+}
+function renderJourneySection(o){
+  const body=document.getElementById('journeyBody');if(!body)return;
+  body.innerHTML=window.mdJourneyHtml(o._journey||[]);
+  const wrap=document.getElementById('journeyAddWrap');if(!wrap)return;
+  wrap.innerHTML=journeyAddFormHtml();
+  wireJourneyAddForm(o);
+}
+function journeyAddFormHtml(){
+  const stages=window.MD_JOURNEY_STAGES||[];
+  return `<div id="journeyForm">
+    <div class="field"><label>Add journey entry</label>
+      <select id="jStage">${stages.map(s=>`<option value="${s.k}">${s.icon} ${s.label}</option>`).join('')}</select>
+    </div>
+    <div class="field" id="jRoundWrap" style="display:none"><label>Round #</label><input id="jRound" type="number" min="1"></div>
+    <div class="field" id="jDecisionWrap" style="display:none"><label>Client decision</label>
+      <select id="jDecision"><option value="">— Select —</option><option value="approved">Approved</option><option value="changes_requested">Changes requested</option></select>
+    </div>
+    <div class="field" id="jRefWrap" style="display:none"><label id="jRefLabel">Reference</label><input id="jRef"></div>
+    <div class="field"><label>Note <span style="font-weight:400;color:var(--muted)">(optional)</span></label><textarea id="jNote" style="min-height:60px"></textarea></div>
+    <div id="jErr" style="color:var(--red);font-size:12px;margin:4px 0"></div>
+    <button class="btn navy sm" id="jSave">+ Add entry</button>
+  </div>`;
+}
+function wireJourneyAddForm(o){
+  const stageSel=document.getElementById('jStage');if(!stageSel)return;
+  const roundWrap=document.getElementById('jRoundWrap'),roundInp=document.getElementById('jRound');
+  const decWrap=document.getElementById('jDecisionWrap');
+  const refWrap=document.getElementById('jRefWrap'),refInp=document.getElementById('jRef'),refLabel=document.getElementById('jRefLabel');
+  function syncFields(){
+    const stages=window.MD_JOURNEY_STAGES||[];
+    const st=stages.find(s=>s.k===stageSel.value)||{};
+    roundWrap.style.display=st.hasRound?'block':'none';
+    decWrap.style.display=st.hasDecision?'block':'none';
+    refWrap.style.display=st.hasRef?'block':'none';
+    if(refLabel)refLabel.textContent=st.refLabel||'Reference';
+    if(st.hasRound&&roundInp&&!roundInp.value){
+      const priorChanges=(o._journey||[]).filter(e=>e.decision==='changes_requested').length;
+      roundInp.value=priorChanges+1;
+    }
+  }
+  stageSel.onchange=syncFields;
+  syncFields();
+  document.getElementById('jSave').onclick=async()=>{
+    const stages=window.MD_JOURNEY_STAGES||[];
+    const stage=stageSel.value;
+    const stCfg=stages.find(s=>s.k===stage)||{};
+    const round=stCfg.hasRound?(parseInt(roundInp.value,10)||null):null;
+    const decision=stCfg.hasDecision?(document.getElementById('jDecision').value||null):null;
+    const refId=stCfg.hasRef?(refInp.value||'').trim():'';
+    const note=(document.getElementById('jNote').value||'').trim();
+    const errEl=document.getElementById('jErr');errEl.textContent='';
+    const btn=document.getElementById('jSave');btn.disabled=true;btn.textContent='Saving…';
+    try{
+      await pushJourneyEntry(o,{stage,round,decision,refId,note});
+      toast('Journey entry added');
+      await loadJourney(o);
+    }catch(e){errEl.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='+ Add entry';}
+  };
+}
+// Same fresh-fetch-before-write pattern as BM_Dashboard.html's saveSegmentMaterial/pushJourneyEntry —
+// always re-fetches bm_journey immediately before appending, so a concurrent BM/Admin addition on
+// the same order isn't clobbered.
+async function pushJourneyEntry(o,data){
+  const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=bm_journey');
+  const journey=(Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].bm_journey))?rows[0].bm_journey:[];
+  journey.push({
+    id:'j_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    ts:new Date().toISOString(),
+    stage:data.stage,round:data.round||null,decision:data.decision||null,
+    note:data.note||'',refId:data.refId||'',
+    by:{email:SESSION.email,name:SESSION.name,role:SESSION.role}
+  });
+  await sbPatch('audit_orders',o.id,{bm_journey:journey});
+  o._journey=journey;
 }
 
 function serviceCreationPanel(o){
@@ -1366,6 +1460,7 @@ function drawerFoot(o){
 /* ============== DRAWER WIRING ============== */
 let draft={};
 function wireDrawer(o){
+  if(document.getElementById('journeyBody'))loadJourney(o);
   draft={flooring:[],wallpaper:[],slot:null,date:null,auditor:null,auditorOverride:false};
   if(o.service){
     draft.flooring=(o.service.flooring||[]).map(x=>({...x}));

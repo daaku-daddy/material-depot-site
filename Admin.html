@@ -994,6 +994,8 @@ async function openJobDetail(pi,type){
             </span>
           </div>`;}).join('')}
         </div>`:'';
+      // Customer Journey (BM Dashboard) — read-only here; BM/SM add entries from their own dashboards.
+      const journeyHtml=(Array.isArray(o.bm_journey)&&o.bm_journey.length)?`<div class="jd-section"><div class="jd-sec-head">🧭 Customer Journey</div>${window.mdJourneyHtml(o.bm_journey)}</div>`:'';
       document.getElementById('modal').innerHTML=`
         <div class="jd-head"><div class="jd-pi">${o.pi} · Site Audit</div>${jobChip(o.status)}</div>
         <div class="jd-info">
@@ -1005,6 +1007,7 @@ async function openJobDetail(pi,type){
         </div>
         ${jcSection}
         ${historyHtml}
+        ${journeyHtml}
         <div class="jd-btns">
           ${hasCard?`<button class="btn-primary" onclick="window._jdAudit&&genAuditPDF(window._jdAudit.order,window._jdAudit.ticked)">${isDraft?'📥 Download Draft PDF (missing signature)':'📥 Download Job Card PDF'}</button>`:''}
           <button class="btn-ghost" onclick="closeModal();document.getElementById('modal').className='modal'">Close</button>
