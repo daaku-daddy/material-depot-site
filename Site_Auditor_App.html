@@ -800,6 +800,11 @@ function addRoom(restore){
   }
   function renderSegments(){
     segWrap.innerHTML='';const cat=MD_CATEGORIES[room.category];const multi=cat.segment.model==='multi';
+    if(room.category==='wallpaper'){
+      const mmNote=el('div',null,'📏 Wall height & width are now entered in millimetres (mm), not inches — the calculated area still shows in sq.ft.');
+      mmNote.style.cssText='background:#fff4e0;border:1px solid #f0c674;color:#7a5200;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:8px;';
+      segWrap.appendChild(mmNote);
+    }
     room.segments.forEach((s,i)=>segWrap.appendChild(segCard(s,i)));
     addSegBtn.style.display=multi?'inline-flex':'none';addSegBtn.textContent='+ '+(cat.segment.addLabel||'Add');
     paintFlag();
