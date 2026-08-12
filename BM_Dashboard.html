@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="/manifest_bm.json"/>
+<meta name="theme-color" content="#1F3A5F"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Material Depot — Business Manager</title>
+<style>
+  :root{
+    --navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;
+    --ink:#1b2230;--muted:#67748a;--line:#e2e7ef;--bg:#eef1f6;--card:#fff;
+    --lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;
+    --red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;
+    --shadow:0 1px 2px rgba(20,40,80,.05),0 6px 18px rgba(20,40,80,.04);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;}
+  header{background:var(--navy);color:#fff;padding:0 18px;display:flex;align-items:center;gap:14px;height:56px;position:sticky;top:0;z-index:40;}
+  header .logo{width:34px;height:34px;border-radius:8px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:15px;}
+  header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
+  header .h{font-size:15px;font-weight:700;line-height:1.1;}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:14px;}
+  header .right a{color:#cdd8e8;text-decoration:none;font-size:12.5px;font-weight:700;}
+  header .who{font-size:12px;color:#cdd8e8;text-align:right;line-height:1.2;}
+  header .who b{color:#fff;font-size:13px;}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;cursor:pointer;}
+  main{max-width:960px;margin:0 auto;padding:18px 22px 60px;}
+  .pagehead{display:flex;align-items:flex-end;gap:14px;margin-bottom:14px;}
+  .pagehead h1{font-size:21px;margin:0;color:var(--navy);letter-spacing:-.3px;}
+  .pagehead p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+  .search{flex:1;min-width:200px;position:relative;}
+  .search input{width:100%;padding:9px 11px 9px 32px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:#fff;}
+  .search .ico{position:absolute;left:10px;top:9px;color:var(--muted);}
+  .filt{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap;}
+  .filt button{border:0;background:transparent;padding:6px 11px;border-radius:7px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .filt button.active{background:var(--navy);color:#fff;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);}
+  .setup-note{background:var(--amberbg);color:var(--amber);border-radius:10px;padding:14px 16px;font-size:13.5px;font-weight:600;margin-bottom:16px;}
+  .empty{text-align:center;padding:50px 20px;color:var(--muted);}
+  .empty .e-ico{font-size:34px;margin-bottom:8px;}
+  .orow{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .orow:last-child{border-bottom:0;}
+  .orow:hover{background:var(--lighter);}
+  .orow .oname{font-weight:700;color:var(--ink);}
+  .orow .osub{font-size:12px;color:var(--muted);margin-top:1px;}
+  .orow .oright{margin-left:auto;text-align:right;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;}
+  .c-pending{background:#eef1f6;color:#5a6b86;}
+  .c-slotres{background:#e8f0fb;color:#1a4a8a;}
+  .c-created{background:#e4f0fb;color:var(--blue);}
+  .c-call_na{background:var(--redbg);color:var(--red);}
+  .c-scheduled{background:#e4f0fb;color:var(--blue);}
+  .c-assigned{background:var(--purplebg);color:var(--purple);}
+  .c-reschedule{background:var(--redbg);color:var(--red);}
+  .c-onway{background:var(--amberbg);color:var(--amber);}
+  .c-atsite{background:var(--amberbg);color:var(--amber);}
+  .c-completed{background:var(--greenbg);color:var(--green);}
+  .scrim{position:fixed;inset:0;background:rgba(15,25,45,.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50;}
+  .scrim.show{opacity:1;pointer-events:auto;}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:460px;max-width:92vw;background:#fff;transform:translateX(100%);transition:transform .22s;z-index:51;overflow-y:auto;box-shadow:-8px 0 30px rgba(0,0,0,.15);}
+  .drawer.show{transform:translateX(0);}
+  .dhead{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:16px 18px;display:flex;align-items:flex-start;gap:10px;z-index:2;}
+  .dhead h2{margin:0;font-size:17px;color:var(--navy);}
+  .dhead .sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .dclose{margin-left:auto;border:0;background:var(--lighter);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;color:var(--muted);}
+  .dbody{padding:16px 18px;}
+  .sec{margin-bottom:20px;}
+  .sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin:0 0 10px;}
+  .kv{display:grid;grid-template-columns:110px 1fr;gap:7px 14px;font-size:13px;}
+  .kv .k{color:var(--muted);}
+  .note{background:var(--lighter);border-left:4px solid var(--blue);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--navy);margin:10px 0;}
+  .maplink{color:var(--blue);text-decoration:none;}
+  .maplink .pin{margin-right:3px;}
+  .logitem{padding:9px 0;border-bottom:1px solid var(--line);}
+  .logitem:last-child{border-bottom:0;}
+  .logitem .lt{font-weight:700;font-size:13px;}
+  .logitem .lt b{color:var(--navy);}
+  .logitem .ls{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .jcbanner{background:var(--greenbg);color:var(--green);border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px;}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:all .25s;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:inline-block;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">MD</div>
+  <div><div class="t">MATERIAL DEPOT</div><div class="h">Business Manager</div></div>
+  <div class="right">
+    <a href="Site_Shadower_App.html">👁 My shadowing</a>
+    <div class="who"><b id="bmName"></b><div>Business Manager</div></div>
+    <div class="avatar" id="signOut" title="Sign out"></div>
+  </div>
+</header>
+<main id="main"></main>
+
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer"></div>
+<div class="toast" id="toast"></div>
+
+<script src="/md-audit-registry.js"></script>
+<script>
+/* ============== SUPABASE ============== */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ctrl.signal});return r.json();}finally{clearTimeout(tid);}}
+function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+
+const SESSION=getSession();
+if(!SESSION||SESSION.role!=='bm'){window.location.href='Login.html';}
+history.replaceState(null,'',location.href);
+window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
+document.getElementById('bmName').textContent=SESSION?SESSION.name:'';
+(function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
+document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localStorage.removeItem('md_user');window.location.href='Login.html';}};
+
+/* ============== CONFIG ============== */
+const $=s=>document.querySelector(s);
+const AUDIT_COLS='id,pi,po,skus,bm,bm_email,customer_name,phone,addr,status,service,slot,date,auditor_id,auditor_name,auditor_email,log,created_at';
+const STATUS={
+  slot_reserved:{l:"Pre-booked (Store)",c:"c-slotres"},
+  slot_converted:{l:"Pre-booking Fulfilled",c:"c-completed"},
+  pending:{l:"Pending",c:"c-pending"},
+  created:{l:"Service Created",c:"c-created"},
+  call_na:{l:"Call not picked",c:"c-call_na"},
+  scheduled:{l:"Site Audit Scheduled",c:"c-scheduled"},
+  assigned:{l:"Site Auditor Assigned",c:"c-assigned"},
+  callpending:{l:"Call Pending (Auditor)",c:"c-assigned"},
+  reschedule:{l:"To Reschedule",c:"c-reschedule"},
+  onway:{l:"On The Way",c:"c-onway"},
+  atsite:{l:"At Site",c:"c-atsite"},
+  completed:{l:"Site Audit Completed",c:"c-completed"},
+};
+function mapUrl(addr){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);}
+function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="pin">&#128205;</span>${addr}</a>`;}
+function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()))return '—';const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+ts;}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2400);}
+
+/* ============== STATE ============== */
+let BM_EMAIL_ENABLED=null; // null = not yet probed
+let ORDERS=[];
+let searchQ='';
+let filterStatus='all';
+let _pollTid=null;
+
+async function detectBmEmail(){
+  try{const r=await sbGet('audit_orders?select=bm_email&limit=1');BM_EMAIL_ENABLED=Array.isArray(r);}
+  catch(e){BM_EMAIL_ENABLED=false;}
+}
+
+const mapRow=r=>({
+  id:r.id, pi:r.pi||'', po:r.po?r.po.split(',').map(s=>s.trim()).filter(Boolean):[],
+  skus:r.skus||[], bm:r.bm||'—', bmEmail:r.bm_email||null,
+  name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
+  status:r.status||'pending', service:r.service||null, slot:r.slot||null, date:r.date||null,
+  auditorName:r.auditor_name||null, createdAt:r.created_at||null, log:r.log||[]
+});
+
+async function loadOrders(){
+  try{
+    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+'&bm_email=eq.'+encodeURIComponent(SESSION.email)+'&status=neq.deleted&order=created_at.desc');
+    if(!Array.isArray(rows))return;
+    ORDERS=rows.map(mapRow);
+    const drawerOpen=$("#drawer").classList.contains("show");
+    if(!drawerOpen)render();
+  }catch(e){console.error('loadOrders',e);}
+}
+
+function startPoll(){
+  clearInterval(_pollTid);
+  _pollTid=setInterval(()=>{if(!document.hidden)loadOrders();},30000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
+}
+
+/* ============== RENDER: list ============== */
+function getFilteredOrders(){
+  return ORDERS.filter(o=>{
+    if(filterStatus!=='all'&&o.status!==filterStatus)return false;
+    if(searchQ){
+      const q=searchQ.toLowerCase();
+      const hay=[o.pi,o.name,o.phone,...(o.po||[])].join(' ').toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+}
+
+function render(){
+  const m=$("#main");
+  if(BM_EMAIL_ENABLED===false){
+    m.innerHTML=`<div class="pagehead"><h1>My Orders</h1></div>
+      <div class="setup-note">⏳ This dashboard isn't fully set up yet — ask an Admin to run the pending database setup, then reload this page.</div>`;
+    return;
+  }
+  if(BM_EMAIL_ENABLED===null){
+    m.innerHTML=`<div class="pagehead"><h1>My Orders</h1></div><div class="card"><div class="empty"><span class="spin" style="border-top-color:var(--navy);border-color:rgba(31,58,95,.25)"></span></div></div>`;
+    return;
+  }
+  const list=getFilteredOrders();
+  const statusCounts={};ORDERS.forEach(o=>{statusCounts[o.status]=(statusCounts[o.status]||0)+1;});
+  const tabs=['all',...Object.keys(STATUS).filter(k=>statusCounts[k])];
+  m.innerHTML=`
+    <div class="pagehead"><h1>My Orders</h1><p>Every site audit / customer journey linked to you as the BM.</p></div>
+    <div class="toolbar">
+      <div class="search"><span class="ico">🔎</span><input id="searchInput" placeholder="Search name, phone, PI…" value="${searchQ}"></div>
+      <div class="filt">${tabs.map(k=>`<button class="${filterStatus===k?'active':''}" data-f="${k}">${k==='all'?'All':(STATUS[k]?STATUS[k].l:k)} ${k==='all'?'('+ORDERS.length+')':'('+statusCounts[k]+')'}</button>`).join('')}</div>
+    </div>
+    <div class="card">
+      ${list.length?list.map(orow).join(''):`<div class="empty"><div class="e-ico">📭</div>${ORDERS.length?'No orders match your filters.':'No orders are linked to you yet — ask your Service Manager to assign you as the BM on an order.'}</div>`}
+    </div>`;
+  $("#searchInput").oninput=e=>{searchQ=e.target.value;render();$("#searchInput").focus();};
+  document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{filterStatus=b.dataset.f;render();});
+  document.querySelectorAll('.orow').forEach(el=>el.onclick=()=>openOrder(el.dataset.pi));
+}
+
+function orow(o){
+  const st=STATUS[o.status]||{l:o.status,c:'c-pending'};
+  return `<div class="orow" data-pi="${o.pi}">
+    <div style="flex:1;min-width:0">
+      <div class="oname">${o.name||'—'}</div>
+      <div class="osub">${o.pi} · ${o.phone||'—'}${o.date?' · '+fmtDateOnly(o.date):''}</div>
+    </div>
+    <div class="oright"><span class="chip ${st.c}"><span class="dot"></span>${st.l}</span></div>
+  </div>`;
+}
+function fmtDateOnly(ds){if(!ds)return '';const d=new Date(ds+'T00:00');return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});}
+
+/* ============== RENDER: drawer ============== */
+function closeDrawer(){$("#drawer").classList.remove('show');$("#scrim").classList.remove('show');}
+$("#scrim").onclick=closeDrawer;
+
+async function openOrder(pi){
+  const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  const st=STATUS[o.status]||{l:o.status,c:'c-pending'};
+  const drawer=$("#drawer");
+  drawer.innerHTML=`
+    <div class="dhead">
+      <div><h2>${o.name||'—'}</h2><div class="sub">${o.pi} · <span class="chip ${st.c}"><span class="dot"></span>${st.l}</span></div></div>
+      <button class="dclose" id="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="sec"><h3>Customer</h3><div class="kv">
+        <div class="k">Phone</div><div><a href="tel:${o.phone}">${o.phone||'—'}</a></div>
+        <div class="k">Address</div><div>${o.addr?mapLink(o.addr):'—'}</div>
+        <div class="k">Date</div><div>${o.date?fmtDateOnly(o.date):'—'}</div>
+        <div class="k">Auditor</div><div>${o.auditorName||'—'}</div>
+        <div class="k">Enquiry ID</div><div>${(o.po&&o.po[0])||'—'}</div>
+      </div></div>
+      <div class="sec"><h3>Timeline</h3>
+        ${(o.log&&o.log.length)?o.log.slice().reverse().map(l=>`<div class="logitem"><div class="lt">${l.who?`<b>${l.who}</b> · `:''}${l.t||''}</div><div class="ls">${fmtLog(l.d)}${l.by?' · '+(l.by==='auto'?'system':l.by):''}</div></div>`).join(''):'<div style="color:var(--muted);font-size:12.5px">No activity logged yet.</div>'}
+      </div>
+      <div class="sec" id="jcSection"><h3>Job Card</h3><div id="jcBody" style="color:var(--muted);font-size:12.5px">${o.status==='completed'?'Loading…':'Not available yet — the site audit has not been completed.'}</div></div>
+    </div>`;
+  $("#dclose").onclick=closeDrawer;
+  drawer.classList.add('show');$("#scrim").classList.add('show');
+  if(o.status==='completed')loadJobCard(o);
+}
+
+async function loadJobCard(o){
+  try{
+    const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
+    const ticked=Array.isArray(rows)&&rows[0]?rows[0].audit_ticked:null;
+    const jcBody=$("#jcBody");if(!jcBody)return;
+    if(!ticked||!Array.isArray(ticked.rooms)||!ticked.rooms.length){jcBody.innerHTML='<div style="color:var(--muted);font-size:12.5px">No job card details recorded.</div>';return;}
+    const isDraft=ticked.draft&&!(ticked.sign&&!ticked.sign.draft);
+    jcBody.innerHTML=(isDraft?'<div class="jcbanner" style="background:var(--amberbg);color:var(--amber)">⚠️ Job card is still a draft — not yet signed off by the client.</div>':(ticked.sign?'<div class="jcbanner">✓ Signed off by the client'+(ticked.sign.name?' — '+ticked.sign.name:'')+'</div>':''))
+      +ticked.rooms.map((r,i)=>window.mdAuditRoomHtml(r,i)).join('');
+  }catch(e){console.error('loadJobCard',e);const jcBody=$("#jcBody");if(jcBody)jcBody.innerHTML='<div style="color:var(--red);font-size:12.5px">Could not load job card — try again.</div>';}
+}
+
+/* ============== BOOT ============== */
+(async function boot(){
+  render();
+  await detectBmEmail();
+  if(BM_EMAIL_ENABLED)await loadOrders();
+  render();
+  startPoll();
+})();
+</script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+<script src="/pwa-install.js"></script>
+</body>
+</html>

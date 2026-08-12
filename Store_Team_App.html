@@ -205,6 +205,20 @@ let AVAIL_ENABLED=false;
 async function detectAvail(){
   try{const r=await sbGet('profiles?select=leave_dates&limit=1');AVAIL_ENABLED=Array.isArray(r);}catch(e){AVAIL_ENABLED=false;}
 }
+// Real BM accounts (role='bm'). Only switch the BM field from free text to a dropdown once at least
+// one real account exists — until then this is byte-behaviorally identical to before (free text).
+let BM_LIST=[];
+async function loadBmList(){
+  try{const r=await sbGet('profiles?role=eq.bm&select=name,email&order=name');BM_LIST=Array.isArray(r)?r:[];}
+  catch(e){BM_LIST=[];}
+}
+// audit_orders.bm_email is a separate migration from the profiles role check — probe it independently
+// so a booking write never 400s if only one of the two SQL changes has been run so far.
+let BM_EMAIL_ENABLED=false;
+async function detectBmEmail(){
+  try{const r=await sbGet('audit_orders?select=bm_email&limit=1');BM_EMAIL_ENABLED=Array.isArray(r);}
+  catch(e){BM_EMAIL_ENABLED=false;}
+}
 // True if this auditor row is off on YYYY-MM-DD: their weekly-off weekday, or a specific leave date.
 function auditorOff(a,ds){
   if(!AVAIL_ENABLED)return false;
@@ -292,7 +306,7 @@ async function startApp(){
   if(MYSTORE&&!STORES.includes(MYSTORE)){localStorage.removeItem('md_store');MYSTORE=null;}
   document.getElementById('appMain').style.display='block';
   renderHeader();
-  await Promise.all([detectCity(),detectAvail()]);
+  await Promise.all([detectCity(),detectAvail(),loadBmList(),detectBmEmail()]);
   if(!MYSTORE){showStorePicker(false);return;}
   initDateNav();
   loadDay(SELECTED_DATE||dstr(today()));
@@ -526,7 +540,10 @@ function openBookingSheet(slotId,date){
     <div class="field"><label>Phone number *</label><input class="inp" id="bkPhone" type="tel" placeholder="9876543210"></div>
     <div class="field"><label>Address *</label><textarea class="inp" id="bkAddr" placeholder="Flat / building / area…"></textarea></div>
     <div class="field"><label>ENQ ID *</label><input class="inp" id="bkEnq" placeholder="ENQ2026…" autocomplete="off"></div>
-    <div class="field"><label>BM Name *</label><input class="inp" id="bkBm" placeholder="Business manager name" autocomplete="off"></div>
+    <div class="field"><label>BM Name *</label>${BM_LIST.length?`<select class="inp" id="bkBm">
+      <option value="">— Select a BM —</option>
+      ${BM_LIST.map(b=>`<option value="${b.email}">${b.name}</option>`).join('')}
+    </select>`:`<input class="inp" id="bkBm" placeholder="Business manager name" autocomplete="off">`}</div>
     <div class="field"><label>Audit categories <span style="font-weight:500;color:var(--muted)">(select all that apply)</span></label>
       <div class="check-group">
         <label class="check-row"><input type="checkbox" id="bkFl"><span>Wooden Flooring</span></label>
@@ -550,7 +567,10 @@ function openBookingSheet(slotId,date){
     const phone=(document.getElementById('bkPhone').value||'').trim();
     const addr=(document.getElementById('bkAddr').value||'').trim();
     const enqId=(document.getElementById('bkEnq').value||'').trim();
-    const bmName=(document.getElementById('bkBm').value||'').trim();
+    const bkBmVal=(document.getElementById('bkBm').value||'').trim();
+    const bmMatch=BM_LIST.length?BM_LIST.find(b=>b.email===bkBmVal):null;
+    const bmName=BM_LIST.length?(bmMatch?bmMatch.name:''):bkBmVal;
+    const bmEmail=bmMatch?bmMatch.email:null;
     const comments=(document.getElementById('bkComments').value||'').trim();
     const err=document.getElementById('bkErr');
     err.classList.remove('show');
@@ -578,6 +598,7 @@ function openBookingSheet(slotId,date){
         phone,
         addr,
         bm:bmName||MYSTORE,
+        ...((BM_EMAIL_ENABLED&&bmEmail)?{bm_email:bmEmail}:{}),
         date,
         slot:slotId,
         status:'slot_reserved',

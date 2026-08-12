@@ -363,6 +363,7 @@
         <div class="mfield">
           <label>BM / Sales Person</label>
           <input id="ao-bm" placeholder="Name">
+          <select id="ao-bm-select" style="display:none"></select>
         </div>
         <div class="mfield">
           <label>SKU Codes</label>
@@ -522,6 +523,19 @@ let AVAIL_ENABLED=false;
 async function detectAvail(){
   try{const r=await sbGet('profiles?select=leave_dates&limit=1');AVAIL_ENABLED=Array.isArray(r);}catch(e){AVAIL_ENABLED=false;}
 }
+// Real BM accounts (role='bm'). BM field only switches from free text to a dropdown once at least
+// one real account exists. audit_orders.bm_email is probed separately — it's a different migration
+// from the profiles role check, so a booking write never 400s if only one of the two has run so far.
+let BM_LIST=[];
+async function loadBmList(){
+  try{const r=await sbGet('profiles?role=eq.bm&select=name,email&order=name');BM_LIST=Array.isArray(r)?r:[];}
+  catch(e){BM_LIST=[];}
+}
+let BM_EMAIL_ENABLED=false;
+async function detectBmEmail(){
+  try{const r=await sbGet('audit_orders?select=bm_email&limit=1');BM_EMAIL_ENABLED=Array.isArray(r);}
+  catch(e){BM_EMAIL_ENABLED=false;}
+}
 const _WDAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // True if the auditor is off on this YYYY-MM-DD: their weekly-off weekday, or a specific leave date.
 function isOffDay(a,ds){
@@ -632,11 +646,12 @@ const mapAuditRow=r=>({
   shadowerEmail:r.shadower_email||null,
   shadowerName:r.shadower_name||null,
   city:r.city||'Bengaluru',
+  bmEmail:r.bm_email||null,
   log:r.log||[]
 });
 async function loadOrders(){
   try{
-    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+(CITY_ENABLED?',city':'')+'&status=neq.deleted&order=created_at.desc');
+    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+(CITY_ENABLED?',city':'')+(BM_EMAIL_ENABLED?',bm_email':'')+'&status=neq.deleted&order=created_at.desc');
     if(!Array.isArray(rows)){_setConnErr(true);if(!_retryTid)_retryTid=setTimeout(()=>{_retryTid=null;loadOrders();},8000);render();return;}
     _setConnErr(false);if(_retryTid){clearTimeout(_retryTid);_retryTid=null;}
     ORDERS=rows.map(mapAuditRow);
@@ -646,7 +661,7 @@ async function loadOrders(){
 }
 async function loadDeletedOrders(){
   try{
-    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+(CITY_ENABLED?',city':'')+'&status=eq.deleted&order=created_at.desc');
+    const rows=await sbGet('audit_orders?select='+AUDIT_COLS+(CITY_ENABLED?',city':'')+(BM_EMAIL_ENABLED?',bm_email':'')+'&status=eq.deleted&order=created_at.desc');
     DELETED=(Array.isArray(rows)?rows:[]).map(mapAuditRow);
   }catch(e){console.error('loadDeletedOrders',e);}
 }
@@ -1112,7 +1127,10 @@ function slotReservedDrawerBody(o){
   <div class="sec"><h3>SM — Assign BM &amp; Auditor</h3>
     <div class="field" style="margin-bottom:12px"><label style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);display:block;margin-bottom:5px">BM Name</label>
       <div style="display:flex;gap:8px">
-        <input class="inp" id="slotResBmInput" value="${bmName||''}" placeholder="Business manager name…" style="flex:1;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit">
+        ${BM_LIST.length?`<select class="inp" id="slotResBmInput" style="flex:1;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit">
+          <option value="">— Select a BM —</option>
+          ${BM_LIST.map(b=>`<option value="${b.email}" ${o.bmEmail===b.email?'selected':''}>${b.name}</option>`).join('')}
+        </select>`:`<input class="inp" id="slotResBmInput" value="${bmName||''}" placeholder="Business manager name…" style="flex:1;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit">`}
         <button class="btn navy sm" id="slotResBmSave">Save</button>
       </div>
     </div>
@@ -1684,11 +1702,16 @@ function wireDrawer(o){
   };
 
   if($("#slotResBmSave"))$("#slotResBmSave").onclick=async()=>{
-    const bm=($("#slotResBmInput").value||'').trim();
-    if(!bm){toast("Enter a BM name");return;}
+    const bmRaw=($("#slotResBmInput").value||'').trim();
+    if(!bmRaw){toast("Enter a BM name");return;}
+    const bmMatch=BM_LIST.length?BM_LIST.find(b=>b.email===bmRaw):null;
+    const bm=bmMatch?bmMatch.name:bmRaw;
     const btn=$("#slotResBmSave");btn.disabled=true;btn.textContent="Saving…";
     o.log=o.log||[];o.log.push({t:"BM assigned: "+bm,d:new Date().toISOString(),by:"manual",who:SESSION.name});
-    try{await sbPatch('audit_orders',o.id,{bm,log:o.log});await loadOrders();toast("BM set to "+bm);openOrder(o.pi);}
+    try{
+      await sbPatch('audit_orders',o.id,{bm,log:o.log,...((BM_EMAIL_ENABLED&&bmMatch)?{bm_email:bmMatch.email}:{})});
+      await loadOrders();toast("BM set to "+bm);openOrder(o.pi);
+    }
     catch(e){toast("Failed — "+e.message);btn.disabled=false;btn.textContent="Save";}
   };
 
@@ -1853,11 +1876,19 @@ function openAddOrder(){
   // City field only appears when the feature is live; defaults to the active toggle, else Bengaluru.
   const cf=document.getElementById("ao-city-field");
   if(cf){cf.style.display=CITY_ENABLED?"block":"none";const cs=document.getElementById("ao-city");if(cs)cs.value=(CITY_ENABLED&&cityFilter!=='all')?cityFilter:'Bengaluru';}
+  // BM field: dropdown of real BM accounts once at least one exists, else the original free text input.
+  const bmIn=document.getElementById("ao-bm"),bmSel=document.getElementById("ao-bm-select");
+  if(bmSel){
+    if(BM_LIST.length){
+      bmSel.innerHTML='<option value="">— Select a BM —</option>'+BM_LIST.map(b=>`<option value="${b.email}">${b.name}</option>`).join('');
+      bmIn.style.display="none";bmSel.style.display="block";
+    }else{bmIn.style.display="block";bmSel.style.display="none";}
+  }
   document.getElementById("ao-pi").focus();
 }
 function closeAddOrder(){
   document.getElementById("addOrderOverlay").classList.remove("show");
-  ["ao-pi","ao-po","ao-name","ao-phone","ao-addr","ao-bm","ao-skus"].forEach(id=>{document.getElementById(id).value="";});
+  ["ao-pi","ao-po","ao-name","ao-phone","ao-addr","ao-bm","ao-bm-select","ao-skus"].forEach(id=>{document.getElementById(id).value="";});
   ["ao-fl","ao-wp","ao-cwp"].forEach(id=>{document.getElementById(id).checked=false;});
   document.getElementById("ao-err").classList.remove("show");
   document.getElementById("ao-kylas-note").style.display="none";
@@ -1868,7 +1899,10 @@ async function submitAddOrder(){
   const name  = document.getElementById("ao-name").value.trim();
   const phone = document.getElementById("ao-phone").value.trim();
   const addr  = document.getElementById("ao-addr").value.trim();
-  const bm    = document.getElementById("ao-bm").value.trim() || "—";
+  const bmSelVal=BM_LIST.length?document.getElementById("ao-bm-select").value:"";
+  const bmMatch=bmSelVal?BM_LIST.find(b=>b.email===bmSelVal):null;
+  const bm    = (bmMatch?bmMatch.name:document.getElementById("ao-bm").value.trim()) || "—";
+  const bmEmail = bmMatch?bmMatch.email:null;
   const skuRaw= document.getElementById("ao-skus").value.trim();
   const err   = document.getElementById("ao-err");
   err.classList.remove("show");
@@ -1900,7 +1934,8 @@ async function submitAddOrder(){
     pi, po:po.join(','), skus, audit_ticked:ticked, bm,
     customer_name:name, phone, addr, status:'pending',
     log:[logEntry], created_by_email:SESSION.email,
-    ...(CITY_ENABLED?{city:(document.getElementById("ao-city")||{}).value||'Bengaluru'}:{})
+    ...(CITY_ENABLED?{city:(document.getElementById("ao-city")||{}).value||'Bengaluru'}:{}),
+    ...((BM_EMAIL_ENABLED&&bmEmail)?{bm_email:bmEmail}:{})
   };
   try{
     // Check for any existing row with this PI before inserting
@@ -1919,6 +1954,7 @@ async function submitAddOrder(){
     ORDERS.unshift({
       id:savedId,
       pi,po,skus,auditTicked:ticked,bm,
+      bmEmail:(BM_EMAIL_ENABLED&&bmEmail)?bmEmail:null,
       status:"pending",name,phone,addr,
       service:null,slot:null,date:null,auditor:null,
       auditorName:null,auditorEmail:null,
@@ -2182,7 +2218,7 @@ async function _drawLiveLocations(m){
 }
 
 render();
-Promise.all([detectCity(),detectAvail()]).then(()=>Promise.all([loadAuditors(),loadShadowers(),loadOrders()])).then(()=>{
+Promise.all([detectCity(),detectAvail(),loadBmList(),detectBmEmail()]).then(()=>Promise.all([loadAuditors(),loadShadowers(),loadOrders()])).then(()=>{
   renderCityToggle();
   setInterval(()=>{if(!document.hidden)loadOrders();},30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
