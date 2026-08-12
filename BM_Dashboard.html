@@ -176,6 +176,7 @@ let filterStatus='all';
 let _pollTid=null;
 let _jcOrder=null,_jcTicked=null;
 let _matEditing={}; // key `${roomIdx}_${segIdx}` -> true while that segment's form is open
+let _jcJourney=null;
 
 async function detectBmEmail(){
   try{const r=await sbGet('audit_orders?select=bm_email&limit=1');BM_EMAIL_ENABLED=Array.isArray(r);}
@@ -265,7 +266,7 @@ $("#scrim").onclick=closeDrawer;
 
 async function openOrder(pi){
   const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
-  _jcOrder=null;_jcTicked=null;_matEditing={};
+  _jcOrder=o;_jcTicked=null;_matEditing={};_jcJourney=null;
   const st=STATUS[o.status]||{l:o.status,c:'c-pending'};
   const drawer=$("#drawer");
   drawer.innerHTML=`
@@ -285,10 +286,15 @@ async function openOrder(pi){
         ${(o.log&&o.log.length)?o.log.slice().reverse().map(l=>`<div class="logitem"><div class="lt">${l.who?`<b>${l.who}</b> · `:''}${l.t||''}</div><div class="ls">${fmtLog(l.d)}${l.by?' · '+(l.by==='auto'?'system':l.by):''}</div></div>`).join(''):'<div style="color:var(--muted);font-size:12.5px">No activity logged yet.</div>'}
       </div>
       <div class="sec" id="jcSection"><h3>Job Card</h3><div id="jcBody" style="color:var(--muted);font-size:12.5px">${o.status==='completed'?'Loading…':'Not available yet — the site audit has not been completed.'}</div></div>
+      <div class="sec" id="journeySection"><h3>Customer Journey</h3>
+        <div id="journeyBody" style="color:var(--muted);font-size:12.5px">Loading…</div>
+        <div id="journeyAddWrap" style="margin-top:10px"></div>
+      </div>
     </div>`;
   $("#dclose").onclick=closeDrawer;
   drawer.classList.add('show');$("#scrim").classList.add('show');
   if(o.status==='completed')loadJobCard(o);
+  loadJourney(o);
 }
 
 async function loadJobCard(o){
@@ -395,6 +401,91 @@ function wireMaterialHandlers(){
       }catch(e){errEl.textContent='Save failed — '+e.message;b.disabled=false;b.textContent='Save';}
     };
   });
+}
+
+/* ============== CUSTOMER JOURNEY (Phase 3) ============== */
+async function loadJourney(o){
+  try{
+    const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=bm_journey');
+    _jcJourney=(Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].bm_journey))?rows[0].bm_journey:[];
+  }catch(e){console.error('loadJourney',e);_jcJourney=[];}
+  renderJourneySection();
+}
+
+function renderJourneySection(){
+  const body=$("#journeyBody");if(!body)return;
+  body.innerHTML=window.mdJourneyHtml(_jcJourney||[]);
+  const wrap=$("#journeyAddWrap");if(!wrap)return;
+  wrap.innerHTML=journeyAddFormHtml();
+  wireJourneyAddForm();
+}
+
+function journeyAddFormHtml(){
+  const stages=window.MD_JOURNEY_STAGES||[];
+  return `<div class="matform" id="journeyForm">
+    <select class="matf-stage" id="jStage" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;margin-bottom:6px;font-family:inherit">
+      ${stages.map(s=>`<option value="${s.k}">${s.icon} ${esc(s.label)}</option>`).join('')}
+    </select>
+    <div id="jRoundWrap" style="display:none"><input id="jRound" type="number" min="1" placeholder="Round #"></div>
+    <div id="jDecisionWrap" style="display:none"><select id="jDecision" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;margin-bottom:6px;font-family:inherit">
+      <option value="">— Client decision —</option><option value="approved">Approved</option><option value="changes_requested">Changes requested</option>
+    </select></div>
+    <div id="jRefWrap" style="display:none"><input id="jRef" placeholder="Reference"></div>
+    <textarea id="jNote" placeholder="Note (optional)" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;margin-bottom:6px;font-family:inherit;min-height:50px"></textarea>
+    <div class="matf-err" id="jErr"></div>
+    <button class="btn-sm btn-save-mat" id="jSave">+ Add entry</button>
+  </div>`;
+}
+
+function wireJourneyAddForm(){
+  const stageSel=$("#jStage"),roundWrap=$("#jRoundWrap"),roundInp=$("#jRound"),decWrap=$("#jDecisionWrap"),refWrap=$("#jRefWrap"),refInp=$("#jRef");
+  if(!stageSel)return;
+  function syncFields(){
+    const stages=window.MD_JOURNEY_STAGES||[];
+    const st=stages.find(s=>s.k===stageSel.value)||{};
+    roundWrap.style.display=st.hasRound?'block':'none';
+    decWrap.style.display=st.hasDecision?'block':'none';
+    refWrap.style.display=st.hasRef?'block':'none';
+    if(refInp)refInp.placeholder=st.refLabel||'Reference';
+    if(st.hasRound&&roundInp&&!roundInp.value){
+      const priorChanges=(_jcJourney||[]).filter(e=>e.decision==='changes_requested').length;
+      roundInp.value=priorChanges+1;
+    }
+  }
+  stageSel.onchange=syncFields;
+  syncFields();
+  $("#jSave").onclick=async()=>{
+    const stages=window.MD_JOURNEY_STAGES||[];
+    const stage=stageSel.value;
+    const stCfg=stages.find(s=>s.k===stage)||{};
+    const round=stCfg.hasRound?(parseInt(roundInp.value,10)||null):null;
+    const decision=stCfg.hasDecision?($("#jDecision").value||null):null;
+    const refId=stCfg.hasRef?(refInp.value||'').trim():'';
+    const note=($("#jNote").value||'').trim();
+    const errEl=$("#jErr");errEl.textContent='';
+    const btn=$("#jSave");btn.disabled=true;btn.textContent='Saving…';
+    try{
+      await pushJourneyEntry(_jcOrder,{stage,round,decision,refId,note});
+      toast('Journey entry added');
+      await loadJourney(_jcOrder);
+    }catch(e){errEl.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='+ Add entry';}
+  };
+}
+
+// Same fresh-fetch-before-write pattern as saveSegmentMaterial: bm_journey can be appended to by
+// BM/SM/Admin, so always re-fetch immediately before appending rather than trusting a stale copy.
+async function pushJourneyEntry(order,data){
+  const rows=await sbGet('audit_orders?id=eq.'+order.id+'&select=bm_journey');
+  const journey=(Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].bm_journey))?rows[0].bm_journey:[];
+  journey.push({
+    id:'j_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    ts:new Date().toISOString(),
+    stage:data.stage,round:data.round||null,decision:data.decision||null,
+    note:data.note||'',refId:data.refId||'',
+    by:{email:SESSION.email,name:SESSION.name,role:'bm'}
+  });
+  await sbPatch('audit_orders',order.id,{bm_journey:journey});
+  _jcJourney=journey;
 }
 
 // Always re-fetches audit_ticked fresh immediately before merging, rather than trusting whatever
