@@ -82,6 +82,29 @@
   .logitem .lt b{color:var(--navy);}
   .logitem .ls{font-size:11.5px;color:var(--muted);margin-top:1px;}
   .jcbanner{background:var(--greenbg);color:var(--green);border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px;}
+  .matsec{border:1px dashed var(--blue);border-radius:10px;padding:10px;margin:6px 0 14px;background:#f7fafd;}
+  .matsec-h{font-weight:800;font-size:12px;color:var(--navy);margin-bottom:8px;}
+  .matcard{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:7px;}
+  .matcard:last-child{margin-bottom:0;}
+  .matcard-label{font-weight:700;font-size:11.5px;color:var(--navy);margin-bottom:6px;}
+  .matcard-view{display:flex;align-items:center;gap:8px;}
+  .matimg{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:0 0 auto;}
+  .matinfo{flex:1;min-width:0;font-size:12px;}
+  .matname{font-weight:700;}
+  .matsku{color:var(--muted);font-size:11px;}
+  .matform input{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;margin-bottom:6px;font-family:inherit;}
+  .matf-urlrow{display:flex;gap:6px;}
+  .matf-urlrow input{flex:1;}
+  .matf-imgwrap{margin:4px 0 6px;}
+  .matf-preview-empty{font-size:11px;color:var(--muted);}
+  .matf-actions{display:flex;gap:6px;}
+  .matf-err{color:var(--red);font-size:11.5px;margin-top:4px;}
+  .btn-sm{border:0;border-radius:7px;padding:6px 12px;font-weight:700;font-size:12px;cursor:pointer;}
+  .btn-edit-mat{background:var(--lighter);color:var(--navy);margin-left:auto;flex:0 0 auto;}
+  .btn-fetch-img{background:var(--navy);color:#fff;flex:0 0 auto;white-space:nowrap;}
+  .btn-save-mat{background:var(--green);color:#fff;}
+  .btn-cancel-mat{background:var(--lighter);color:var(--muted);}
+  .btn-sm:disabled{opacity:.6;cursor:not-allowed;}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:all .25s;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.25);}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:inline-block;}
@@ -111,6 +134,7 @@ const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ctrl.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
 
 const SESSION=getSession();
@@ -138,6 +162,7 @@ const STATUS={
   atsite:{l:"At Site",c:"c-atsite"},
   completed:{l:"Site Audit Completed",c:"c-completed"},
 };
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function mapUrl(addr){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);}
 function mapLink(addr){return `<a class="maplink" href="${mapUrl(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="pin">&#128205;</span>${addr}</a>`;}
 function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()))return '—';const ts=dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+ts;}
@@ -149,6 +174,8 @@ let ORDERS=[];
 let searchQ='';
 let filterStatus='all';
 let _pollTid=null;
+let _jcOrder=null,_jcTicked=null;
+let _matEditing={}; // key `${roomIdx}_${segIdx}` -> true while that segment's form is open
 
 async function detectBmEmail(){
   try{const r=await sbGet('audit_orders?select=bm_email&limit=1');BM_EMAIL_ENABLED=Array.isArray(r);}
@@ -238,6 +265,7 @@ $("#scrim").onclick=closeDrawer;
 
 async function openOrder(pi){
   const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  _jcOrder=null;_jcTicked=null;_matEditing={};
   const st=STATUS[o.status]||{l:o.status,c:'c-pending'};
   const drawer=$("#drawer");
   drawer.innerHTML=`
@@ -267,12 +295,124 @@ async function loadJobCard(o){
   try{
     const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=audit_ticked');
     const ticked=Array.isArray(rows)&&rows[0]?rows[0].audit_ticked:null;
-    const jcBody=$("#jcBody");if(!jcBody)return;
-    if(!ticked||!Array.isArray(ticked.rooms)||!ticked.rooms.length){jcBody.innerHTML='<div style="color:var(--muted);font-size:12.5px">No job card details recorded.</div>';return;}
-    const isDraft=ticked.draft&&!(ticked.sign&&!ticked.sign.draft);
-    jcBody.innerHTML=(isDraft?'<div class="jcbanner" style="background:var(--amberbg);color:var(--amber)">⚠️ Job card is still a draft — not yet signed off by the client.</div>':(ticked.sign?'<div class="jcbanner">✓ Signed off by the client'+(ticked.sign.name?' — '+ticked.sign.name:'')+'</div>':''))
-      +ticked.rooms.map((r,i)=>window.mdAuditRoomHtml(r,i)).join('');
+    _jcOrder=o;_jcTicked=ticked;
+    renderJobCardBody();
   }catch(e){console.error('loadJobCard',e);const jcBody=$("#jcBody");if(jcBody)jcBody.innerHTML='<div style="color:var(--red);font-size:12.5px">Could not load job card — try again.</div>';}
+}
+
+function renderJobCardBody(){
+  const jcBody=$("#jcBody");if(!jcBody)return;
+  const ticked=_jcTicked;
+  if(!ticked||!Array.isArray(ticked.rooms)||!ticked.rooms.length){jcBody.innerHTML='<div style="color:var(--muted);font-size:12.5px">No job card details recorded.</div>';return;}
+  const isDraft=ticked.draft&&!(ticked.sign&&!ticked.sign.draft);
+  jcBody.innerHTML=(isDraft?'<div class="jcbanner" style="background:var(--amberbg);color:var(--amber)">⚠️ Job card is still a draft — not yet signed off by the client.</div>':(ticked.sign?'<div class="jcbanner">✓ Signed off by the client'+(ticked.sign.name?' — '+ticked.sign.name:'')+'</div>':''))
+    +ticked.rooms.map((r,i)=>window.mdAuditRoomHtml(r,i)+materialSectionHtml(r,i)).join('');
+  wireMaterialHandlers();
+}
+
+// Material selection is deliberately v2-only — legacy rooms (no `segments[]`) have nowhere
+// backward-compatible to hang a per-segment material choice, and they're being phased out anyway.
+function materialSectionHtml(room,roomIdx){
+  if(!(room.v>=2)||!Array.isArray(room.segments)||!room.segments.length)return '';
+  const cat=window.mdCategoryFor(room.category);
+  const multi=cat.segment&&cat.segment.model==='multi';
+  return '<div class="matsec"><div class="matsec-h">🎨 Material selection</div>'
+    +room.segments.map((s,si)=>segMaterialCardHtml(cat,multi,s,si,roomIdx)).join('')
+    +'</div>';
+}
+function segLabelFor(cat,multi,s,si){return multi?(esc(cat.segment.segLabel)+' '+(si+1)+(s.facing?' — '+esc(s.facing):'')):esc(cat.segment.segLabel);}
+
+function segMaterialCardHtml(cat,multi,s,si,roomIdx){
+  const label=segLabelFor(cat,multi,s,si);
+  const key=roomIdx+'_'+si;
+  if(s.material&&!_matEditing[key]){
+    return `<div class="matcard"><div class="matcard-label">${label}</div><div class="matcard-view">
+      ${s.material.image?`<img src="${esc(s.material.image)}" class="matimg">`:''}
+      <div class="matinfo"><div class="matname">${esc(s.material.productName||s.material.sku||'—')}</div>${s.material.sku?`<div class="matsku">SKU: ${esc(s.material.sku)}</div>`:''}</div>
+      <button class="btn-sm btn-edit-mat" data-room="${roomIdx}" data-seg="${si}">Edit</button>
+    </div></div>`;
+  }
+  const cur=s.material||{};
+  return `<div class="matcard"><div class="matcard-label">${label}</div>
+    <div class="matform" data-room="${roomIdx}" data-seg="${si}" data-fetched-image="${esc(cur.image||'')}">
+      <input class="matf-sku" placeholder="SKU code" value="${esc(cur.sku||'')}">
+      <input class="matf-name" placeholder="Product name" value="${esc(cur.productName||'')}">
+      <div class="matf-urlrow">
+        <input class="matf-url" placeholder="materialdepot.com product URL" value="${esc(cur.url||'')}">
+        <button class="btn-sm btn-fetch-img">Fetch image</button>
+      </div>
+      <div class="matf-imgwrap">${cur.image?`<img src="${esc(cur.image)}" class="matimg matf-preview">`:'<div class="matf-preview-empty">No image yet — paste a URL and click Fetch image.</div>'}</div>
+      <div class="matf-actions">
+        <button class="btn-sm btn-save-mat">Save</button>
+        ${s.material?'<button class="btn-sm btn-cancel-mat">Cancel</button>':''}
+      </div>
+      <div class="matf-err"></div>
+    </div></div>`;
+}
+
+function wireMaterialHandlers(){
+  document.querySelectorAll('.btn-edit-mat').forEach(b=>b.onclick=()=>{_matEditing[b.dataset.room+'_'+b.dataset.seg]=true;renderJobCardBody();});
+  document.querySelectorAll('.btn-cancel-mat').forEach(b=>{
+    const form=b.closest('.matform');
+    b.onclick=()=>{delete _matEditing[form.dataset.room+'_'+form.dataset.seg];renderJobCardBody();};
+  });
+  document.querySelectorAll('.btn-fetch-img').forEach(b=>{
+    b.onclick=async()=>{
+      const form=b.closest('.matform');
+      const url=(form.querySelector('.matf-url').value||'').trim();
+      const errEl=form.querySelector('.matf-err');errEl.textContent='';
+      if(!url){errEl.textContent='Paste a materialdepot.com product URL first.';return;}
+      b.disabled=true;b.textContent='Fetching…';
+      try{
+        const r=await fetch('/api/fetch-og-image?url='+encodeURIComponent(url));
+        const j=await r.json();
+        if(j.image){
+          form.querySelector('.matf-imgwrap').innerHTML=`<img src="${esc(j.image)}" class="matimg matf-preview">`;
+          form.dataset.fetchedImage=j.image;
+        }else{
+          errEl.textContent=j.error?('Could not fetch an image from that page.'):'No preview image found on that page.';
+        }
+      }catch(e){errEl.textContent='Could not reach the image fetcher — try again.';}
+      b.disabled=false;b.textContent='Fetch image';
+    };
+  });
+  document.querySelectorAll('.btn-save-mat').forEach(b=>{
+    b.onclick=async()=>{
+      const form=b.closest('.matform');
+      const roomIdx=+form.dataset.room,segIdx=+form.dataset.seg;
+      const sku=form.querySelector('.matf-sku').value.trim();
+      const productName=form.querySelector('.matf-name').value.trim();
+      const url=form.querySelector('.matf-url').value.trim();
+      const image=form.dataset.fetchedImage||null;
+      const errEl=form.querySelector('.matf-err');errEl.textContent='';
+      if(!sku&&!productName&&!url){errEl.textContent='Enter at least a SKU, product name, or URL.';return;}
+      b.disabled=true;b.textContent='Saving…';
+      try{
+        await saveSegmentMaterial(_jcOrder,roomIdx,segIdx,{sku,productName,url,image});
+        delete _matEditing[roomIdx+'_'+segIdx];
+        toast('Material saved');
+        await loadJobCard(_jcOrder);
+      }catch(e){errEl.textContent='Save failed — '+e.message;b.disabled=false;b.textContent='Save';}
+    };
+  });
+}
+
+// Always re-fetches audit_ticked fresh immediately before merging, rather than trusting whatever
+// copy the page loaded with — audit_ticked has this app's worst documented autosave-race history
+// (see CLAUDE.md notes 2/64/66/72), so a stale in-memory write here could clobber a concurrent
+// field-app write (or vice versa).
+async function saveSegmentMaterial(order,roomIdx,segIdx,data){
+  const rows=await sbGet('audit_orders?id=eq.'+order.id+'&select=audit_ticked');
+  const ticked=Array.isArray(rows)&&rows[0]?rows[0].audit_ticked:null;
+  if(!ticked||!Array.isArray(ticked.rooms))throw new Error('Could not load the latest job card — reload and try again.');
+  const room=ticked.rooms[roomIdx];
+  if(!room||!(room.v>=2)||!Array.isArray(room.segments)||!room.segments[segIdx])throw new Error('That room/segment could not be found — reload and try again.');
+  room.segments[segIdx].material={
+    sku:data.sku||'',productName:data.productName||'',url:data.url||'',image:data.image||null,
+    by:{email:SESSION.email,name:SESSION.name},at:new Date().toISOString()
+  };
+  await sbPatch('audit_orders',order.id,{audit_ticked:ticked});
+  _jcTicked=ticked;
 }
 
 /* ============== BOOT ============== */

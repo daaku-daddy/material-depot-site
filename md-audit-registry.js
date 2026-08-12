@@ -116,11 +116,19 @@
       var prq=isV2?(cat.prerequisites||[]).filter(function(p){return s.prereq&&s.prereq[p.k]&&s.prereq[p.k].status;}).map(function(p){var st=s.prereq[p.k].status;var col=st==='Not OK'?'var(--red)':(st==='OK'?'var(--green)':'var(--muted)');return krow(p.label,esc(st)+(s.prereq[p.k].note?' - '+esc(s.prereq[p.k].note):''),col);}).join(''):'';
       var photos=(s.photos||[]).filter(Boolean).map(function(p){return '<img src="'+esc(p)+'" style="width:60px;height:60px;object-fit:cover;border-radius:7px;border:1px solid var(--line)">';}).join('');
       var flagged=window.mdPrereqFlagged({prereq:s.prereq});
+      // BM material selection (added 2026-08-12) — per-segment {sku,productName,url,image,by,at}, set via
+      // BM_Dashboard.html. Absent on every pre-existing segment, so this is purely additive.
+      var mat=s.material?('<div style="margin-top:7px;display:flex;gap:8px;align-items:center;background:var(--lighter,#eef3f9);border-radius:7px;padding:6px 8px">'
+        +(s.material.image?'<img src="'+esc(s.material.image)+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:0 0 auto">':'')
+        +'<div style="font-size:11.5px;min-width:0"><div style="font-weight:700">'+esc(s.material.productName||s.material.sku||'Material selected')+'</div>'
+        +(s.material.sku?'<div style="color:var(--muted)">SKU: '+esc(s.material.sku)+'</div>':'')
+        +'</div></div>'):'';
       return '<div style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:8px">'
         +(multi?'<div style="font-weight:800;font-size:12.5px;color:var(--navy);margin-bottom:6px">'+esc(cat.segment.segLabel)+' '+(si+1)+(s.facing?' - '+esc(s.facing):'')+(flagged?' <span style="color:var(--red)">&#9888;</span>':'')+'</div>':'')
         +(rows?KVW+rows+'</div>':'<div style="color:var(--muted);font-size:12px">No measurements recorded.</div>')
         +(prq?KVW.replace('grid-template','margin-top:6px;grid-template')+prq+'</div>':'')
         +(photos?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+photos+'</div>':'')
+        +mat
         +'</div>';
     }).join('');
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">'
