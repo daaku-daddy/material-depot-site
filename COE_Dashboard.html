@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="/manifest_coe.json"/>
+<meta name="theme-color" content="#1F3A5F"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Material Depot — Category Operations</title>
+<style>
+  :root{
+    --navy:#1F3A5F;--navy2:#16294a;--blue:#2E6CA8;--yellow:#F4C20D;
+    --ink:#1b2230;--muted:#67748a;--line:#e2e7ef;--bg:#eef1f6;--card:#fff;
+    --lighter:#eef3f9;--green:#1f7a3f;--greenbg:#e6f3ea;--amber:#9a6200;--amberbg:#fdf2da;
+    --red:#b3261e;--redbg:#fbeae8;--purple:#5b3aa6;--purplebg:#efeaf8;--teal:#0f6e74;--tealbg:#e0f4f4;
+    --shadow:0 1px 2px rgba(20,40,80,.05),0 6px 18px rgba(20,40,80,.04);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;}
+  header{background:var(--navy);color:#fff;padding:0 18px;display:flex;align-items:center;gap:14px;height:56px;position:sticky;top:0;z-index:40;}
+  header .logo{width:34px;height:34px;border-radius:8px;background:var(--yellow);color:var(--navy);font-weight:800;display:grid;place-items:center;font-size:15px;}
+  header .t{font-size:10px;color:#9fb2cd;letter-spacing:1px;font-weight:700;}
+  header .h{font-size:15px;font-weight:700;line-height:1.1;}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:14px;}
+  header .right a{color:#cdd8e8;text-decoration:none;font-size:12.5px;font-weight:700;}
+  header .who{font-size:12px;color:#cdd8e8;text-align:right;line-height:1.2;}
+  header .who b{color:#fff;font-size:13px;}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;cursor:pointer;}
+  nav.tabs{background:#fff;border-bottom:1px solid var(--line);padding:0 22px;display:flex;gap:4px;position:sticky;top:56px;z-index:39;overflow-x:auto;}
+  nav.tabs button{border:0;background:transparent;padding:12px 14px;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap;border-bottom:2.5px solid transparent;}
+  nav.tabs button.active{color:var(--navy);border-bottom-color:var(--navy);}
+  main{max-width:1180px;margin:0 auto;padding:18px 22px 60px;}
+  .pagehead{display:flex;align-items:flex-end;gap:14px;margin-bottom:14px;flex-wrap:wrap;}
+  .pagehead h1{font-size:21px;margin:0;color:var(--navy);letter-spacing:-.3px;}
+  .pagehead p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+  .pagehead .ph-right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-bottom:14px;}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 13px;cursor:pointer;box-shadow:var(--shadow);border-left:3px solid var(--line);}
+  .stat:hover{background:var(--lighter);}
+  .stat.active{border-left-color:var(--navy);background:var(--lighter);}
+  .stat .sv{font-size:22px;font-weight:800;color:var(--navy);line-height:1.1;}
+  .stat .sl{font-size:11.5px;color:var(--muted);font-weight:700;margin-top:3px;}
+  .stat.s-red .sv{color:var(--red);} .stat.s-amber .sv{color:var(--amber);} .stat.s-green .sv{color:var(--green);}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+  .search{flex:1;min-width:200px;position:relative;}
+  .search input{width:100%;padding:9px 11px 9px 32px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:#fff;}
+  .search .ico{position:absolute;left:10px;top:9px;color:var(--muted);}
+  .filt{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap;}
+  .filt button{border:0;background:transparent;padding:6px 11px;border-radius:7px;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;}
+  .filt button.active{background:var(--navy);color:#fff;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;}
+  .setup-note{background:var(--amberbg);color:var(--amber);border-radius:10px;padding:14px 16px;font-size:13.5px;font-weight:600;margin-bottom:16px;}
+  .empty{text-align:center;padding:50px 20px;color:var(--muted);}
+  .empty .e-ico{font-size:34px;margin-bottom:8px;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:800;padding:10px 14px;border-bottom:1px solid var(--line);background:#fafbfd;white-space:nowrap;}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top;}
+  tbody tr:last-child td{border-bottom:0;}
+  tbody tr{cursor:pointer;}
+  tbody tr:hover{background:var(--lighter);}
+  .tname{font-weight:700;}
+  .tsub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;}
+  .c-overdue{background:var(--redbg);color:var(--red);}
+  .c-today{background:var(--amberbg);color:var(--amber);}
+  .c-upcoming{background:#e4f0fb;color:var(--blue);}
+  .c-converted{background:var(--greenbg);color:var(--green);}
+  .c-lost{background:#eef1f6;color:#5a6b86;}
+  .c-snoozed{background:var(--purplebg);color:var(--purple);}
+  .c-open{background:var(--tealbg);color:var(--teal);}
+  .catpill{display:inline-block;font-size:10.5px;font-weight:700;border-radius:5px;padding:2px 6px;margin-right:3px;background:#fff4d6;color:#7a5800;}
+  .catpill.wp{background:#efeaf8;color:var(--purple);}
+  .catpill.cwp{background:var(--tealbg);color:var(--teal);}
+  .scrim{position:fixed;inset:0;background:rgba(15,25,45,.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50;}
+  .scrim.show{opacity:1;pointer-events:auto;}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:480px;max-width:94vw;background:#fff;transform:translateX(100%);transition:transform .22s;z-index:51;overflow-y:auto;box-shadow:-8px 0 30px rgba(0,0,0,.15);}
+  .drawer.show{transform:translateX(0);}
+  .dhead{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:16px 18px;display:flex;align-items:flex-start;gap:10px;z-index:2;}
+  .dhead h2{margin:0;font-size:17px;color:var(--navy);}
+  .dhead .sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .dclose{margin-left:auto;border:0;background:var(--lighter);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;color:var(--muted);}
+  .dbody{padding:16px 18px;}
+  .sec{margin-bottom:20px;}
+  .sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin:0 0 10px;}
+  .kv{display:grid;grid-template-columns:104px 1fr;gap:7px 14px;font-size:13px;}
+  .kv .k{color:var(--muted);}
+  .kv a{color:var(--blue);text-decoration:none;}
+  .note{background:var(--lighter);border-left:4px solid var(--blue);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--navy);margin:10px 0;}
+  .cp{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);}
+  .cp:last-child{border-bottom:0;}
+  .cp-ico{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;flex:0 0 auto;background:var(--lighter);color:var(--muted);}
+  .cp-ico.done{background:var(--greenbg);color:var(--green);}
+  .cp-ico.due{background:var(--amberbg);color:var(--amber);}
+  .cp-ico.over{background:var(--redbg);color:var(--red);}
+  .cp-t{font-weight:700;font-size:13px;}
+  .cp-s{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .cp-n{font-size:12px;margin-top:3px;background:var(--lighter);border-radius:6px;padding:5px 8px;}
+  .logitem{padding:9px 0;border-bottom:1px solid var(--line);}
+  .logitem:last-child{border-bottom:0;}
+  .logitem .lt{font-weight:700;font-size:13px;}
+  .logitem .lt b{color:var(--navy);}
+  .logitem .ls{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .form input,.form select,.form textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:7px;font-family:inherit;background:#fff;color:var(--ink);}
+  .form textarea{min-height:56px;resize:vertical;}
+  .form label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:3px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .btn{border:0;border-radius:8px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;}
+  .btn.navy{background:var(--navy);color:#fff;} .btn.green{background:var(--green);color:#fff;}
+  .btn.gray{background:var(--lighter);color:var(--navy);} .btn.red{background:var(--red);color:#fff;}
+  .btn.teal{background:var(--teal);color:#fff;}
+  .btn.sm{padding:6px 11px;font-size:12px;}
+  .btn:disabled{opacity:.6;cursor:not-allowed;}
+  .err{color:var(--red);font-size:12px;margin-top:2px;min-height:15px;}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy2);color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:all .25s;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:inline-block;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media(max-width:720px){
+    main{padding:14px 12px 50px;} nav.tabs{padding:0 12px;}
+    thead th:nth-child(n+4),tbody td:nth-child(n+4){display:none;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">MD</div>
+  <div><div class="t">MATERIAL DEPOT</div><div class="h">Category Operations</div></div>
+  <div class="right">
+    <a href="Site_Shadower_App.html">👁 My shadowing</a>
+    <div class="who"><b id="coeName"></b><div>Category Ops</div></div>
+    <div class="avatar" id="signOut" title="Sign out"></div>
+  </div>
+</header>
+<nav class="tabs" id="tabs"></nav>
+<main id="main"></main>
+
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer"></div>
+<div class="toast" id="toast"></div>
+
+<script src="/md-wp-track.js"></script>
+<script>
+/* ============== SUPABASE ============== */
+const SB_URL='https://jqrdfnjfxqxrazfkaofm.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxcmRmbmpmeHF4cmF6Zmthb2ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU5NTcsImV4cCI6MjA5NjY3MTk1N30.2mvCPc0E_vDn2WaID5sEjwU4Dyj53rhevGrSPBa3__g';
+const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+async function sbGet(q){const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),15000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ctrl.signal});return r.json();}finally{clearTimeout(tid);}}
+async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),15000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
+async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),15000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
+function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+
+const SESSION=getSession();
+if(!SESSION||!['coe','admin'].includes(SESSION.role)){window.location.href='Login.html';}
+history.replaceState(null,'',location.href);
+window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
+document.getElementById('coeName').textContent=SESSION?SESSION.name:'';
+(function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
+document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localStorage.removeItem('md_user');window.location.href='Login.html';}};
+
+/* ============== CONFIG ============== */
+const $=s=>document.querySelector(s);
+const AUDIT_COLS='id,pi,po,skus,bm,bm_email,customer_name,phone,addr,status,service,slot,date,auditor_name,log,created_at';
+const INSTALL_COLS='id,pi,po,phone,customer_name,created_at,status,custom_wp,delivery_date';
+
+// The three call checkpoints the COE runs, in days after the site audit.
+// d1 always applies (it's a service-quality review, done even for converted clients —
+// the source spreadsheet fills it in for converted rows too). d3/d14 only chase an
+// order that hasn't happened, so they drop away the moment one is placed.
+const CHECKPOINTS=[
+  {k:'d1', days:1,  label:'D+1 · Client audit review', who:'client', always:true,
+   hint:'Call the client for their review of the site audit.'},
+  {k:'d3', days:3,  label:'D+3 · BM update (no cart yet)', who:'bm', always:false,
+   hint:'No new cart in 3 days — ask the BM why.'},
+  {k:'d14',days:14, label:'D+14 · BM + client update', who:'both', always:false,
+   hint:'No material/installation order after 14 days — take an update from both the BM and the client.'},
+];
+const OUTCOMES=[
+  {k:'reached',      l:'Spoke to them'},
+  {k:'no_reply',     l:'No reply / call not returned'},
+  {k:'not_picked',   l:"Didn't pick the call"},
+  {k:'wrong_number', l:'Wrong / unreachable number'},
+];
+const BUCKETS=[
+  {k:'overdue',  l:'Overdue',          cls:'s-red'},
+  {k:'today',    l:'Due today',        cls:'s-amber'},
+  {k:'upcoming', l:'Upcoming',         cls:''},
+  {k:'snoozed',  l:'Snoozed',          cls:''},
+  {k:'open',     l:'Awaiting outcome', cls:''},
+  {k:'converted',l:'Converted',        cls:'s-green'},
+  {k:'lost',     l:'Lost / closed',    cls:''},
+];
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function mapUrl(a){return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(a);}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2600);}
+function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()))return '—';return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});}
+function fmtDate(ds){if(!ds)return '—';const d=new Date(ds+'T00:00');if(isNaN(d.getTime()))return esc(ds);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
+
+/* ============== PURE DATE / STATE HELPERS (unit-tested) ============== */
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function addDays(ds,n){const d=new Date(ds+'T00:00');d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function daysBetween(a,b){return Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000);}
+
+// The day the site audit actually happened. o.date is the scheduled/visit date; fall back to
+// creation date for the handful of legacy orders that never got one.
+function anchorDate(o){return o.date||(o.createdAt?String(o.createdAt).slice(0,10):null);}
+
+// THE swappable order-placed signal. When Material Depot's other system exposes carts and
+// product-only orders, this is the ONLY function that has to change.
+//   1. an explicit COE tick always wins (covers carts + product-only orders this app can't see)
+//   2. otherwise: an installation order for the same phone, created on or after the audit day.
+// Scoped per audit on purpose — a client can have several audits and several orders, so
+// "this phone ever ordered" (what Admin's analytics Conversion % uses) would wrongly mark a
+// fresh audit as converted off the back of an older, unrelated order.
+function orderPlacedFor(o,installsByPhone){
+  const man=(o.coeTrack&&o.coeTrack.order_placed)||null;
+  if(man&&man.at)return{...man,auto:false};
+  const anchor=anchorDate(o);
+  if(!anchor||!o.phone)return null;
+  const list=(installsByPhone&&installsByPhone.get(o.phone))||[];
+  const hit=list.find(io=>io.createdAt&&String(io.createdAt).slice(0,10)>=anchor);
+  if(!hit)return null;
+  return{auto:true,kind:'installation',ref:hit.pi||'',at:hit.createdAt,orderId:hit.id};
+}
+
+function coeCalls(o){const c=(o.coeTrack&&o.coeTrack.calls)||[];return Array.isArray(c)?c:[];}
+
+// Per-checkpoint state for one audit order. Everything is derived from the append-only
+// calls[] log, so there is no second copy of "is D+1 done" that can fall out of sync.
+function checkpointState(o,placed,today){
+  const anchor=anchorDate(o);
+  const calls=coeCalls(o);
+  return CHECKPOINTS.map(cp=>{
+    const done=calls.filter(c=>c.stage===cp.k).sort((a,b)=>String(a.ts).localeCompare(String(b.ts)));
+    const applies=cp.always||!placed;
+    const dueOn=anchor?addDays(anchor,cp.days):null;
+    let state='n/a';
+    if(applies){
+      if(done.length)state='done';
+      else if(!dueOn)state='pending';
+      else if(dueOn<today)state='overdue';
+      else if(dueOn===today)state='due';
+      else state='pending';
+    }
+    return{...cp,applies,dueOn,state,calls:done,last:done.length?done[done.length-1]:null};
+  });
+}
+
+// Buckets are mutually exclusive and always sum to the total (CLAUDE.md note 82's lesson —
+// never mix a date-derived cross-section into a summable row). Action needed outranks
+// outcome, so a converted client with an unanswered D+1 review still surfaces as due.
+function bucketFor(o,placed,today){
+  const t=(o.coeTrack||{});
+  if(t.result==='lost')return'lost';
+  const cps=checkpointState(o,placed,today);
+  const pending=cps.filter(c=>c.applies&&c.state!=='done');
+  if(t.snooze_until&&t.snooze_until>today&&!pending.some(c=>c.state==='overdue'))return'snoozed';
+  if(pending.some(c=>c.state==='overdue'))return'overdue';
+  if(pending.some(c=>c.state==='due'))return'today';
+  if(placed||t.result==='converted')return'converted';
+  if(pending.length)return'upcoming';
+  return'open';
+}
+
+// Category labels, derived from service{} first (set when the SM creates the service) and
+// falling back to SKU codes. audit_ticked is deliberately never fetched here — it carries
+// job-card photos on completed orders (CLAUDE.md note 3).
+function categoriesFor(o){
+  const out=[];
+  const svc=o.service||{};
+  if(Array.isArray(svc.flooring)&&svc.flooring.length)out.push({l:'Flooring',c:''});
+  if(Array.isArray(svc.wallpaper)&&svc.wallpaper.length)out.push({l:'Wallpaper',c:'wp'});
+  const codes=(o.skus||[]).filter(s=>!s.audit).map(s=>String(s.c||'').toUpperCase()).join(' ');
+  if(/CWP-|CUSTOM/.test(codes)&&!out.some(x=>x.c==='cwp'))out.push({l:'Custom WP',c:'cwp'});
+  if(!out.length){
+    if(/WF-|FLOOR/.test(codes))out.push({l:'Flooring',c:''});
+    if(/WP-|WALL/.test(codes))out.push({l:'Wallpaper',c:'wp'});
+  }
+  return out;
+}
+
+/* ============== STATE ============== */
+let COE_ENABLED=null;      // null = not yet probed
+let WP_ENABLED=null;
+let CITY_ENABLED=false;
+let ORDERS=[], INSTALLS=[], INSTALL_BY_PHONE=new Map(), WP_ROWS=[];
+let view='followups';
+let fuBucket='overdue', searchQ='', cityScopeVal=localStorage.getItem('md_city')||'all';
+let wpBucket='breach', wpSearchQ='', wpVendorFilter='all', _wpDrawerId=null, _wpAddSeed=null;
+let _pollTid=null, _drawerPi=null;
+
+const VIEWS=[{k:'followups',l:'📞 Follow-ups'},{k:'wallpaper',l:'🖼️ Custom wallpaper'}];
+
+async function detectCoe(){
+  try{const r=await sbGet('audit_orders?select=coe_track&limit=1');COE_ENABLED=Array.isArray(r);}
+  catch(e){COE_ENABLED=false;}
+}
+async function detectWp(){
+  try{const r=await sbGet('wp_production?select=id&limit=1');WP_ENABLED=Array.isArray(r);}
+  catch(e){WP_ENABLED=false;}
+}
+async function detectCity(){
+  try{const r=await sbGet('audit_orders?select=city&limit=1');CITY_ENABLED=Array.isArray(r);}
+  catch(e){CITY_ENABLED=false;}
+}
+
+const mapAudit=r=>({
+  id:r.id, pi:r.pi||'', po:r.po?String(r.po).split(',').map(s=>s.trim()).filter(Boolean):[],
+  skus:r.skus||[], bm:r.bm||'—', bmEmail:r.bm_email||null,
+  name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
+  status:r.status||'pending', service:r.service||null, slot:r.slot||null, date:r.date||null,
+  auditorName:r.auditor_name||null, createdAt:r.created_at||null, log:r.log||[],
+  city:r.city||null, coeTrack:(r.coe_track&&typeof r.coe_track==='object')?r.coe_track:{}
+});
+const mapInstall=r=>({
+  id:r.id, pi:r.pi||'', po:r.po?String(r.po).split(',').map(s=>s.trim()).filter(Boolean):[],
+  phone:r.phone||'', name:r.customer_name||'', createdAt:r.created_at||null,
+  status:r.status||'', customWp:!!r.custom_wp, deliveryDate:r.delivery_date||null
+});
+
+async function loadData(){
+  try{
+    // coe_track is probe-gated: selecting a column that doesn't exist yet 400s the whole
+    // query, which would take the wallpaper tab down with it. Same reason the two fetches
+    // settle independently rather than through a single Promise.all rejection.
+    const cols=AUDIT_COLS+(COE_ENABLED?',coe_track':'')+(CITY_ENABLED?',city':'');
+    const [aRes,iRes]=await Promise.allSettled([
+      sbGet('audit_orders?select='+cols+'&status=eq.completed&order=date.desc'),
+      sbGet('install_orders?select='+INSTALL_COLS+'&status=neq.deleted&order=created_at.desc')
+    ]);
+    const aRows=aRes.status==='fulfilled'?aRes.value:null;
+    const iRows=iRes.status==='fulfilled'?iRes.value:null;
+    if(Array.isArray(aRows))ORDERS=aRows.map(mapAudit);
+    if(Array.isArray(iRows)){
+      INSTALLS=iRows.map(mapInstall);
+      INSTALL_BY_PHONE=new Map();
+      INSTALLS.forEach(io=>{
+        if(!io.phone)return;
+        if(!INSTALL_BY_PHONE.has(io.phone))INSTALL_BY_PHONE.set(io.phone,[]);
+        INSTALL_BY_PHONE.get(io.phone).push(io);
+      });
+      // oldest first, so orderPlacedFor picks the FIRST order after the audit, not the latest
+      INSTALL_BY_PHONE.forEach(list=>list.sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))));
+    }
+    if(WP_ENABLED)await loadWp();
+    if(!$("#drawer").classList.contains('show'))render();
+  }catch(e){console.error('loadData',e);}
+}
+
+async function loadWp(){
+  try{
+    const rows=await sbGet('wp_production?select=*&order=created_at.desc');
+    if(Array.isArray(rows))WP_ROWS=rows;
+  }catch(e){console.error('loadWp',e);}
+}
+
+function startPoll(){
+  clearInterval(_pollTid);
+  _pollTid=setInterval(()=>{if(!document.hidden)loadData();},30000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
+}
+
+/* ============== DERIVED VIEW MODEL ============== */
+// One pass over the loaded orders — every view reads this, so a row can never be counted
+// in one place and filtered differently in another.
+function followupRows(){
+  const today=todayStr();
+  return ORDERS
+    .filter(o=>CITY_ENABLED&&cityScopeVal!=='all'?((o.city||'Bengaluru')===cityScopeVal):true)
+    .map(o=>{
+      const placed=orderPlacedFor(o,INSTALL_BY_PHONE);
+      const cps=checkpointState(o,placed,today);
+      const bucket=bucketFor(o,placed,today);
+      const nextDue=cps.filter(c=>c.applies&&c.state!=='done').sort((a,b)=>String(a.dueOn||'').localeCompare(String(b.dueOn||'')))[0]||null;
+      return{o,placed,cps,bucket,nextDue};
+    });
+}
+function searchFilter(rows){
+  if(!searchQ)return rows;
+  const q=searchQ.toLowerCase();
+  return rows.filter(r=>[r.o.pi,r.o.name,r.o.phone,r.o.bm,r.o.auditorName].join(' ').toLowerCase().includes(q));
+}
+
+/* ============== RENDER ============== */
+function renderTabs(){
+  $("#tabs").innerHTML=VIEWS.map(v=>`<button class="${view===v.k?'active':''}" data-v="${v.k}">${v.l}</button>`).join('');
+  document.querySelectorAll('#tabs [data-v]').forEach(b=>b.onclick=()=>{view=b.dataset.v;render();});
+}
+
+function render(){
+  renderTabs();
+  const m=$("#main");
+  if(COE_ENABLED===null){m.innerHTML=`<div class="card"><div class="empty"><span class="spin" style="border-top-color:var(--navy);border-color:rgba(31,58,95,.25)"></span></div></div>`;return;}
+  // Each module reports its own setup state — they share one SQL file but are independent.
+  if(view==='wallpaper')return renderWallpaper(m);
+  if(COE_ENABLED===false){
+    m.innerHTML=`<div class="pagehead"><h1>Follow-ups</h1></div>
+      <div class="setup-note">⏳ This dashboard isn't set up yet — ask an Admin to run <b>docs/coe_dashboard.sql</b> in Supabase, then reload this page.</div>`;
+    return;
+  }
+  renderFollowups(m);
+}
+
+function renderFollowups(m){
+  const all=followupRows();
+  const counts={};BUCKETS.forEach(b=>counts[b.k]=0);
+  all.forEach(r=>{counts[r.bucket]=(counts[r.bucket]||0)+1;});
+  const list=searchFilter(all.filter(r=>r.bucket===fuBucket))
+    .sort((a,b)=>String((a.nextDue&&a.nextDue.dueOn)||'9999').localeCompare(String((b.nextDue&&b.nextDue.dueOn)||'9999')));
+
+  m.innerHTML=`
+    <div class="pagehead">
+      <div><h1>Site audit → order follow-ups</h1>
+        <p>Every completed site audit and where its call cadence stands. D+1 client review → D+3 BM update if no cart → D+14 BM + client update if still no order.</p></div>
+      <div class="ph-right">
+        ${CITY_ENABLED?`<div class="filt">${['all','Bengaluru','Hyderabad'].map(c=>`<button class="${cityScopeVal===c?'active':''}" data-city="${c}">${c==='all'?'All cities':c}</button>`).join('')}</div>`:''}
+        <button class="btn gray sm" id="csvBtn">⬇ CSV</button>
+      </div>
+    </div>
+    <div class="stats">
+      ${BUCKETS.map(b=>`<div class="stat ${b.cls} ${fuBucket===b.k?'active':''}" data-b="${b.k}">
+        <div class="sv">${counts[b.k]||0}</div><div class="sl">${b.l}</div></div>`).join('')}
+    </div>
+    <div class="toolbar">
+      <div class="search"><span class="ico">🔎</span><input id="searchInput" placeholder="Search client, phone, ENQ, BM, auditor…" value="${esc(searchQ)}"></div>
+      <div style="font-size:12px;color:var(--muted)">${all.length} completed audit${all.length===1?'':'s'} tracked</div>
+    </div>
+    <div class="card">
+      ${list.length?`<table><thead><tr>
+          <th>Client</th><th>Audit</th><th>Categories</th><th>BM</th><th>Auditor</th><th>Order</th><th>Next call</th>
+        </tr></thead><tbody>${list.map(fuRow).join('')}</tbody></table>`
+        :`<div class="empty"><div class="e-ico">${counts[fuBucket]?'🔎':'✅'}</div>${counts[fuBucket]?'No rows match your search.':'Nothing in this bucket.'}</div>`}
+    </div>`;
+
+  $("#searchInput").oninput=e=>{searchQ=e.target.value;renderFollowups($("#main"));const el=$("#searchInput");el.focus();el.setSelectionRange(el.value.length,el.value.length);};
+  document.querySelectorAll('[data-b]').forEach(el=>el.onclick=()=>{fuBucket=el.dataset.b;render();});
+  document.querySelectorAll('[data-city]').forEach(el=>el.onclick=()=>{cityScopeVal=el.dataset.city;localStorage.setItem('md_city',cityScopeVal);render();});
+  document.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>openOrder(tr.dataset.pi));
+  $("#csvBtn").onclick=()=>exportCsv(list);
+}
+
+function fuRow(r){
+  const o=r.o;
+  const cats=categoriesFor(o);
+  const placedTxt=r.placed
+    ? `<span class="chip c-converted"><span class="dot"></span>${r.placed.auto?'Order placed':'Marked placed'}</span>`
+    : (o.coeTrack.result==='lost'?`<span class="chip c-lost"><span class="dot"></span>Lost</span>`:`<span style="color:var(--muted);font-size:12px">Not yet</span>`);
+  let nextTxt='<span style="color:var(--muted)">—</span>';
+  if(r.nextDue){
+    const st=r.nextDue.state;
+    const cls=st==='overdue'?'c-overdue':st==='due'?'c-today':'c-upcoming';
+    const lbl=r.nextDue.k.toUpperCase().replace('D','D+');
+    const when=st==='overdue'?`${daysBetween(r.nextDue.dueOn,todayStr())}d overdue`:st==='due'?'today':fmtDate(r.nextDue.dueOn);
+    nextTxt=`<span class="chip ${cls}"><span class="dot"></span>${lbl} · ${when}</span>`;
+  }
+  return `<tr data-pi="${esc(o.pi)}">
+    <td><div class="tname">${esc(o.name||'—')}</div><div class="tsub">${esc(o.phone||'—')}</div></td>
+    <td><div>${o.date?fmtDate(o.date):'—'}</div><div class="tsub">${esc(o.pi)}</div></td>
+    <td>${cats.length?cats.map(c=>`<span class="catpill ${c.c}">${c.l}</span>`).join(''):'<span style="color:var(--muted)">—</span>'}</td>
+    <td>${esc(o.bm||'—')}</td>
+    <td>${esc(o.auditorName||'—')}</td>
+    <td>${placedTxt}</td>
+    <td>${nextTxt}</td>
+  </tr>`;
+}
+
+function exportCsv(rows){
+  const head=['ENQ ID','Client Name','Client Number','Categories','Auditor','BM','Audit Date','Order Placed','D+1 (Audit Review)','D+3 (BM review)','D+14 (BM + client)','Result'];
+  const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const noteOf=cp=>cp&&cp.last?((cp.last.note||'')+(cp.last.outcome?' ['+cp.last.outcome+']':'')):'';
+  const body=rows.map(r=>{
+    const byK={};r.cps.forEach(c=>byK[c.k]=c);
+    return [r.o.pi,r.o.name,r.o.phone,categoriesFor(r.o).map(c=>c.l).join(' + '),r.o.auditorName||'',r.o.bm||'',r.o.date||'',
+      r.placed?'Y':'not yet',noteOf(byK.d1),noteOf(byK.d3),noteOf(byK.d14),
+      r.o.coeTrack.result||(r.placed?'converted':'')].map(cell).join(',');
+  });
+  const blob=new Blob([[head.map(cell).join(',')].concat(body).join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='site-audit-followups-'+todayStr()+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+/* ============== DRAWER ============== */
+function closeDrawer(){$("#drawer").classList.remove('show');$("#scrim").classList.remove('show');_drawerPi=null;_wpDrawerId=null;render();}
+$("#scrim").onclick=closeDrawer;
+
+function openOrder(pi){
+  const o=ORDERS.find(x=>x.pi===pi);if(!o)return;
+  _drawerPi=pi;
+  drawDrawer();
+  $("#drawer").classList.add('show');$("#scrim").classList.add('show');
+}
+
+function drawDrawer(){
+  const o=ORDERS.find(x=>x.pi===_drawerPi);if(!o)return;
+  const today=todayStr();
+  const placed=orderPlacedFor(o,INSTALL_BY_PHONE);
+  const cps=checkpointState(o,placed,today);
+  const t=o.coeTrack||{};
+  const nextDue=cps.filter(c=>c.applies&&c.state!=='done').sort((a,b)=>String(a.dueOn||'').localeCompare(String(b.dueOn||'')))[0]||null;
+  const calls=coeCalls(o).slice().sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
+
+  $("#drawer").innerHTML=`
+    <div class="dhead">
+      <div><h2>${esc(o.name||'—')}</h2>
+        <div class="sub">${esc(o.pi)} · audited ${o.date?fmtDate(o.date):'—'}</div></div>
+      <button class="dclose" id="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="sec"><h3>Who to call</h3><div class="kv">
+        <div class="k">Client</div><div><a href="tel:${esc(o.phone)}">${esc(o.phone||'—')}</a></div>
+        <div class="k">BM</div><div>${esc(o.bm||'—')}${o.bmEmail?` · <a href="mailto:${esc(o.bmEmail)}">${esc(o.bmEmail)}</a>`:''}</div>
+        <div class="k">Auditor</div><div>${esc(o.auditorName||'—')}</div>
+        <div class="k">Categories</div><div>${categoriesFor(o).map(c=>`<span class="catpill ${c.c}">${c.l}</span>`).join('')||'—'}</div>
+        <div class="k">Address</div><div>${o.addr?`<a href="${mapUrl(o.addr)}" target="_blank" rel="noopener">📍 ${esc(o.addr)}</a>`:'—'}</div>
+      </div></div>
+
+      <div class="sec"><h3>Call cadence</h3>
+        ${cps.map(cpHtml).join('')}
+      </div>
+
+      <div class="sec"><h3>Order status</h3>
+        ${placed
+          ? `<div class="note" style="border-color:var(--green);background:var(--greenbg);color:var(--green)">
+               ✓ ${placed.auto?'Installation order found':'Marked as ordered by '+esc((placed.by&&placed.by.name)||'the team')}
+               ${placed.ref?' · '+esc(placed.ref):''}${placed.at?' · '+fmtLog(placed.at):''}
+               ${placed.auto?'<div style="font-weight:400;margin-top:3px">Matched on this client&#39;s phone number, created on or after the audit date.</div>':''}
+             </div>
+             ${placed.auto?'':`<button class="btn gray sm" id="clearPlaced">Undo this mark</button>`}`
+          : `<div class="note">No installation order found for this client since the audit. If they placed a cart or a product-only order this app can't see, record it here.</div>
+             <div class="form">
+               <div class="row2">
+                 <div><label>What was placed</label><select id="opKind">
+                   <option value="cart">Cart made (not yet an order)</option>
+                   <option value="product">Product order (no installation)</option>
+                   <option value="installation">Product + installation order</option>
+                 </select></div>
+                 <div><label>Reference (optional)</label><input id="opRef" placeholder="MD / ENQ id"></div>
+               </div>
+               <button class="btn teal sm" id="markPlaced">Mark as placed</button>
+             </div>`}
+      </div>
+
+      <div class="sec"><h3>Log a call</h3>
+        <div class="form">
+          <div class="row2">
+            <div><label>Checkpoint</label><select id="cStage">
+              ${CHECKPOINTS.map(c=>`<option value="${c.k}" ${nextDue&&nextDue.k===c.k?'selected':''}>${esc(c.label)}</option>`).join('')}
+              <option value="adhoc" ${!nextDue?'selected':''}>Ad-hoc call</option>
+            </select></div>
+            <div><label>Spoke to</label><select id="cWho">
+              <option value="client">Client</option><option value="bm">BM</option>
+            </select></div>
+          </div>
+          <label>Outcome</label>
+          <select id="cOutcome">${OUTCOMES.map(x=>`<option value="${x.k}">${x.l}</option>`).join('')}</select>
+          <label>What they said</label>
+          <textarea id="cNote" placeholder="Their review / reason / next step…"></textarea>
+          <div class="err" id="cErr"></div>
+          <button class="btn navy" id="cSave">Save call</button>
+        </div>
+      </div>
+
+      <div class="sec"><h3>Outcome</h3>
+        ${t.result?`<div class="note" style="${t.result==='converted'?'border-color:var(--green);background:var(--greenbg);color:var(--green)':'border-color:var(--muted)'}">
+            Marked <b>${esc(t.result)}</b>${t.lost_reason?' — '+esc(t.lost_reason):''}
+          </div><button class="btn gray sm" id="clearResult">Reopen</button>`
+         :`<div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn green sm" id="markConverted">Mark converted</button>
+            <button class="btn gray sm" id="markLost">Mark lost</button>
+            <button class="btn gray sm" id="snoozeBtn">Snooze 7 days</button>
+          </div>`}
+        ${t.snooze_until&&t.snooze_until>today?`<div class="tsub" style="margin-top:6px">Snoozed until ${fmtDate(t.snooze_until)}</div>`:''}
+      </div>
+
+      <div class="sec"><h3>Call history</h3>
+        ${calls.length?calls.map(c=>{
+          const cp=CHECKPOINTS.find(x=>x.k===c.stage);
+          const oc=OUTCOMES.find(x=>x.k===c.outcome);
+          return `<div class="logitem">
+            <div class="lt">${cp?esc(cp.label):'Ad-hoc call'} · ${c.who==='bm'?'BM':'Client'}</div>
+            ${c.note?`<div style="font-size:12.5px;margin-top:2px">${esc(c.note)}</div>`:''}
+            <div class="ls">${oc?esc(oc.l):esc(c.outcome||'')} · ${fmtLog(c.ts)}${c.by&&c.by.name?' · '+esc(c.by.name):''}</div>
+          </div>`;}).join('')
+        :'<div style="color:var(--muted);font-size:12.5px">No calls logged yet.</div>'}
+      </div>
+
+      <div class="sec"><h3>Order timeline</h3>
+        ${(o.log&&o.log.length)?o.log.slice().reverse().slice(0,30).map(l=>`<div class="logitem"><div class="lt">${l.who?`<b>${esc(l.who)}</b> · `:''}${esc(l.t||'')}</div><div class="ls">${fmtLog(l.d)}</div></div>`).join(''):'<div style="color:var(--muted);font-size:12.5px">No activity logged.</div>'}
+      </div>
+    </div>`;
+  wireDrawer(o);
+}
+
+function cpHtml(cp){
+  if(!cp.applies)return `<div class="cp"><div class="cp-ico">–</div><div><div class="cp-t" style="color:var(--muted)">${esc(cp.label)}</div><div class="cp-s">Not needed — an order was already placed.</div></div></div>`;
+  const ico=cp.state==='done'?'<div class="cp-ico done">✓</div>':cp.state==='overdue'?'<div class="cp-ico over">!</div>':cp.state==='due'?'<div class="cp-ico due">•</div>':'<div class="cp-ico">•</div>';
+  const sub=cp.state==='done'
+    ? `Called ${fmtLog(cp.last&&cp.last.ts)}${cp.last&&cp.last.by&&cp.last.by.name?' · '+esc(cp.last.by.name):''}`
+    : cp.state==='overdue'?`Due ${fmtDate(cp.dueOn)} · ${daysBetween(cp.dueOn,todayStr())} days overdue`
+    : cp.state==='due'?'Due today'
+    : cp.dueOn?`Due ${fmtDate(cp.dueOn)}`:'No audit date on record';
+  return `<div class="cp">${ico}<div style="flex:1;min-width:0">
+    <div class="cp-t">${esc(cp.label)}</div>
+    <div class="cp-s">${sub}</div>
+    ${cp.state!=='done'?`<div class="cp-s" style="color:var(--muted)">${esc(cp.hint)}</div>`:''}
+    ${cp.calls.map(c=>c.note?`<div class="cp-n">${esc(c.note)}</div>`:'').join('')}
+  </div></div>`;
+}
+
+function wireDrawer(o){
+  $("#dclose").onclick=closeDrawer;
+  const on=(id,fn)=>{const el=document.getElementById(id);if(el)el.onclick=fn;};
+
+  on('cSave',async()=>{
+    const stage=$("#cStage").value, who=$("#cWho").value, outcome=$("#cOutcome").value;
+    const note=($("#cNote").value||'').trim();
+    const err=$("#cErr");err.textContent='';
+    if(!note){err.textContent='Add a short note on what they said — that\'s the point of the call log.';return;}
+    const btn=$("#cSave");btn.disabled=true;btn.textContent='Saving…';
+    const cp=CHECKPOINTS.find(x=>x.k===stage);
+    try{
+      await patchCoe(o,
+        t=>{(t.calls=t.calls||[]).push({id:'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),ts:new Date().toISOString(),stage,who,outcome,note,by:{email:SESSION.email,name:SESSION.name}});return t;},
+        (cp?cp.label:'Ad-hoc call')+' — '+(who==='bm'?'BM':'client')+': '+note
+      );
+      toast('Call logged');drawDrawer();
+    }catch(e){err.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='Save call';}
+  });
+
+  on('markPlaced',async()=>{
+    const kind=$("#opKind").value, ref=($("#opRef").value||'').trim();
+    try{
+      await patchCoe(o,t=>{t.order_placed={kind,ref,at:new Date().toISOString(),by:{email:SESSION.email,name:SESSION.name}};return t;},
+        'Order/cart recorded by category ops ('+kind+(ref?' · '+ref:'')+')');
+      toast('Recorded');drawDrawer();
+    }catch(e){toast('Failed — '+e.message);}
+  });
+  on('clearPlaced',async()=>{
+    try{await patchCoe(o,t=>{delete t.order_placed;return t;},'Order/cart mark removed by category ops');toast('Removed');drawDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+
+  on('markConverted',async()=>{
+    try{await patchCoe(o,t=>{t.result='converted';delete t.lost_reason;return t;},'Marked converted by category ops');toast('Marked converted');drawDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+  on('markLost',async()=>{
+    const why=prompt('Why was this lost? (required)');
+    if(why===null)return;
+    if(!why.trim()){toast('A reason is required');return;}
+    try{await patchCoe(o,t=>{t.result='lost';t.lost_reason=why.trim();return t;},'Marked lost by category ops — '+why.trim());toast('Marked lost');drawDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+  on('clearResult',async()=>{
+    try{await patchCoe(o,t=>{delete t.result;delete t.lost_reason;return t;},'Outcome reopened by category ops');toast('Reopened');drawDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+  on('snoozeBtn',async()=>{
+    const until=addDays(todayStr(),7);
+    try{await patchCoe(o,t=>{t.snooze_until=until;return t;},'Follow-up snoozed to '+until+' by category ops');toast('Snoozed to '+fmtDate(until));drawDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+}
+
+/* ============== CUSTOM WALLPAPER PRODUCTION (P2) ============== */
+// Every stage label, SLA target, vendor and the read-only ladder come from md-wp-track.js —
+// this file only owns the queue UI and the writes. Adding a vendor or retuning an SLA is a
+// one-object edit there, and the SM/BM/Admin mirrors pick it up for free.
+
+function wpDerived(){
+  const now=Date.now();
+  return WP_ROWS
+    .filter(r=>CITY_ENABLED&&cityScopeVal!=='all'?((r.city||'Bengaluru')===cityScopeVal):true)
+    .map(r=>({r,next:window.mdWpNext(r),sla:window.mdWpSla(r,now),bucket:window.mdWpBucket(r,now)}));
+}
+
+// Install orders flagged custom_wp that have no production row yet. Surfaced as a
+// suggestion strip — never auto-created, so the COE stays in control of what's real.
+function wpSeeds(){
+  const known=new Set(WP_ROWS.map(r=>String(r.pi||'').trim()).filter(Boolean));
+  return INSTALLS.filter(io=>io.customWp&&io.pi&&!known.has(io.pi.trim()));
+}
+
+function renderWallpaper(m){
+  if(WP_ENABLED===false){
+    m.innerHTML=`<div class="pagehead"><h1>Custom wallpaper production</h1></div>
+      <div class="setup-note">⏳ The production tracker isn't set up yet — ask an Admin to run <b>docs/coe_dashboard.sql</b> in Supabase, then reload this page.</div>`;
+    return;
+  }
+  const all=wpDerived();
+  const counts={};window.MD_WP_BUCKETS.forEach(b=>counts[b.k]=0);
+  all.forEach(x=>{counts[x.bucket]=(counts[x.bucket]||0)+1;});
+  const q=wpSearchQ.toLowerCase();
+  const list=all.filter(x=>x.bucket===wpBucket)
+    .filter(x=>wpVendorFilter==='all'||x.r.vendor===wpVendorFilter)
+    .filter(x=>!q||[x.r.pi,x.r.md_id,x.r.customer_name,x.r.phone,x.r.bm].join(' ').toLowerCase().includes(q))
+    .sort((a,b)=>(b.sla.hours||0)-(a.sla.hours||0));
+  const seeds=wpSeeds();
+
+  m.innerHTML=`
+    <div class="pagehead">
+      <div><h1>Custom wallpaper production</h1>
+        <p>One row per PO. Dimensions → render → BM → client approval → printing → dispatch → warehouse → delivery → installation, with the vendor's own hour targets on each step.</p></div>
+      <div class="ph-right">
+        ${CITY_ENABLED?`<div class="filt">${['all','Bengaluru','Hyderabad'].map(c=>`<button class="${cityScopeVal===c?'active':''}" data-city="${c}">${c==='all'?'All cities':c}</button>`).join('')}</div>`:''}
+        <button class="btn gray sm" id="wpCsv">⬇ CSV</button>
+        <button class="btn teal sm" id="wpAdd">+ Add wallpaper order</button>
+      </div>
+    </div>
+    ${seeds.length?`<div class="note" style="border-color:var(--teal);background:var(--tealbg);color:var(--teal)">
+      <b>${seeds.length} custom wallpaper order${seeds.length===1?'' : 's'} not being tracked yet.</b>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        ${seeds.slice(0,8).map(s=>`<button class="btn gray sm" data-seed="${esc(s.pi)}">${esc(s.name||s.pi)} · ${esc(s.pi)}</button>`).join('')}
+        ${seeds.length>8?`<span style="align-self:center;font-size:12px">+${seeds.length-8} more</span>`:''}
+      </div></div>`:''}
+    <div class="stats">
+      ${window.MD_WP_BUCKETS.map(b=>`<div class="stat ${b.cls} ${wpBucket===b.k?'active':''}" data-wb="${b.k}">
+        <div class="sv">${counts[b.k]||0}</div><div class="sl">${b.l}</div></div>`).join('')}
+    </div>
+    <div class="toolbar">
+      <div class="search"><span class="ico">🔎</span><input id="wpSearch" placeholder="Search client, ENQ, MD ID, BM…" value="${esc(wpSearchQ)}"></div>
+      <div class="filt">
+        <button class="${wpVendorFilter==='all'?'active':''}" data-wv="all">All vendors</button>
+        ${window.MD_WP_VENDORS.map(v=>`<button class="${wpVendorFilter===v.k?'active':''}" data-wv="${v.k}">${esc(v.label)}</button>`).join('')}
+      </div>
+      <div style="font-size:12px;color:var(--muted)">${all.length} tracked</div>
+    </div>
+    <div class="card">
+      ${list.length?`<table><thead><tr>
+        <th>Client</th><th>IDs</th><th>Vendor</th><th>Round</th><th>Waiting on</th><th>Time at step</th>
+      </tr></thead><tbody>${list.map(wpRowHtml).join('')}</tbody></table>`
+      :`<div class="empty"><div class="e-ico">${WP_ROWS.length?'🔎':'🖼️'}</div>${WP_ROWS.length?'Nothing in this bucket.':'No wallpaper orders tracked yet — add one, or pick a suggestion above.'}</div>`}
+    </div>`;
+
+  $("#wpSearch").oninput=e=>{wpSearchQ=e.target.value;renderWallpaper($("#main"));const el=$("#wpSearch");el.focus();el.setSelectionRange(el.value.length,el.value.length);};
+  document.querySelectorAll('[data-wb]').forEach(el=>el.onclick=()=>{wpBucket=el.dataset.wb;render();});
+  document.querySelectorAll('[data-wv]').forEach(el=>el.onclick=()=>{wpVendorFilter=el.dataset.wv;render();});
+  document.querySelectorAll('[data-city]').forEach(el=>el.onclick=()=>{cityScopeVal=el.dataset.city;localStorage.setItem('md_city',cityScopeVal);render();});
+  document.querySelectorAll('[data-seed]').forEach(el=>el.onclick=()=>openWpAdd(el.dataset.seed));
+  document.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>openWp(tr.dataset.id));
+  $("#wpAdd").onclick=()=>openWpAdd(null);
+  $("#wpCsv").onclick=()=>exportWpCsv(all);
+}
+
+function wpRowHtml(x){
+  const r=x.r,v=window.mdWpVendor(r.vendor);
+  const rounds=window.mdWpRounds(r);
+  const lvl=x.sla.level;
+  const cls=lvl==='breach'?'c-overdue':lvl==='stalled'?'c-today':lvl==='soon'?'c-today':'c-upcoming';
+  const waiting=x.next
+    ? `<span class="chip ${cls}"><span class="dot"></span>${esc(x.next.label)}</span>`
+    : (r.state==='cancelled'?`<span class="chip c-lost"><span class="dot"></span>PO cancelled</span>`:`<span class="chip c-converted"><span class="dot"></span>Complete</span>`);
+  const timeTxt=x.next&&x.sla.from
+    ? `<span style="color:${lvl==='breach'?'var(--red)':lvl==='stalled'||lvl==='soon'?'var(--amber)':'var(--muted)'};font-weight:${lvl==='ok'||lvl==='none'?400:700}">${esc(window.mdWpFmtDur(x.sla.hours))}${x.sla.slaH?` / ${x.sla.slaH}h`:''}</span>`
+    : '<span style="color:var(--muted)">—</span>';
+  return `<tr data-id="${esc(r.id)}">
+    <td><div class="tname">${esc(r.customer_name||'—')}</div><div class="tsub">${esc(r.phone||'')}${r.bm?' · '+esc(r.bm):''}</div></td>
+    <td><div>${esc(r.md_id||'—')}</div><div class="tsub">${esc(r.pi||'')}</div></td>
+    <td>${esc(v.label)}</td>
+    <td>${rounds.length>1?`<span class="catpill cwp">Round ${rounds.length}</span>`:'1'}</td>
+    <td>${waiting}</td>
+    <td>${timeTxt}</td>
+  </tr>`;
+}
+
+/* ---- add form ---- */
+function openWpAdd(seedPi){
+  const seed=seedPi?INSTALLS.find(io=>io.pi===seedPi):null;
+  _wpDrawerId=null;_wpAddSeed=seed||null;
+  const nowLocal=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+  $("#drawer").innerHTML=`
+    <div class="dhead"><div><h2>Add wallpaper order</h2>
+      <div class="sub">${seed?'Pre-filled from installation order '+esc(seed.pi):'One row per PO — the same enquiry can have several.'}</div></div>
+      <button class="dclose" id="dclose">✕</button></div>
+    <div class="dbody"><div class="form">
+      <div class="row2">
+        <div><label>Enquiry ID (ENQ)</label><input id="wfPi" value="${esc(seed?seed.pi:'')}"></div>
+        <div><label>MD ID / PO</label><input id="wfMd" value="${esc(seed&&seed.po&&seed.po[0]?seed.po[0]:'')}"></div>
+      </div>
+      <label>Vendor</label>
+      <select id="wfVendor">${window.MD_WP_VENDORS.map(v=>`<option value="${v.k}">${esc(v.label)} — dispatches from ${esc(v.dispatchFrom)}</option>`).join('')}</select>
+      <div class="row2">
+        <div><label>Client name</label><input id="wfName" value="${esc(seed?seed.name:'')}"></div>
+        <div><label>Client phone</label><input id="wfPhone" value="${esc(seed?seed.phone:'')}"></div>
+      </div>
+      <div class="row2">
+        <div><label>BM</label><input id="wfBm" placeholder="Business manager"></div>
+        <div><label>Order placed at</label><input id="wfPlaced" type="datetime-local" value="${nowLocal}"></div>
+      </div>
+      <label>Notes (product / issue)</label>
+      <textarea id="wfNotes" placeholder="Design, size, anything already flagged…"></textarea>
+      <div class="err" id="wfErr"></div>
+      <button class="btn teal" id="wfSave">Create</button>
+    </div></div>`;
+  $("#dclose").onclick=closeDrawer;
+  $("#drawer").classList.add('show');$("#scrim").classList.add('show');
+  $("#wfSave").onclick=async()=>{
+    const pi=($("#wfPi").value||'').trim(), md=($("#wfMd").value||'').trim();
+    const err=$("#wfErr");err.textContent='';
+    if(!pi){err.textContent='Enquiry ID is required.';return;}
+    if(!md){err.textContent='MD ID / PO is required — it is what makes this row unique.';return;}
+    if(WP_ROWS.some(r=>String(r.pi||'').trim()===pi&&String(r.md_id||'').trim()===md)){
+      err.textContent='That ENQ + MD ID is already being tracked.';return;
+    }
+    const btn=$("#wfSave");btn.disabled=true;btn.textContent='Creating…';
+    const placedRaw=($("#wfPlaced").value||'');
+    try{
+      const body={
+        pi,md_id:md,vendor:$("#wfVendor").value,
+        customer_name:($("#wfName").value||'').trim(),phone:($("#wfPhone").value||'').trim(),
+        bm:($("#wfBm").value||'').trim(),notes:($("#wfNotes").value||'').trim(),
+        order_placed_at:placedRaw?new Date(placedRaw).toISOString():new Date().toISOString(),
+        stages:{},rounds:[{n:1}],state:'active',
+        install_order_id:seed?seed.id:null,
+        log:[{t:'Production tracking started',d:new Date().toISOString(),by:'manual',who:SESSION.name}]
+      };
+      if(CITY_ENABLED)body.city=(cityScopeVal!=='all'?cityScopeVal:'Bengaluru');
+      const made=await sbPost('wp_production',body);
+      const row=Array.isArray(made)?made[0]:made;
+      await loadWp();
+      toast('Wallpaper order added');
+      if(row&&row.id)openWp(row.id);else closeDrawer();
+    }catch(e){err.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='Create';}
+  };
+}
+
+/* ---- production drawer ---- */
+function openWp(id){_wpDrawerId=id;drawWpDrawer();$("#drawer").classList.add('show');$("#scrim").classList.add('show');}
+
+function drawWpDrawer(){
+  const r=WP_ROWS.find(x=>x.id===_wpDrawerId);if(!r)return;
+  const v=window.mdWpVendor(r.vendor);
+  const next=window.mdWpNext(r);
+  const isApproval=next&&next.k==='client_approval';
+  $("#drawer").innerHTML=`
+    <div class="dhead">
+      <div><h2>${esc(r.customer_name||'—')}</h2>
+        <div class="sub">${esc(r.md_id||'—')} · ${esc(r.pi||'—')} · ${esc(v.label)}</div></div>
+      <button class="dclose" id="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="sec"><h3>Who to call</h3><div class="kv">
+        <div class="k">Client</div><div>${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:'—'}</div>
+        <div class="k">BM</div><div>${esc(r.bm||'—')}</div>
+        <div class="k">Vendor</div><div>${esc(v.label)}${v.note?` <span style="color:var(--muted)">· ${esc(v.note)}</span>`:''}</div>
+        <div class="k">Order placed</div><div>${r.order_placed_at?fmtLog(r.order_placed_at):'—'}</div>
+      </div></div>
+
+      <div class="sec"><h3>Production ladder</h3>${window.mdWpLadderHtml(r)}</div>
+
+      ${next?`<div class="sec"><h3>Mark the next step done</h3>
+        <div class="form">
+          <div class="note">Next: <b>${esc(next.label)}</b>${next.redo?' — the client asked for changes, so this opens round '+(window.mdWpRounds(r).length+1)+'.':''}</div>
+          ${isApproval?`<label>What did the client say?</label>
+            <select id="wpDecision">${window.MD_WP_DECISIONS.map(d=>`<option value="${d.k}">${esc(d.l)}</option>`).join('')}</select>`:''}
+          <label>Note ${isApproval?'(required for changes / cancellation)':'(optional)'}</label>
+          <textarea id="wpNote" placeholder="What happened at this step…"></textarea>
+          <div class="err" id="wpErr"></div>
+          <button class="btn navy" id="wpStamp">Mark done</button>
+        </div></div>`
+      :`<div class="sec"><div class="note" style="border-color:var(--green);background:var(--greenbg);color:var(--green)">
+          ${r.state==='cancelled'?'This PO was cancelled — nothing further to do.':'Every step is complete.'}</div></div>`}
+
+      <div class="sec"><h3>Order details</h3>
+        <div class="form">
+          <label>Notes (product / issue)</label>
+          <textarea id="wpNotes">${esc(r.notes||'')}</textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn gray sm" id="wpSaveNotes">Save notes</button>
+            ${r.state!=='cancelled'?`<button class="btn gray sm" id="wpHold">${r.state==='on_hold'?'Resume':'Put on hold'}</button>`:''}
+            ${r.state!=='cancelled'?`<button class="btn red sm" id="wpCancel">Cancel PO</button>`:''}
+          </div>
+        </div>
+      </div>
+
+      <div class="sec"><h3>Activity</h3>
+        ${(Array.isArray(r.log)&&r.log.length)?r.log.slice().reverse().map(l=>`<div class="logitem"><div class="lt">${esc(l.t||'')}</div><div class="ls">${fmtLog(l.d)}${l.who?' · '+esc(l.who):''}</div></div>`).join(''):'<div style="color:var(--muted);font-size:12.5px">Nothing logged yet.</div>'}
+      </div>
+    </div>`;
+  $("#dclose").onclick=closeDrawer;
+  const on=(id,fn)=>{const el=document.getElementById(id);if(el)el.onclick=fn;};
+
+  on('wpStamp',async()=>{
+    const note=(($("#wpNote")||{}).value||'').trim();
+    const decision=isApproval?$("#wpDecision").value:null;
+    const err=$("#wpErr");err.textContent='';
+    if(isApproval&&(decision==='changes_suggested'||decision==='cancelled')&&!note){
+      err.textContent='A note is required — it is the only record of why this looped or stopped.';return;
+    }
+    const btn=$("#wpStamp");btn.disabled=true;btn.textContent='Saving…';
+    try{await stampWpStage(r,next,{note,decision});toast('Updated');drawWpDrawer();}
+    catch(e){err.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='Mark done';}
+  });
+  on('wpSaveNotes',async()=>{
+    try{await patchWp(r,cur=>{cur.notes=($("#wpNotes").value||'').trim();return cur;},'Notes updated');toast('Notes saved');drawWpDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+  on('wpHold',async()=>{
+    const to=r.state==='on_hold'?'active':'on_hold';
+    const why=to==='on_hold'?prompt('Why is this on hold? (required)'):'';
+    if(to==='on_hold'){if(why===null)return;if(!why.trim()){toast('A reason is required');return;}}
+    try{await patchWp(r,cur=>{cur.state=to;return cur;},to==='on_hold'?'Put on hold — '+why.trim():'Resumed');toast(to==='on_hold'?'On hold':'Resumed');drawWpDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+  on('wpCancel',async()=>{
+    const why=prompt('Why is this PO being cancelled? (required)');
+    if(why===null)return;
+    if(!why.trim()){toast('A reason is required');return;}
+    try{await patchWp(r,cur=>{cur.state='cancelled';return cur;},'PO cancelled — '+why.trim());toast('PO cancelled');drawWpDrawer();}
+    catch(e){toast('Failed — '+e.message);}
+  });
+}
+
+// Stamps one stage. Round stages write into the current round; a "redo" (the client asked for
+// changes) opens a NEW round rather than overwriting the last one, so every render cycle keeps
+// its own timestamps — which is the whole reason per-round delay analysis is possible.
+async function stampWpStage(row,next,{note,decision}){
+  const stamp={at:new Date().toISOString(),by:{email:SESSION.email,name:SESSION.name},note:note||''};
+  const label=window.mdWpStageLabel(next.k,row.vendor);
+  let logText=label+(note?' — '+note:'');
+  await patchWp(row,cur=>{
+    cur.stages=(cur.stages&&typeof cur.stages==='object')?cur.stages:{};
+    cur.rounds=Array.isArray(cur.rounds)&&cur.rounds.length?cur.rounds:[{n:1}];
+    if(window.MD_WP_ROUND_KEYS.indexOf(next.k)>=0){
+      if(next.redo)cur.rounds.push({n:cur.rounds.length+1});
+      const round=cur.rounds[cur.rounds.length-1];
+      if(next.k==='client_approval'){
+        round.approval={...stamp,decision:decision||'approved'};
+        if(decision==='cancelled')cur.state='cancelled';
+      }else round[next.k]=stamp;
+    }else{
+      cur.stages[next.k]=stamp;
+    }
+    return cur;
+  },logText+(decision?' ['+decision+']':'')+(next.redo?' (round '+((Array.isArray(row.rounds)?row.rounds.length:1)+1)+')':''));
+}
+
+// Same fresh-fetch-then-merge-then-patch discipline as the follow-up writes: re-read the row
+// immediately before merging so a second COE session's stamp is never silently clobbered.
+async function patchWp(row,mutate,logText){
+  const rows=await sbGet('wp_production?id=eq.'+row.id+'&select=*');
+  if(!Array.isArray(rows)||!rows[0])throw new Error('could not re-read this order');
+  const cur=JSON.parse(JSON.stringify(rows[0]));
+  const next=mutate(cur);
+  const log=Array.isArray(next.log)?next.log:[];
+  if(logText)log.push({t:logText,d:new Date().toISOString(),by:'manual',who:SESSION.name});
+  const body={stages:next.stages||{},rounds:next.rounds||[],state:next.state||'active',notes:next.notes||'',log};
+  await sbPatch('wp_production',row.id,body);
+  Object.assign(row,body);
+  const i=WP_ROWS.findIndex(x=>x.id===row.id);
+  if(i>=0)WP_ROWS[i]=Object.assign({},WP_ROWS[i],body);
+  return row;
+}
+
+function exportWpCsv(list){
+  const S=window.MD_WP_STAGES;
+  const head=['Order Placed Date','MD ID','ENQ ID','Vendor','Client','Phone','BM','Rounds']
+    .concat(S.map(s=>s.label.replace('{from}','vendor')))
+    .concat(['State','Waiting on','Hours at step','Details / Product / Issue']);
+  const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const body=list.map(x=>{
+    const r=x.r;
+    const cols=S.map(s=>{
+      const at=window.mdWpStageAt(r,s.k);
+      if(s.k==='client_approval'){const d=window.mdWpDecision(r);return d?d:(at?'Yes':'');}
+      return at?'Yes':'';
+    });
+    return [r.order_placed_at?String(r.order_placed_at).slice(0,10):'',r.md_id,r.pi,window.mdWpVendor(r.vendor).label,
+      r.customer_name,r.phone,r.bm,window.mdWpRounds(r).length]
+      .concat(cols)
+      .concat([r.state,x.next?x.next.label:'—',x.next?Math.round(x.sla.hours):'',r.notes||''])
+      .map(cell).join(',');
+  });
+  const blob=new Blob([[head.map(cell).join(',')].concat(body).join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='custom-wallpaper-production-'+todayStr()+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+/* ============== WRITES ============== */
+// Always re-fetches coe_track AND log immediately before merging, then writes both in one
+// PATCH. Same fresh-fetch-then-append pattern as BM_Dashboard's pushJourneyEntry — coe_track
+// can be appended to from more than one session, and a stale in-memory copy would silently
+// drop somebody else's call. Mirroring into log[] is what makes COE activity visible to the
+// SM, Admin and BM without any of them needing to know this table exists.
+async function patchCoe(o,mutate,logText){
+  const rows=await sbGet('audit_orders?id=eq.'+o.id+'&select=coe_track,log');
+  if(!Array.isArray(rows)||!rows[0])throw new Error('could not re-read this order');
+  const cur=(rows[0].coe_track&&typeof rows[0].coe_track==='object')?rows[0].coe_track:{};
+  const next=mutate(JSON.parse(JSON.stringify(cur)));
+  const body={coe_track:next};
+  if(logText){
+    const log=Array.isArray(rows[0].log)?rows[0].log:[];
+    log.push({t:logText,d:new Date().toISOString(),by:'manual',who:SESSION.name});
+    body.log=log;
+    o.log=log;
+  }
+  await sbPatch('audit_orders',o.id,body);
+  o.coeTrack=next;
+  return next;
+}
+
+/* ============== BOOT ============== */
+(async function boot(){
+  render();
+  await Promise.all([detectCoe(),detectWp()]);
+  if(COE_ENABLED||WP_ENABLED){
+    await detectCity();
+    await loadData();
+  }
+  render();
+  startPoll();
+})();
+</script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+<script src="/pwa-install.js"></script>
+</body>
+</html>

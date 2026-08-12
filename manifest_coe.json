@@ -1,0 +1,13 @@
+{
+  "name": "MD Category Ops",
+  "short_name": "MD Cat Ops",
+  "description": "Material Depot — Category Operations Executive follow-up & production tracking",
+  "start_url": "/COE_Dashboard.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1F3A5F",
+  "theme_color": "#1F3A5F",
+  "icons": [
+    {"src": "/md_icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

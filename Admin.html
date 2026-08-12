@@ -92,6 +92,7 @@
   .rb-auditor_installer{background:#e0f4f4;color:#0f6e74;}
   .rb-store_staff{background:var(--amberbg);color:var(--amber);}
   .rb-bm{background:var(--redbg);color:var(--red);}
+  .rb-coe{background:#e0f4f4;color:#0f6e74;}
 
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
   .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;}
@@ -327,8 +328,9 @@ const ROLES = {
   auditor_installer:  {label:'Auditor + Installer',      color:'#0f6e74', file:'Site_Auditor_App.html'},
   store_staff:        {label:'Store Team',               color:'#9a6200', file:'Store_Team_App.html'},
   bm:                 {label:'Business Manager',         color:'#b3261e', file:'BM_Dashboard.html'},
+  coe:                {label:'Category Ops Executive',   color:'#0f6e74', file:'COE_Dashboard.html'},
 };
-const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪', bm:'🧑‍💼'};
+const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪', bm:'🧑‍💼', coe:'📞'};
 const ROLE_DESCS = {
   service_mgr:'Audit scheduling & installation tracking dashboard',
   site_auditor:'Field audit mobile app — site visits & reports',
@@ -336,6 +338,7 @@ const ROLE_DESCS = {
   auditor_installer:'Both audit and installer apps — can switch between them',
   store_staff:'Experience centre slot booking for walk-in clients',
   bm:'My orders — customer journey, material selection & job card visibility',
+  coe:'Site audit → order follow-up calls & custom wallpaper production tracking',
 };
 
 function roleBadge(r){const c=ROLES[r]||{label:r,color:'#999'};return `<span class="role-badge rb-${r}">${c.label}</span>`;}
@@ -403,7 +406,7 @@ async function renderOverview(m){
     sbGet('install_orders?status=in.(scheduled,onway,atsite)&select=id'),
   ]);
   const list=Array.isArray(users)?users:[];
-  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0,store_staff:0,bm:0};
+  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0,store_staff:0,bm:0,coe:0};
   list.forEach(u=>{if(c[u.role]!==undefined)c[u.role]++;});
   const total=list.length;
   const active=(Array.isArray(auditActive)?auditActive.length:0)+(Array.isArray(installActive)?installActive.length:0);
@@ -509,6 +512,7 @@ function openAddUser(){
           <option value="installer">Site Installer</option>
           <option value="auditor_installer">Site Auditor + Installer</option>
           <option value="bm">Business Manager</option>
+          <option value="coe">Category Ops Executive</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -575,6 +579,7 @@ function openEditRole(u){
           <option value="installer" ${u.role==='installer'?'selected':''}>Site Installer</option>
           <option value="auditor_installer" ${u.role==='auditor_installer'?'selected':''}>Site Auditor + Installer</option>
           <option value="bm" ${u.role==='bm'?'selected':''}>Business Manager</option>
+          <option value="coe" ${u.role==='coe'?'selected':''}>Category Ops Executive</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         </select>
       </div>
@@ -689,7 +694,7 @@ function drawRoleViewer(m){
   m.innerHTML=`
     <div class="page-head"><h1>Role Viewer</h1><p>Preview exactly what each role sees when they log in.</p></div>
     <div class="role-cards">
-      ${['service_mgr','site_auditor','installer','auditor_installer','store_staff','bm'].map(k=>{
+      ${['service_mgr','site_auditor','installer','auditor_installer','store_staff','bm','coe'].map(k=>{
         const cnt=(rvPersons[k]||[]).length;
         return `<div class="role-card${rvRole===k?' active':''}" onclick="setRoleView('${k}')">
           <div class="rc-ico">${ROLE_ICONS[k]}</div>
