@@ -10,6 +10,7 @@
 (function(){
   var _n=function(x){var v=parseFloat(x);return isFinite(v)?v:0;};
   var r2=function(x){return Math.round(x*100)/100;};
+  var MM2_PER_SQFT=92903.04; // 304.8mm (1ft) squared — converts a height(mm)*width(mm) area straight to sq.ft
 
   window.MD_CATEGORIES={
     flooring:{
@@ -52,9 +53,9 @@
       segment:{model:'multi', segLabel:'Wall', facing:true, facingOpts:['North','South','East','West','North-East','North-West','South-East','South-West'], addLabel:'Add wall'},
       variants:['Standard','Customized'], rollCoverage:57,
       fields:[
-        {k:'height',    group:'Measurements', label:'Wall height (in)', input:'decimal'},
-        {k:'width',     group:'Measurements', label:'Wall width (in)',  input:'decimal'},
-        {k:'area',      group:'Measurements', label:'Area (sq.ft)', derived:true, compute:function(v){return r2((_n(v.height)*_n(v.width))/144);}},
+        {k:'height',    group:'Measurements', label:'Wall height (mm)', input:'decimal'},
+        {k:'width',     group:'Measurements', label:'Wall width (mm)',  input:'decimal'},
+        {k:'area',      group:'Measurements', label:'Area (sq.ft)', derived:true, compute:function(v){return r2((_n(v.height)*_n(v.width))/MM2_PER_SQFT);}},
         {k:'wastagePct',group:'Measurements', label:'Wastage to add (%)', input:'decimal'},
         {k:'areaW',     group:'Measurements', label:'Area incl. wastage (sq.ft)', derived:true, compute:function(v){return r2(_n(v.area)*(1+_n(v.wastagePct)/100));}},
         {k:'rolls',     group:'Measurements', label:'Rolls required', derived:true, compute:function(v,cat){return Math.ceil(_n(v.areaW)/((cat&&cat.rollCoverage)||57))||0;}}
@@ -71,6 +72,55 @@
       installFields:[
         {k:'installedRolls', group:'Installed', label:'Rolls used', input:'decimal'},
         {k:'batch',          group:'Installed', label:'Batch / lot no.', input:'text'}
+      ]
+    },
+    cnc:{
+      id:'cnc', label:'CNC', pdfLabel:'CNC',
+      segment:{model:'multi', segLabel:'Wall', facing:true, facingOpts:['North','South','East','West','North-East','North-West','South-East','South-West'], addLabel:'Add wall'},
+      variants:null, rollCoverage:null,
+      fields:[
+        {k:'height', group:'Measurements', label:'Wall height (mm)', input:'decimal'},
+        {k:'width',  group:'Measurements', label:'Wall width (mm)',  input:'decimal'},
+        {k:'area',   group:'Measurements', label:'Area (sq.ft)', derived:true, compute:function(v){return r2((_n(v.height)*_n(v.width))/MM2_PER_SQFT);}}
+      ],
+      prerequisites:[
+        {k:'moisture',   label:'Wall moisture within threshold'},
+        {k:'even',       label:'Wall surface even'},
+        {k:'clean',      label:'Wall cleanliness (no dust / debris)'},
+        {k:'structural', label:'Wall structurally sound for CNC panel fixing'},
+        {k:'noSeep',     label:'No active seepage / dampness'},
+        {k:'ready',      label:'Room ready (no ongoing wet-trade work)'}
+      ],
+      legacyFields:[],
+      installFields:[]
+    },
+    wallpanel:{
+      id:'wallpanel', label:'Wall Panels', pdfLabel:'Wall Panels',
+      segment:{model:'multi', segLabel:'Wall', facing:true, facingOpts:['North','South','East','West','North-East','North-West','South-East','South-West'], addLabel:'Add wall'},
+      variants:null, rollCoverage:null,
+      fields:[
+        {k:'height',    group:'Measurements', label:'Wall height (in)', input:'decimal'},
+        {k:'width',     group:'Measurements', label:'Wall width (in)',  input:'decimal'},
+        {k:'area',      group:'Measurements', label:'Area (sq.ft)', derived:true, compute:function(v){return r2((_n(v.height)*_n(v.width))/144);}},
+        {k:'wastagePct',group:'Measurements', label:'Wastage to add (%)', input:'decimal'},
+        {k:'areaW',     group:'Measurements', label:'Area incl. wastage (sq.ft)', derived:true, compute:function(v){return r2(_n(v.area)*(1+_n(v.wastagePct)/100));}},
+        {k:'cornerRft', group:'Profiles', label:'Corner beading (running ft)', input:'decimal'},
+        {k:'reducerRft',group:'Profiles', label:'Reducer profile (running ft)', input:'decimal'},
+        {k:'tprofRft',  group:'Profiles', label:'T-profile (running ft)', input:'decimal'},
+        {k:'lprofRft',  group:'Profiles', label:'L-profile (running ft)', input:'decimal'}
+      ],
+      prerequisites:[
+        {k:'moisture',   label:'Wall moisture within threshold'},
+        {k:'even',       label:'Wall surface even'},
+        {k:'clean',      label:'Wall cleanliness (no dust / flaking paint)'},
+        {k:'structural', label:'Wall structurally sound to bear panel weight'},
+        {k:'noSeep',     label:'No active seepage / dampness'},
+        {k:'ready',      label:'Room ready (no ongoing wet-trade work)'}
+      ],
+      legacyFields:[],
+      installFields:[
+        {k:'installedArea', group:'Installed', label:'Area installed (sq.ft)', input:'decimal'},
+        {k:'batch',         group:'Installed', label:'Batch / lot no.', input:'text'}
       ]
     }
   };

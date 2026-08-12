@@ -517,6 +517,7 @@ function openAddUser(){
         <select id="f-itype">
           <option value="flooring">Wooden Flooring</option>
           <option value="wallpaper">Wallpaper</option>
+          <option value="wallpanel">Wall Panels</option>
         </select>
       </div>
       ${CITY_ENABLED?`<div class="form-group"><label>City</label><select id="f-city"><option value="Bengaluru">Bengaluru</option><option value="Hyderabad">Hyderabad</option></select></div>`:''}
@@ -582,6 +583,7 @@ function openEditRole(u){
         <select id="e-itype">
           <option value="flooring" ${curType==='flooring'?'selected':''}>Wooden Flooring</option>
           <option value="wallpaper" ${curType==='wallpaper'?'selected':''}>Wallpaper</option>
+          <option value="wallpanel" ${curType==='wallpanel'?'selected':''}>Wall Panels</option>
         </select>
       </div>
       <div class="form-group" id="e-payrates-row" style="display:${(u.role==='installer'||u.role==='auditor_installer')?'block':'none'}">
@@ -590,6 +592,7 @@ function openEditRole(u){
           <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Flooring ₹/sqft</div><input type="number" min="0" step="0.01" id="e-pr-fl" value="${pr.fl_sqft!=null?pr.fl_sqft:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
           <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Std WP ₹/roll</div><input type="number" min="0" step="0.01" id="e-pr-wpstd" value="${pr.wp_std_roll!=null?pr.wp_std_roll:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
           <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Custom WP ₹/sqft</div><input type="number" min="0" step="0.01" id="e-pr-wpcust" value="${pr.wp_custom_sqft!=null?pr.wp_custom_sqft:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+          <div style="flex:1;min-width:96px"><div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">Wall Panels ₹/sqft</div><input type="number" min="0" step="0.01" id="e-pr-wpnl" value="${pr.wpnl_sqft!=null?pr.wpnl_sqft:''}" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
         </div>
       </div>
       ${CITY_ENABLED?`<div class="form-group"><label>City</label><select id="e-city"><option value="Bengaluru" ${(u.city||'Bengaluru')==='Bengaluru'?'selected':''}>Bengaluru</option><option value="Hyderabad" ${u.city==='Hyderabad'?'selected':''}>Hyderabad</option></select></div>`:''}
@@ -618,8 +621,8 @@ async function submitEditRole(id,name){
   let pay_rates=undefined;
   if(isInst){
     const rd=eid=>{const el=document.getElementById(eid);if(!el||el.value==='')return null;const v=parseFloat(el.value);return isNaN(v)?null:v;};
-    const pr={fl_sqft:rd('e-pr-fl'),wp_std_roll:rd('e-pr-wpstd'),wp_custom_sqft:rd('e-pr-wpcust')};
-    pay_rates=(pr.fl_sqft==null&&pr.wp_std_roll==null&&pr.wp_custom_sqft==null)?null:pr;
+    const pr={fl_sqft:rd('e-pr-fl'),wp_std_roll:rd('e-pr-wpstd'),wp_custom_sqft:rd('e-pr-wpcust'),wpnl_sqft:rd('e-pr-wpnl')};
+    pay_rates=(pr.fl_sqft==null&&pr.wp_std_roll==null&&pr.wp_custom_sqft==null&&pr.wpnl_sqft==null)?null:pr;
   }
   try{
     await sbPatch('profiles',id,{role,installer_type,...(pay_rates!==undefined?{pay_rates}:{}),...(CITY_ENABLED&&cityEl?{city:cityEl.value}:{})});
@@ -1370,7 +1373,7 @@ function _anParseDateText(text){
    installers (600 sqft / 3 installers = 200 each) and pays partial work too.
    ============================================================================ */
 let payoutFrom='', payoutTo='', payoutCity='all';
-const _PAY_DEF={fl_sqft:0,wp_std_roll:0,wp_custom_sqft:0};
+const _PAY_DEF={fl_sqft:0,wp_std_roll:0,wp_custom_sqft:0,wpnl_sqft:0};
 let _payoutGlobal={..._PAY_DEF}, _payoutGlobalId=null, _payoutOverrides={};
 
 // app_settings is a tiny key→jsonb table (see the SQL in the plan). knownId lets a re-save skip the lookup.
@@ -1411,7 +1414,7 @@ function _payoutRows(installs,from,to,city){
     for(const sj of(o.subjobs||[])){
       if(sj.status!=='completed'&&sj.status!=='partial')continue;
       const isPartial=sj.status==='partial';
-      const key=(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' installation '+(isPartial?'partially completed':'completed');
+      const key=(sj.type==='wallpaper'?'Wallpaper':sj.type==='wallpanel'?'Wall Panels':'Flooring')+' installation '+(isPartial?'partially completed':'completed');
       let cd=null;
       for(const l of(o.log||[])){if(l.t&&l.d&&l.t.startsWith(key)){const d=_anDateIST(l.d);if(!cd||d>cd)cd=d;}}
       if(!cd&&isPartial&&sj.jobcard&&sj.jobcard.partialAt)cd=_anDateIST(sj.jobcard.partialAt);
@@ -1432,15 +1435,16 @@ function _payoutAggregate(rows){
     const totalSqft=(sj.items||[]).reduce((s,it)=>s+(parseFloat(it.sqft)||0),0);
     const totalRolls=(sj.items||[]).reduce((s,it)=>{const q=parseFloat(it.sqft)||0;return s+(q?Math.ceil(q/SQFT_PER_ROLL):0);},0);
     const shareSqft=totalSqft/n, shareRolls=totalRolls/n;
-    const isFl=sj.type==='flooring', isCustom=_payIsCustomWp(o,sj);
+    const isFl=sj.type==='flooring', isWpl=sj.type==='wallpanel', isCustom=!isWpl&&_payIsCustomWp(o,sj);
     for(const a of asg){
       const email=a.installer_email||'', name=a.installer_name||a.installer||email||'—';
       const k=(email||('name:'+name)).toLowerCase();
-      if(!map[k])map[k]={name,email,jobs:new Set(),fl_sqft:0,fl_amt:0,wpstd_rolls:0,wpstd_amt:0,wpcust_sqft:0,wpcust_amt:0,total:0,lines:[]};
+      if(!map[k])map[k]={name,email,jobs:new Set(),fl_sqft:0,fl_amt:0,wpstd_rolls:0,wpstd_amt:0,wpcust_sqft:0,wpcust_amt:0,wpnl_sqft:0,wpnl_amt:0,total:0,lines:[]};
       const M=map[k];M.jobs.add(o.pi);
-      const line={pi:o.pi,date:r.date,cat:isFl?'Flooring':(isCustom?'Custom WP':'Std WP'),partial:r.isPartial,co:n,share:0,unit:'',rate:0,amt:0};
+      const line={pi:o.pi,date:r.date,cat:isFl?'Flooring':isWpl?'Wall Panels':(isCustom?'Custom WP':'Std WP'),partial:r.isPartial,co:n,share:0,unit:'',rate:0,amt:0};
       let amt=0;
       if(isFl){const rate=_payRate(email,name,'fl_sqft');amt=shareSqft*rate;M.fl_sqft+=shareSqft;M.fl_amt+=amt;line.share=shareSqft;line.unit='sqft';line.rate=rate;}
+      else if(isWpl){const rate=_payRate(email,name,'wpnl_sqft');amt=shareSqft*rate;M.wpnl_sqft+=shareSqft;M.wpnl_amt+=amt;line.share=shareSqft;line.unit='sqft';line.rate=rate;}
       else if(isCustom){const rate=_payRate(email,name,'wp_custom_sqft');amt=shareSqft*rate;M.wpcust_sqft+=shareSqft;M.wpcust_amt+=amt;line.share=shareSqft;line.unit='sqft';line.rate=rate;}
       else{const rate=_payRate(email,name,'wp_std_roll');amt=shareRolls*rate;M.wpstd_rolls+=shareRolls;M.wpstd_amt+=amt;line.share=shareRolls;line.unit='rolls';line.rate=rate;}
       line.amt=amt;M.total+=amt;M.lines.push(line);
@@ -1469,7 +1473,7 @@ async function renderPayouts(m){
 
 function _payNum(id){const el=document.getElementById(id);const v=el?parseFloat(el.value):NaN;return isNaN(v)?0:v;}
 async function savePayoutRates(){
-  const v={fl_sqft:_payNum('pr-fl'),wp_std_roll:_payNum('pr-wpstd'),wp_custom_sqft:_payNum('pr-wpcust')};
+  const v={fl_sqft:_payNum('pr-fl'),wp_std_roll:_payNum('pr-wpstd'),wp_custom_sqft:_payNum('pr-wpcust'),wpnl_sqft:_payNum('pr-wpnl')};
   try{_payoutGlobalId=await _saveSetting('payout_rates',v,_payoutGlobalId);_payoutGlobal={..._PAY_DEF,...v};toast('✓ Payout rates saved');drawPayouts(document.getElementById('main'));}
   catch(e){toast('⚠ Could not save rates — '+(e.message||'the app_settings table may be missing (run the SQL)'));}
 }
@@ -1481,9 +1485,9 @@ function drawPayouts(m){
   const rows=_payoutRows(installs,payoutFrom,payoutTo,payoutCity);
   const agg=_payoutAggregate(rows);window._payoutAgg=agg;
   const grand=agg.reduce((s,r)=>s+r.total,0);
-  const flTot=agg.reduce((s,r)=>s+r.fl_amt,0), wpTot=agg.reduce((s,r)=>s+r.wpstd_amt+r.wpcust_amt,0);
+  const flTot=agg.reduce((s,r)=>s+r.fl_amt,0), wpTot=agg.reduce((s,r)=>s+r.wpstd_amt+r.wpcust_amt,0), wpnlTot=agg.reduce((s,r)=>s+r.wpnl_amt,0);
   const gv=_payoutGlobal;
-  const ratesUnset=(gv.fl_sqft||0)===0&&(gv.wp_std_roll||0)===0&&(gv.wp_custom_sqft||0)===0;
+  const ratesUnset=(gv.fl_sqft||0)===0&&(gv.wp_std_roll||0)===0&&(gv.wp_custom_sqft||0)===0&&(gv.wpnl_sqft||0)===0;
   const filtBtn='border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:7px;padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer';
   const cityOpts=CITY_ENABLED?`<select onchange="payoutCity=this.value;drawPayouts(document.getElementById('main'))" style="padding:7px;border:1px solid var(--line);border-radius:7px;font-weight:700">
       <option value="all"${payoutCity==='all'?' selected':''}>All cities</option>
@@ -1509,6 +1513,7 @@ function drawPayouts(m){
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Flooring (₹/sqft)</label><input type="number" min="0" step="0.01" id="pr-fl" value="${gv.fl_sqft||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Standard WP (₹/roll)</label><input type="number" min="0" step="0.01" id="pr-wpstd" value="${gv.wp_std_roll||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Custom WP (₹/sqft)</label><input type="number" min="0" step="0.01" id="pr-wpcust" value="${gv.wp_custom_sqft||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Wall Panels (₹/sqft)</label><input type="number" min="0" step="0.01" id="pr-wpnl" value="${gv.wpnl_sqft||''}" style="width:130px;padding:7px;border:1px solid var(--line);border-radius:7px"></div>
       <button onclick="savePayoutRates()" style="border:0;background:var(--green);color:#fff;border-radius:7px;padding:8px 16px;font-weight:800;cursor:pointer">Save rates</button>
       <div style="font-size:11.5px;color:var(--muted);flex-basis:100%">Global defaults. To pay a specific installer differently, set an override in <b>Users → Edit Role</b>.</div>
     </div>
@@ -1518,13 +1523,14 @@ function drawPayouts(m){
     <div class="stat-card"><div class="val">${agg.length}</div><div class="lbl">Installers</div></div>
     <div class="stat-card"><div class="val">${_payRup(flTot)}</div><div class="lbl">Flooring</div></div>
     <div class="stat-card"><div class="val">${_payRup(wpTot)}</div><div class="lbl">Wallpaper</div></div>
+    <div class="stat-card"><div class="val">${_payRup(wpnlTot)}</div><div class="lbl">Wall Panels</div></div>
   </div>`;
   if(!agg.length){html+=`<div style="text-align:center;padding:40px 0;color:var(--muted)">No completed installation work in this range${payoutCity!=='all'?' for '+payoutCity:''}.</div>`;m.innerHTML=html;return;}
   html+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px">
     <thead><tr style="text-align:left;border-bottom:2px solid var(--line);color:var(--muted);font-size:11px">
       <th style="padding:8px 6px">Installer</th><th style="text-align:right">Jobs</th>
       <th style="text-align:right">Flooring<br>sqft · ₹</th><th style="text-align:right">Std WP<br>rolls · ₹</th>
-      <th style="text-align:right">Custom WP<br>sqft · ₹</th><th style="text-align:right;padding-right:6px">Total</th></tr></thead><tbody>`;
+      <th style="text-align:right">Custom WP<br>sqft · ₹</th><th style="text-align:right">Wall Panels<br>sqft · ₹</th><th style="text-align:right;padding-right:6px">Total</th></tr></thead><tbody>`;
   for(const r of agg){
     const bd=r.lines.slice().sort((a,b)=>a.date<b.date?-1:1).map(l=>`<tr style="color:var(--muted)">
         <td style="padding:3px 6px">${l.date}</td><td>${l.pi}</td>
@@ -1540,17 +1546,18 @@ function drawPayouts(m){
       <td style="text-align:right">${r.fl_sqft?_paySq(r.fl_sqft)+' · '+_payRup(r.fl_amt):'—'}</td>
       <td style="text-align:right">${r.wpstd_rolls?_paySq(r.wpstd_rolls)+' · '+_payRup(r.wpstd_amt):'—'}</td>
       <td style="text-align:right">${r.wpcust_sqft?_paySq(r.wpcust_sqft)+' · '+_payRup(r.wpcust_amt):'—'}</td>
+      <td style="text-align:right">${r.wpnl_sqft?_paySq(r.wpnl_sqft)+' · '+_payRup(r.wpnl_amt):'—'}</td>
       <td style="text-align:right;padding-right:6px">${_payRup(r.total)}</td></tr>`;
   }
-  html+=`<tr style="border-top:2px solid var(--line);font-weight:900"><td style="padding:9px 6px">Grand total</td><td></td><td></td><td></td><td></td><td style="text-align:right;padding-right:6px">${_payRup(grand)}</td></tr></tbody></table></div>`;
+  html+=`<tr style="border-top:2px solid var(--line);font-weight:900"><td style="padding:9px 6px">Grand total</td><td></td><td></td><td></td><td></td><td></td><td style="text-align:right;padding-right:6px">${_payRup(grand)}</td></tr></tbody></table></div>`;
   if(ratesUnset)html+=`<div style="margin-top:12px;font-size:12px;color:var(--amber)">⚠ All pay rates are zero — set them in “Pay rates” above to compute amounts.</div>`;
   m.innerHTML=html;
 }
 function downloadPayoutCSV(){
   const rows=window._payoutAgg||[];
-  const header=['Installer','Email','Jobs','Flooring sqft','Flooring INR','Std WP rolls','Std WP INR','Custom WP sqft','Custom WP INR','Total INR'];
+  const header=['Installer','Email','Jobs','Flooring sqft','Flooring INR','Std WP rolls','Std WP INR','Custom WP sqft','Custom WP INR','Wall Panels sqft','Wall Panels INR','Total INR'];
   const lines=[header.join(',')];
-  for(const r of rows)lines.push([r.name,r.email,r.jobs,r.fl_sqft.toFixed(1),Math.round(r.fl_amt),r.wpstd_rolls.toFixed(1),Math.round(r.wpstd_amt),r.wpcust_sqft.toFixed(1),Math.round(r.wpcust_amt),Math.round(r.total)].map(_csvEscape).join(','));
+  for(const r of rows)lines.push([r.name,r.email,r.jobs,r.fl_sqft.toFixed(1),Math.round(r.fl_amt),r.wpstd_rolls.toFixed(1),Math.round(r.wpstd_amt),r.wpcust_sqft.toFixed(1),Math.round(r.wpcust_amt),r.wpnl_sqft.toFixed(1),Math.round(r.wpnl_amt),Math.round(r.total)].map(_csvEscape).join(','));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='payouts_'+payoutFrom+'_to_'+payoutTo+'.csv';document.body.appendChild(a);a.click();a.remove();
 }

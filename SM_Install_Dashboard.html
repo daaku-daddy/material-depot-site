@@ -81,7 +81,7 @@
   .subjobs{display:flex;flex-direction:column;gap:4px;}
   .sjtag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;}
   .sjtag .ty{border-radius:5px;padding:1px 6px;font-weight:800;font-size:10px;}
-  .sjtag .ty.fl{background:#fff4d6;color:#7a5800;} .sjtag .ty.wp{background:#e9e3fb;color:#5b3aa6;}
+  .sjtag .ty.fl{background:#fff4d6;color:#7a5800;} .sjtag .ty.wp{background:#e9e3fb;color:#5b3aa6;} .sjtag .ty.wpl{background:var(--tealbg);color:var(--teal);}
   .deliv{font-weight:700;font-size:12.5px;} .deliv.delayed{color:var(--red);} .deliv.ontime{color:var(--green);}
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
   .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
@@ -150,7 +150,7 @@
   .sjcard{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;}
   .sjcard .sjh{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
   .sjcard .sjh .ty{border-radius:6px;padding:3px 9px;font-weight:800;font-size:11px;}
-  .sjcard .sjh .ty.fl{background:#fff4d6;color:#7a5800;} .sjcard .sjh .ty.wp{background:#e9e3fb;color:#5b3aa6;}
+  .sjcard .sjh .ty.fl{background:#fff4d6;color:#7a5800;} .sjcard .sjh .ty.wp{background:#e9e3fb;color:#5b3aa6;} .sjcard .sjh .ty.wpl{background:var(--tealbg);color:var(--teal);}
   .sjcard .sjh .sk{font-weight:700;font-size:13px;} .sjcard .sjh .st{margin-left:auto;}
   .skugroup{border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:12px;}
   .skugroup .gh{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
@@ -417,7 +417,7 @@
         <div id="ao-sku-list">
           <div class="skurow">
             <input class="ao-sku-code" placeholder="SKU code e.g. WF-OAK-12MM">
-            <select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option></select>
+            <select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option><option value="wallpanel">Wall Panels</option></select>
             <input type="hidden" class="ao-sku-name" value="">
           </div>
         </div>
@@ -499,9 +499,11 @@
         <select id="as-role" style="width:100%;padding:10px 12px;border:2px solid var(--line);border-radius:9px;font-size:14px;background:#fff">
           <option value="installer_flooring">Flooring Installer</option>
           <option value="installer_wallpaper">Wallpaper Installer</option>
+          <option value="installer_wallpanel">Wall Panel Installer</option>
           <option value="site_auditor">Site Auditor</option>
           <option value="auditor_installer_flooring">Auditor + Flooring Installer</option>
           <option value="auditor_installer_wallpaper">Auditor + Wallpaper Installer</option>
+          <option value="auditor_installer_wallpanel">Auditor + Wall Panel Installer</option>
         </select>
       </div>
       <div class="note">Passcode will be set by the staff member on their first login. You will not see their PIN.</div>
@@ -598,6 +600,12 @@ function renderCityToggle(){
 }
 const FLOOR_DAY_CAP=1;        // flooring jobs/installer/day
 const WP_DAY_SLOTS=3;         // max wallpaper slots/installer/day (3 × 3h windows)
+const WALLPANEL_DAY_CAP=1;    // wall-panel jobs/installer/day — mirrors flooring's full-day cadence
+// Shared per-sub-job-type tag/class/label — single source so badges, logs and the payout key
+// (Admin.html) can never drift out of sync with each other across the ~15 call sites below.
+function sjTypeTag(t){return t==='wallpaper'?'WP':t==='wallpanel'?'WPL':'FL';}
+function sjTypeClass(t){return t==='wallpaper'?'wp':t==='wallpanel'?'wpl':'fl';}
+function sjTypeLabel(t){return t==='wallpaper'?'Wallpaper':t==='wallpanel'?'Wall Panels':'Flooring';}
 function slotsForWp(rolls){const r=Number(rolls)||0;return r<=3?1:r<=6?2:3;}
 function totalRolls(sj){return(sj.items||[]).reduce((s,it)=>s+Math.ceil((parseFloat(it.sqft)||0)/SQFT_PER_ROLL),0);}
 function dateRange(from,to){if(!from||!to||from>to)return from?[from]:[];const out=[];let d=new Date(from+'T00:00');const end=new Date(to+'T00:00');while(d<=end){out.push(dstr(d));d.setDate(d.getDate()+1);}return out;}
@@ -643,22 +651,23 @@ function isSplit(o){
   if(!o.subjobs)return false;
   const fl=o.subjobs.filter(sj=>sj.type==='flooring').length;
   const wp=o.subjobs.filter(sj=>sj.type==='wallpaper').length;
-  return fl>1||wp>1;
+  const wpnl=o.subjobs.filter(sj=>sj.type==='wallpanel').length;
+  return fl>1||wp>1||wpnl>1;
 }
-// Mint a stable, collision-free sub-job id when splitting: base (sj_fl/sj_wp) counts as suffix 0; new
-// ids are max-existing-suffix + 1, so an id is never re-issued even after a merge-then-resplit (length
-// would collide). Never keyed on SKU code (codes can repeat).
+// Mint a stable, collision-free sub-job id when splitting: base (sj_fl/sj_wp/sj_wpl) counts as suffix
+// 0; new ids are max-existing-suffix + 1, so an id is never re-issued even after a merge-then-resplit
+// (length would collide). Never keyed on SKU code (codes can repeat).
 function mintSubjobId(o,baseType){
-  const base=baseType==='wallpaper'?'sj_wp':'sj_fl';
+  const base=baseType==='wallpaper'?'sj_wp':baseType==='wallpanel'?'sj_wpl':'sj_fl';
   const re=new RegExp('^'+base+'(?:_(\\d+))?$');
   let mx=-1;
   (o.subjobs||[]).forEach(sj=>{const m=re.exec(sj.id||'');if(m)mx=Math.max(mx,m[1]?parseInt(m[1],10):0);});
   return base+'_'+(mx+1);
 }
-// Short per-sub-job label to distinguish 2+ same-type sub-jobs in list/calendar UIs. Plain WP/FL when
-// the category isn't split; adds Custom/Std (or the first SKU) when it is.
+// Short per-sub-job label to distinguish 2+ same-type sub-jobs in list/calendar UIs. Plain WP/FL/WPL
+// when the category isn't split; adds Custom/Std (or the first SKU) when it is.
 function sjShortLabel(o,sj){
-  const tag=sj.type==='wallpaper'?'WP':'FL';
+  const tag=sjTypeTag(sj.type);
   const sameType=(o.subjobs||[]).filter(s=>s.type===sj.type).length;
   if(sameType<2)return tag;
   const suffix=sj.type==='wallpaper'?(sjCustomWp(o,sj)?'Custom':'Std'):((sj.items&&sj.items[0]&&sj.items[0].sku)||'');
@@ -672,7 +681,7 @@ function openSplitPicker(pi,sjId){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:120;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML=`<div style="background:#fff;border-radius:16px;padding:20px;width:100%;max-width:440px;box-sizing:border-box;max-height:86vh;overflow:auto">
-    <div style="font-weight:800;font-size:16px;color:var(--navy);margin-bottom:6px">Split ${sj.type==='wallpaper'?'wallpaper':'flooring'} into separate visits</div>
+    <div style="font-weight:800;font-size:16px;color:var(--navy);margin-bottom:6px">Split ${sjTypeLabel(sj.type).toLowerCase()} into separate visits</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:14px">Tick the SKU(s) to move into a NEW sub-job (its own installer, date and delivery). Leave at least one here.</div>
     <div id="_splitList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
       ${sj.items.map((it,i)=>`<label style="display:flex;align-items:flex-start;gap:10px;border:1.5px solid var(--line);border-radius:10px;padding:10px;cursor:pointer">
@@ -703,7 +712,7 @@ async function splitSubjob(pi,sjId,movedSkus){
   sj.items=remaining;
   o.subjobs.push(newSj);
   syncParent(o);
-  o.log.push({t:(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' split — '+moved.length+' SKU(s) moved to a new sub-job ('+moved.map(m=>m.sku).join(', ')+') with its own delivery/installer',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+  o.log.push({t:sjTypeLabel(sj.type)+' split — '+moved.length+' SKU(s) moved to a new sub-job ('+moved.map(m=>m.sku).join(', ')+') with its own delivery/installer',d:new Date().toISOString(),by:'manual',who:SESSION.name});
   try{await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});}catch(e){toast('Could not save split — try again');return;}
   await loadOrders();toast('Split into separate visits');openOrder(o.pi);
 }
@@ -717,7 +726,7 @@ async function mergeSubjob(pi,sjId){
   target.items=(target.items||[]).concat(sj.items||[]);
   o.subjobs=o.subjobs.filter(s=>s.id!==sj.id);
   syncParent(o);
-  o.log.push({t:(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' sub-job merged back ('+(sj.items||[]).map(m=>m.sku).join(', ')+')',d:new Date().toISOString(),by:'manual',who:SESSION.name});
+  o.log.push({t:sjTypeLabel(sj.type)+' sub-job merged back ('+(sj.items||[]).map(m=>m.sku).join(', ')+')',d:new Date().toISOString(),by:'manual',who:SESSION.name});
   try{await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});}catch(e){toast('Could not merge — try again');return;}
   await loadOrders();toast('Merged back');openOrder(o.pi);
 }
@@ -980,6 +989,19 @@ function wpSlotLoad(id,date){
   }));
   return n;
 }
+function wpnlLoad(id,date){
+  let n=0;
+  ORDERS.forEach(o=>(o.subjobs||[]).forEach(sj=>{
+    if(sj.type!=='wallpanel')return;
+    const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_id:sj.installer,date:sj.date,dates:[],mode:'standard'}]:[]);
+    asgns.forEach(a=>{
+      if(a.installer_id!==id)return;
+      const dates=a.mode==='custom'?(a.dates||[]):a.date?[a.date]:[];
+      if(dates.includes(date))n++;
+    });
+  }));
+  return n;
+}
 
 let activeView="orders",filterStatus="all",filterDate="",searchQ="",currentPI=null,sortDelivery="asc",calSelDay=dstr(today),_liveLocTimer=null;
 function setDateFilter(d){filterDate=d;render();}
@@ -1045,12 +1067,14 @@ function orderCategoriesInstall(o){
     const cats=[];
     if(o.service.flooring&&o.service.flooring.length)cats.push('<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>');
     if(o.service.wallpaper&&o.service.wallpaper.length)cats.push(o.customWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>');
+    if(o.service.wallpanel&&o.service.wallpanel.length)cats.push('<span class="skupill" style="background:var(--tealbg);color:var(--teal)">Wall Panels</span>');
     if(cats.length)return `<div class="pill-list">${cats.join("")}</div>`;
   }
   const cats=new Set();
   (o.skus||[]).forEach(s=>{
     if(s.type==='flooring')cats.add('<span class="skupill" style="background:#fff4d6;color:#7a5800">Flooring</span>');
     if(s.type==='wallpaper')cats.add(o.customWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill" style="background:var(--purplebg);color:var(--purple)">Wallpaper</span>');
+    if(s.type==='wallpanel')cats.add('<span class="skupill" style="background:var(--tealbg);color:var(--teal)">Wall Panels</span>');
   });
   return cats.size?`<div class="pill-list">${[...cats].join("")}</div>`:'<span style="color:var(--muted)">—</span>';
 }
@@ -1059,7 +1083,7 @@ function subjobSummary(o){
   return `<div class="subjobs">`+o.subjobs.map(sj=>{
     const asgns=sj.assignments&&sj.assignments.length?sj.assignments:(sj.installer?[{installer_name:(installerById(sj.installer)||{name:'Unknown'}).name}]:[]);
     const names=asgns.map(a=>a.installer_name||'Unassigned').join(', ')||'Unassigned';
-    return `<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sjShortLabel(o,sj)}</span>${fmtDate(sj.date)} · ${names} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
+    return `<span class="sjtag"><span class="ty ${sjTypeClass(sj.type)}">${sjShortLabel(o,sj)}</span>${fmtDate(sj.date)} · ${names} · ${(STATUS[sj.status]||{l:sj.status}).l}</span>`;
   }).join("")+`</div>`;
 }
 
@@ -1169,7 +1193,7 @@ function needActionView(){
       const effStatus=sj?sj.status:o.status;
       const dd=new Date(effDate+"T00:00");const dleft=Math.round((dd-today)/86400000);
       return `<tr data-pi="${o.pi}">
-        <td><div class="pi">${o.pi}</div>${sj?`<span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span> <span style="font-size:11px;color:var(--muted)">${sj.type==='wallpaper'?'Wallpaper':'Flooring'} delivery call due</span>`:''}</td>
+        <td><div class="pi">${o.pi}</div>${sj?`<span class="sjtag"><span class="ty ${sjTypeClass(sj.type)}">${sjTypeTag(sj.type)}</span></span> <span style="font-size:11px;color:var(--muted)">${sjTypeLabel(sj.type)} delivery call due</span>`:''}</td>
         <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
         <td>${effCustomWp?'<span class="skupill cust">Custom WP</span>':'<span class="skupill">Standard</span>'}</td>
         <td>${fmtDate(effDate)} <span style="color:var(--muted)">(${dleft<=0?'today/overdue':'in '+dleft+'d'})</span></td>
@@ -1201,7 +1225,7 @@ function needActionView(){
   if(reschedItems.length){
     const rows=reschedItems.map(({o,sj})=>`<tr data-pi="${o.pi}">
       <td><div class="pi">${o.pi}</div></td>
-      <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
+      <td><span class="sjtag"><span class="ty ${sjTypeClass(sj.type)}">${sjTypeTag(sj.type)}</span></span></td>
       <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
       <td>${fmtDate(sj.date)}</td>
       <td><button class="btn primary sm" data-open="${o.pi}">Call &amp; rebook</button></td></tr>`).join("");
@@ -1243,7 +1267,7 @@ function scheduleView(){
   }));
   const rows=items.map(({o,sj,a})=>`<tr data-pi="${o.pi}">
     <td><b>${sj.type==='wallpaper'?(a.slots||[]).map(sid=>(SLOTS_WP.find(s=>s.id===sid)||{label:sid}).label).join(', ')||'—':'Full day'}</b></td>
-    <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
+    <td><span class="sjtag"><span class="ty ${sjTypeClass(sj.type)}">${sjTypeTag(sj.type)}</span></span></td>
     <td><div class="pi">${o.pi}</div></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
     <td style="max-width:160px">${mapLink(o.addr)}</td>
@@ -1261,7 +1285,7 @@ function reschedView(){
   cityScope(ORDERS).forEach(o=>(o.subjobs||[]).forEach(sj=>{if(sj.status==="reschedule")items.push({o,sj});}));
   const rows=items.map(({o,sj})=>`<tr data-pi="${o.pi}">
     <td><div class="pi">${o.pi}</div></td>
-    <td><span class="sjtag"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WP':'FL'}</span></span></td>
+    <td><span class="sjtag"><span class="ty ${sjTypeClass(sj.type)}">${sjTypeTag(sj.type)}</span></span></td>
     <td><div class="cust"><b>${o.name}</b><div>${o.phone}</div></div></td>
     <td>${fmtDate(sj.date)} · ${slotLabel(sj.slot)}</td>
     <td><button class="btn primary sm" data-open="${o.pi}">Call &amp; rebook</button></td></tr>`).join("");
@@ -1302,7 +1326,7 @@ function calendarView(){
   const todayStr=dstr(today);
   const days=Array.from({length:10},(_,i)=>addDays(i-3));
   const sjChip=st=>{const M={created:{l:'Service Created',c:'c-created'},assigned:{l:'Assigned',c:'c-assigned'},onway:{l:'On the Way',c:'c-onway'},atsite:{l:'At Site',c:'c-atsite'},completed:{l:'Completed',c:'c-completed'},reschedule:{l:'Reschedule',c:'c-reschedule'},partial:{l:'Partial',c:'c-partial'}};const s=M[st]||{l:st,c:'c-pending'};return `<span class="chip ${s.c}"><span class="dot"></span>${s.l}</span>`;};
-  const typeTag=t=>t==='wallpaper'?`<span class="skupill" style="background:var(--purplebg);color:var(--purple);font-size:10px">WP</span>`:`<span class="skupill" style="background:#fff4d6;color:#7a5800;font-size:10px">FL</span>`;
+  const typeTag=t=>t==='wallpaper'?`<span class="skupill" style="background:var(--purplebg);color:var(--purple);font-size:10px">WP</span>`:t==='wallpanel'?`<span class="skupill" style="background:var(--tealbg);color:var(--teal);font-size:10px">WPL</span>`:`<span class="skupill" style="background:#fff4d6;color:#7a5800;font-size:10px">FL</span>`;
   const primaryName=sj=>{const a=sjEffectiveAssignments(sj);const p=a.find(x=>x.primary)||a[0];return(p&&p.installer_name)||'Unassigned';};
   const cols=days.map(d=>{
     const ds=dstr(d);const isToday=ds===todayStr;const isSel=ds===calSelDay;const isPast=d<today;
@@ -1388,7 +1412,7 @@ function slotsView(){
 
 function installersView(){
   const rows=installersInCity().map(a=>{
-    const load=a.type==="flooring"?flLoad(a.id,dstr(today))+"/"+FLOOR_DAY_CAP+" job":wpSlotLoad(a.id,dstr(today))+"/"+WP_DAY_SLOTS+" slots (3h each)";
+    const load=a.type==="flooring"?flLoad(a.id,dstr(today))+"/"+FLOOR_DAY_CAP+" job":a.type==="wallpanel"?wpnlLoad(a.id,dstr(today))+"/"+WALLPANEL_DAY_CAP+" job":wpSlotLoad(a.id,dstr(today))+"/"+WP_DAY_SLOTS+" slots (3h each)";
     const availCell=AVAIL_ENABLED?`<td style="min-width:200px">
         <div style="font-size:11px;color:var(--muted)">Weekly off:</div>
         <select data-weeklyoff="${a.id}" style="margin-top:3px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 6px;width:100%;background:#fff">
@@ -1400,15 +1424,15 @@ function installersView(){
         <input type="date" data-addleave="${a.id}" style="margin-top:4px;font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:4px 8px;width:100%" title="Pick a date to mark this installer on leave">
       </td>`:'';
     return `<tr><td><div class="cust"><b>${a.name}</b><div>${a.phone}</div></div></td>
-      <td><span class="skupill ${a.type==='wallpaper'?'cust':''}">${a.type==='wallpaper'?'Wallpaper':'Flooring'}</span></td>
+      <td><span class="skupill ${a.type==='wallpaper'?'cust':''}">${sjTypeLabel(a.type)}</span></td>
       <td>${CITY_ENABLED?`<span class="chip" style="font-size:10px;padding:2px 8px;background:#e8eefb;color:var(--navy)">${a.city||'Bengaluru'}</span>`:a.zone}</td>
-      <td>${a.type==="flooring"?"1 job/day":"3 slots/day (3h each)"}</td>
+      <td>${a.type==="wallpaper"?"3 slots/day (3h each)":"1 job/day"}</td>
       <td>${load} today</td>${availCell}</tr>`;
   }).join("");
   return `<div class="crumbs">Setup / Installers</div>
-  <div class="pagehead"><div><h1>Installers</h1><p>Typed installers. Flooring jobs go only to flooring installers; wallpaper only to wallpaper installers.</p></div>
+  <div class="pagehead"><div><h1>Installers</h1><p>Typed installers. Jobs go only to installers of the matching type (Flooring / Wallpaper / Wall Panels).</p></div>
   <div class="actions"><button class="btn ghost sm" onclick="openAddStaff()">+ Add Staff</button>${AVAIL_ENABLED?`<button class="btn navy sm" id="saveInstAvail">Save availability</button>`:''}</div></div>
-  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>3 slots per installer per day</b> — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h). Custom multi-day mode bypasses these limits.${AVAIL_ENABLED?' <b>Weekly off</b> / <b>On leave</b> dates remove the installer from assignment on those days — remember to click Save availability.':''}</div>
+  <div class="note">Capacity rule — Flooring: <b>1 job per installer per day</b>. Wallpaper: <b>3 slots per installer per day</b> — 1-3 rolls = 1 slot (3h), 4-6 rolls = 2 slots (6h), 7+ rolls = 3 slots (9h). Wall Panels: <b>1 job per installer per day</b>. Custom multi-day mode bypasses these limits.${AVAIL_ENABLED?' <b>Weekly off</b> / <b>On leave</b> dates remove the installer from assignment on those days — remember to click Save availability.':''}</div>
   <div class="tablecard"><table><thead><tr><th>Installer</th><th>Type</th><th>Zone</th><th>Capacity</th><th>Load</th>${AVAIL_ENABLED?'<th>Availability</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1684,17 +1708,17 @@ function drawerBody(o){
       // installer-assignment section.
       const inDeliveryPhase=mixed&&DELIVERY_PHASE_STATUSES.includes(sj.status);
       html+=`<div class="sjcard" data-sj="${sj.id}">
-        <div class="sjh"><span class="ty ${sj.type==='wallpaper'?'wp':'fl'}">${sj.type==='wallpaper'?'WALLPAPER':'FLOORING'}</span>
+        <div class="sjh"><span class="ty ${sjTypeClass(sj.type)}">${sjTypeLabel(sj.type).toUpperCase()}</span>
           <span class="sk">${skText}</span>
           <span class="st">${chip(sj.status)}</span></div>
         ${mixed?sjDeliveryBlock(o,sj):''}
         ${sj.type==='wallpaper'
           ?`<div class="wp-dur-badge"><span>${totalSqft?totalSqft+' sq.ft → ':''}${rolls} roll${rolls===1?'':'s'} → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
-          :`<div class="fl-fullday-note">Flooring — 1 full day per installer visit</div>`}
+          :`<div class="fl-fullday-note">${sjTypeLabel(sj.type)} — 1 full day per installer visit</div>`}
         ${sj.status==='completed'?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download Job Card PDF</button>`:''}
         ${inDeliveryPhase?'':`<div data-assignsection="${sj.id}"></div>`}
         ${!['completed','partial'].includes(sj.status)&&(sj.items||[]).length>1?`<button class="btn ghost sm" data-splitcat="${sj.id}" style="margin-top:8px">✂ Split into separate visits…</button>`:''}
-        ${/_\d+$/.test(sj.id)&&(!sj.assignments||!sj.assignments.length)&&!sj.jobcard?`<button class="btn ghost sm" data-mergesj="${sj.id}" style="margin-top:8px">↩ Merge back into ${sj.type==='wallpaper'?'Wallpaper':'Flooring'}</button>`:''}
+        ${/_\d+$/.test(sj.id)&&(!sj.assignments||!sj.assignments.length)&&!sj.jobcard?`<button class="btn ghost sm" data-mergesj="${sj.id}" style="margin-top:8px">↩ Merge back into ${sjTypeLabel(sj.type)}</button>`:''}
       </div>`;
     });
     html+=`</div>`;
@@ -1978,6 +2002,7 @@ function _wpRollHint(){
 function serviceCreationPanel(o){
   const flHas=o.skus.some(s=>s.type==="flooring");
   const wpHas=o.skus.some(s=>s.type==="wallpaper");
+  const wpnlHas=o.skus.some(s=>s.type==="wallpanel");
   return `<div class="sec"><h3>Service creation</h3>
     <div class="note green">Delivery confirmed on time — you can now create the service. Customer, phone, address and BM are auto-filled. Add the SKU code, product name, and area (sq.ft) for each SKU.</div>
     <div class="field"><label>Customer name <span class="autofill">auto</span></label><input value="${o.name}" disabled></div>
@@ -1995,6 +2020,11 @@ function serviceCreationPanel(o){
       <button class="addsku ${wpHas?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
       ${_wpRollHint()}
     </div>
+    <div class="skugroup" data-grp="wallpanel">
+      <div class="gh"><span class="gt">Wall Panels</span><div class="switch ${wpnlHas?'on':''}" data-tog="wallpanel"></div></div>
+      <div class="skurows ${wpnlHas?'':'hide'}" data-rows="wallpanel"></div>
+      <button class="addsku ${wpnlHas?'':'hide'}" data-add="wallpanel">+ Add wall panel SKU</button>
+    </div>
   </div>`;
 }
 
@@ -2003,10 +2033,12 @@ function serviceCreationPanel(o){
 // value can't go stale or conflict with a separately-typed roll count (that was the root cause of corrupted
 // historical data — literal placeholder-like strings like "Rolls"/"Sq. ft" ended up stored in a numeric field).
 function _skuQtyField(grp){
-  return grp==='wallpaper'?{label:'Area to be wallpapered (sq.ft)',ph:'e.g. 120'}:{label:'Area of installation (sq.ft)',ph:'e.g. 180'};
+  if(grp==='wallpaper')return{label:'Area to be wallpapered (sq.ft)',ph:'e.g. 120'};
+  if(grp==='wallpanel')return{label:'Area of wall panel installation (sq.ft)',ph:'e.g. 150'};
+  return{label:'Area of installation (sq.ft)',ph:'e.g. 180'};
 }
 function _emptySkuRow(grp){
-  return grp==='flooring'?{sku:'',name:'',sqft:'',link:''}:{sku:'',name:'',sqft:''};
+  return(grp==='flooring'||grp==='wallpanel')?{sku:'',name:'',sqft:'',link:''}:{sku:'',name:'',sqft:''};
 }
 function _rollHintText(sqft){
   const n=parseFloat(sqft)||0;
@@ -2034,15 +2066,15 @@ function _skuRowHtml(r,grp,i){
         ${grp==='wallpaper'?`<div class="skv-rollhint" id="sk-rollhint-${grp}-${i}">${_rollHintText(r.sqft)}</div>`:''}
       </div>
     </div>
-    ${grp==='flooring'?`<div class="skv-r"><label>SKU Link <span class="skv-opt">(optional)</span></label><input placeholder="https://..." value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link"></div>`:''}
+    ${(grp==='flooring'||grp==='wallpanel')?`<div class="skv-r"><label>SKU Link <span class="skv-opt">(optional)</span></label><input placeholder="https://..." value="${r.link||''}" data-grp="${grp}" data-i="${i}" data-f="link"></div>`:''}
   </div>`;
 }
 function _preSkuRowsInstall(items,grp){
   return items.map((r,i)=>_skuRowHtml(r,grp,i)).join('');
 }
 function editInstallServiceSection(o){
-  const flItems=o.service.flooring||[];const wpItems=o.service.wallpaper||[];
-  const fl=flItems.length>0;const wp=wpItems.length>0;
+  const flItems=o.service.flooring||[];const wpItems=o.service.wallpaper||[];const wpnlItems=o.service.wallpanel||[];
+  const fl=flItems.length>0;const wp=wpItems.length>0;const wpnl=wpnlItems.length>0;
   return `<div class="sec"><h3>Service details <span style="font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0">— edit if needed</span></h3>
     <div class="note">Update SKU codes, product names and area (sq.ft). Changes also update the installer's job items.</div>
     <div class="skugroup" data-grp="flooring">
@@ -2055,6 +2087,11 @@ function editInstallServiceSection(o){
       <div class="skurows ${wp?'':'hide'}" data-rows="wallpaper">${_preSkuRowsInstall(wpItems,'wallpaper')}</div>
       <button class="addsku ${wp?'':'hide'}" data-add="wallpaper">+ Add wallpaper SKU</button>
       ${_wpRollHint()}
+    </div>
+    <div class="skugroup" data-grp="wallpanel">
+      <div class="gh"><span class="gt">Wall Panels</span><div class="switch ${wpnl?'on':''}" data-tog="wallpanel"></div></div>
+      <div class="skurows ${wpnl?'':'hide'}" data-rows="wallpanel">${_preSkuRowsInstall(wpnlItems,'wallpanel')}</div>
+      <button class="addsku ${wpnl?'':'hide'}" data-add="wallpanel">+ Add wall panel SKU</button>
     </div>
     <button class="btn navy sm" style="margin-top:8px" id="saveService">Save changes</button>
   </div>`;
@@ -2078,14 +2115,16 @@ function drawerFoot(o){
 /* ============== DRAWER WIRING ============== */
 let draft={};
 function wireDrawer(o){
-  draft={flooring:[],wallpaper:[]};
+  draft={flooring:[],wallpaper:[],wallpanel:[]};
   if(o.service){
     draft.flooring=(o.service.flooring||[]).map(x=>({...x}));
     draft.wallpaper=(o.service.wallpaper||[]).map(x=>({...x}));
+    draft.wallpanel=(o.service.wallpanel||[]).map(x=>({...x}));
   } else {
     const _sk=o.skus||[];
     draft.flooring=_sk.filter(s=>s.type==='flooring').map(s=>({sku:s.c,name:(s.n&&s.n!==s.c)?s.n:'',sqft:'',link:''}));
     draft.wallpaper=_sk.filter(s=>s.type==='wallpaper').map(s=>({sku:s.c,name:(s.n&&s.n!==s.c)?s.n:'',sqft:''}));
+    draft.wallpanel=_sk.filter(s=>s.type==='wallpanel').map(s=>({sku:s.c,name:(s.n&&s.n!==s.c)?s.n:'',sqft:'',link:''}));
   }
   $("#dwClose").onclick=closeDrawer;
   if($("#dClose"))$("#dClose").onclick=closeDrawer;
@@ -2113,7 +2152,7 @@ function wireDrawer(o){
       // proof and requires an explicit confirm + reason before touching them.
       const noCard=o.subjobs.filter(sj=>sj.status!=='completed'&&!(sj.jobcard&&sj.jobcard.sign));
       if(noCard.length){
-        const names=noCard.map(sj=>sj.type==='wallpaper'?'Wallpaper':'Flooring').join(', ');
+        const names=noCard.map(sj=>sjTypeLabel(sj.type)).join(', ');
         const ok=confirm("The following sub-job(s) have NO signed job card yet — no photos, signature, or customer rating on file: "+names+".\n\nForcing Completed now will mark them done anyway with no proof of work. Only do this if you've confirmed with the installer/customer directly.\n\nContinue?");
         if(!ok)return;
         forcedCompletedNoCard=true;
@@ -2135,7 +2174,7 @@ function wireDrawer(o){
       const signedSubjobs=o.subjobs.filter(sj=>sj.jobcard&&sj.jobcard.sign);
       let skipSigned=false;
       if(signedSubjobs.length){
-        const names=signedSubjobs.map(sj=>sj.type==='wallpaper'?'Wallpaper':'Flooring').join(', ');
+        const names=signedSubjobs.map(sj=>sjTypeLabel(sj.type)).join(', ');
         skipSigned=confirm("The following sub-job(s) already have a signed job card on file: "+names+".\n\nReverting to Service Created will normally wipe every sub-job's slot/assignment. Keep the signed sub-job(s) untouched?\n\nOK = keep them untouched · Cancel = reset everything including signed sub-jobs");
       }
       o.subjobs.forEach(sj=>{
@@ -2241,7 +2280,7 @@ function wireDrawer(o){
   document.querySelectorAll('[data-sjontime]').forEach(b=>b.onclick=async()=>{
     const sj=o.subjobs.find(s=>s.id===b.dataset.sjontime);if(!sj)return;
     sj.status="deliv_ontime";
-    o.log.push({t:(sj.type==='wallpaper'?"Wallpaper":"Flooring")+" delivery confirmed on time",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    o.log.push({t:sjTypeLabel(sj.type)+" delivery confirmed on time",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     syncParent(o);
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Delivery on time — confirm ready to schedule next");openOrder(o.pi);
@@ -2252,7 +2291,7 @@ function wireDrawer(o){
     const nd=input?input.value:sjDeliveryDate(o,sj);
     const wasDelayed=sj.status==="deliv_delayed";
     sj.deliveryDate=nd;sj.status="deliv_delayed";
-    o.log.push({t:(sj.type==='wallpaper'?"Wallpaper":"Flooring")+" "+(wasDelayed?"delivery further delayed":"delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    o.log.push({t:sjTypeLabel(sj.type)+" "+(wasDelayed?"delivery further delayed":"delivery delayed — BM asked to inform client")+". New date: "+fmtDate(nd),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     syncParent(o);
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast(wasDelayed?"Delivery date updated":"Marked delivery delayed");openOrder(o.pi);
@@ -2260,7 +2299,7 @@ function wireDrawer(o){
   document.querySelectorAll('[data-sjready]').forEach(b=>b.onclick=async()=>{
     const sj=o.subjobs.find(s=>s.id===b.dataset.sjready);if(!sj)return;
     sj.status="created";
-    o.log.push({t:(sj.type==='wallpaper'?"Wallpaper":"Flooring")+" service ready to schedule",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    o.log.push({t:sjTypeLabel(sj.type)+" service ready to schedule",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     syncParent(o);
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
     await loadOrders();toast("Ready to schedule");openOrder(o.pi);
@@ -2361,14 +2400,16 @@ function wireDrawer(o){
   document.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=()=>{const grp=btn.dataset.add;draft[grp].push(_emptySkuRow(grp));renderSkuRows(grp);});
   if(document.querySelector('[data-rows="flooring"]')&&draft.flooring.length)renderSkuRows("flooring");
   if(document.querySelector('[data-rows="wallpaper"]')&&draft.wallpaper.length)renderSkuRows("wallpaper");
+  if(document.querySelector('[data-rows="wallpanel"]')&&draft.wallpanel.length)renderSkuRows("wallpanel");
 
   if($("#createService"))$("#createService").onclick=async()=>{
-    const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name);
-    if(!fl.length&&!wp.length){toast("Add at least one SKU");return;}
-    o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
+    const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name),wpnl=draft.wallpanel.filter(r=>r.sku||r.name);
+    if(!fl.length&&!wp.length&&!wpnl.length){toast("Add at least one SKU");return;}
+    o.service={...(o.service||{}),flooring:fl,wallpaper:wp,wallpanel:wpnl};
     o.subjobs=[];
     if(fl.length)o.subjobs.push({id:"sj_fl",type:"flooring",items:fl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
     if(wp.length)o.subjobs.push({id:"sj_wp",type:"wallpaper",items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
+    if(wpnl.length)o.subjobs.push({id:"sj_wpl",type:"wallpanel",items:wpnl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:"created"});
     o.status="created";
     o.log.push({t:"Service created — "+o.subjobs.map(sj=>sj.type+": "+sj.items.map(i=>i.sku).join("/")).join(" | "),d:new Date().toISOString(),by:"manual",who:SESSION.name});
     if(o.id)await sbPatch('install_orders',o.id,{status:o.status,service:o.service,subjobs:o.subjobs,log:o.log});
@@ -2376,9 +2417,10 @@ function wireDrawer(o){
   };
 
   if($("#saveService"))$("#saveService").onclick=async()=>{
-    const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name);
+    const fl=draft.flooring.filter(r=>r.sku||r.name),wp=draft.wallpaper.filter(r=>r.sku||r.name),wpnl=draft.wallpanel.filter(r=>r.sku||r.name);
     const flSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_fl');
     const wpSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_wp');
+    const wpnlSj=o.subjobs&&o.subjobs.find(s=>s.id==='sj_wpl');
     if(!fl.length&&flSj&&flSj.status!=='created'){
       if(!confirm("The flooring sub-job is currently "+((STATUS[flSj.status]||{l:flSj.status}).l)+". Removing it will cancel the installer's assignment. Proceed?"))return;
       o.log.push({t:"Flooring sub-job removed (was "+flSj.status+" — SM correction)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
@@ -2387,15 +2429,19 @@ function wireDrawer(o){
       if(!confirm("The wallpaper sub-job is currently "+((STATUS[wpSj.status]||{l:wpSj.status}).l)+". Removing it will cancel the installer's assignment. Proceed?"))return;
       o.log.push({t:"Wallpaper sub-job removed (was "+wpSj.status+" — SM correction)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
     }
-    o.service={...(o.service||{}),flooring:fl,wallpaper:wp};
-    // Late-fork check: if the order will end up with BOTH categories present after this save
+    if(!wpnl.length&&wpnlSj&&wpnlSj.status!=='created'){
+      if(!confirm("The wall panels sub-job is currently "+((STATUS[wpnlSj.status]||{l:wpnlSj.status}).l)+". Removing it will cancel the installer's assignment. Proceed?"))return;
+      o.log.push({t:"Wall Panels sub-job removed (was "+wpnlSj.status+" — SM correction)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    }
+    o.service={...(o.service||{}),flooring:fl,wallpaper:wp,wallpanel:wpnl};
+    // Late-fork check: if the order will end up with 2+ categories present after this save
     // (regardless of whether it was single-category before), a newly-added sub-job starts its
     // own fresh delivery-confirmation cycle ('pending', seeded from the order's current
     // effective delivery date) instead of jumping straight to 'created' — nobody has actually
-    // confirmed that category's delivery yet, even if the other one already has. An order that
+    // confirmed that category's delivery yet, even if another one already has. An order that
     // stays single-category keeps today's exact behavior (new sub-job starts at 'created').
-    const bothPresent=fl.length>0&&wp.length>0;
-    const newlyMixed=bothPresent&&((fl.length&&!flSj)||(wp.length&&!wpSj));
+    const bothPresent=[fl.length>0,wp.length>0,wpnl.length>0].filter(Boolean).length>=2;
+    const newlyMixed=bothPresent&&((fl.length&&!flSj)||(wp.length&&!wpSj)||(wpnl.length&&!wpnlSj));
     if(o.subjobs){
       if(fl.length&&flSj)flSj.items=fl;
       else if(fl.length&&!flSj)o.subjobs.push(bothPresent
@@ -2407,7 +2453,12 @@ function wireDrawer(o){
         ?{id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:o.deliveryDate||null,originalDeliveryDate:o.deliveryDate||null,customWp:o.customWp,customWpStage:'draft',customWpMeta:{}}
         :{id:'sj_wp',type:'wallpaper',items:wp,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
       else if(!wp.length&&wpSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_wp');
-      if(newlyMixed)o.log.push({t:"Order became mixed (flooring + wallpaper) — the newly-added category starts its own delivery confirmation, tracked independently",d:new Date().toISOString(),by:"auto"});
+      if(wpnl.length&&wpnlSj)wpnlSj.items=wpnl;
+      else if(wpnl.length&&!wpnlSj)o.subjobs.push(bothPresent
+        ?{id:'sj_wpl',type:'wallpanel',items:wpnl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:o.deliveryDate||null,originalDeliveryDate:o.deliveryDate||null}
+        :{id:'sj_wpl',type:'wallpanel',items:wpnl,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'created'});
+      else if(!wpnl.length&&wpnlSj)o.subjobs=o.subjobs.filter(s=>s.id!=='sj_wpl');
+      if(newlyMixed)o.log.push({t:"Order became mixed — the newly-added category starts its own delivery confirmation, tracked independently",d:new Date().toISOString(),by:"auto"});
     }
     syncParent(o);
     o.log.push({t:"Service details updated",d:new Date().toISOString(),by:"manual",who:SESSION.name});
@@ -2593,11 +2644,11 @@ function closeAddOrder(){
   document.getElementById("ao-err").classList.remove("show");
   document.getElementById("ao-kylas-note").style.display="none";
   const list=document.getElementById("ao-sku-list");
-  list.innerHTML=`<div class="skurow"><input class="ao-sku-code" placeholder="SKU code e.g. WF-OAK-12MM"><select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option></select><input type="hidden" class="ao-sku-name" value=""></div>`;
+  list.innerHTML=`<div class="skurow"><input class="ao-sku-code" placeholder="SKU code e.g. WF-OAK-12MM"><select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option><option value="wallpanel">Wall Panels</option></select><input type="hidden" class="ao-sku-name" value=""></div>`;
 }
 function addSkuRow(){
   const row=document.createElement("div");row.className="skurow";
-  row.innerHTML=`<input class="ao-sku-code" placeholder="SKU code"><select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option></select><input type="hidden" class="ao-sku-name" value="">`;
+  row.innerHTML=`<input class="ao-sku-code" placeholder="SKU code"><select class="ao-sku-type"><option value="flooring">Flooring</option><option value="wallpaper">Wallpaper</option><option value="wallpanel">Wall Panels</option></select><input type="hidden" class="ao-sku-name" value="">`;
   document.getElementById("ao-sku-list").appendChild(row);
 }
 async function submitAddOrder(){
@@ -2642,23 +2693,25 @@ async function submitAddOrder(){
   }
   let service=auditBy?{audit_by:auditBy}:null;
 
-  // Mixed-order fork point: if this single order already has both a flooring and a wallpaper
-  // SKU, create both sub-jobs immediately (skipping the shared pending→deliv_ontime→"Create
-  // service" gate) so delivery, custom-wallpaper production, and scheduling can each run as
-  // independent per-category tracks from day one — see CLAUDE.md note on mixed install orders.
-  // Single-category orders are completely unaffected (subjobs stays null, exactly as before).
+  // Mixed-order fork point: if this single order already has 2+ of the 3 categories (flooring/
+  // wallpaper/wall panels), create each present category's sub-job immediately (skipping the
+  // shared pending→deliv_ontime→"Create service" gate) so delivery, custom-wallpaper production,
+  // and scheduling can each run as independent per-category tracks from day one — see CLAUDE.md
+  // note on mixed install orders. Single-category orders are completely unaffected (subjobs
+  // stays null, exactly as before).
   const flSkus=skus.filter(s=>s.type==='flooring');
   const wpSkus=skus.filter(s=>s.type==='wallpaper');
+  const wplSkus=skus.filter(s=>s.type==='wallpanel');
   let subjobs=null;
-  if(flSkus.length&&wpSkus.length){
+  if([flSkus.length>0,wpSkus.length>0,wplSkus.length>0].filter(Boolean).length>=2){
     const toItem=s=>({sku:s.c,name:(s.n&&s.n!==s.c)?s.n:'',sqft:'',link:''});
-    const flItems=flSkus.map(toItem),wpItems=wpSkus.map(toItem);
-    service={...(service||{}),flooring:flItems,wallpaper:wpItems};
-    subjobs=[
-      {id:'sj_fl',type:'flooring',items:flItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null},
-      {id:'sj_wp',type:'wallpaper',items:wpItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null,customWp,customWpStage:'draft',customWpMeta:{}},
-    ];
-    logEntries.push({t:"Mixed order (flooring + wallpaper) — each category tracked as an independent sub-job from delivery onward",d:new Date().toISOString(),by:"auto"});
+    const flItems=flSkus.map(toItem),wpItems=wpSkus.map(toItem),wplItems=wplSkus.map(toItem);
+    service={...(service||{}),flooring:flItems,wallpaper:wpItems,wallpanel:wplItems};
+    subjobs=[];
+    if(flItems.length)subjobs.push({id:'sj_fl',type:'flooring',items:flItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null});
+    if(wpItems.length)subjobs.push({id:'sj_wp',type:'wallpaper',items:wpItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null,customWp,customWpStage:'draft',customWpMeta:{}});
+    if(wplItems.length)subjobs.push({id:'sj_wpl',type:'wallpanel',items:wplItems,date:null,slot:null,installer:null,installer_email:null,assignments:[],status:'pending',deliveryDate:delivery||null,originalDeliveryDate:delivery||null});
+    logEntries.push({t:"Mixed order ("+subjobs.map(sj=>sjTypeLabel(sj.type)).join(" + ")+") — each category tracked as an independent sub-job from delivery onward",d:new Date().toISOString(),by:"auto"});
   }
 
   const payload={
@@ -2787,9 +2840,10 @@ function usePORow(r){
     list.innerHTML='';
     skus.forEach(sku=>{
       const row=document.createElement('div');row.className='skurow';
-      const type=(sku.product_name||'').toLowerCase().includes('wallpaper')?'wallpaper':'flooring';
+      const pn=(sku.product_name||'').toLowerCase();
+      const type=pn.includes('wall panel')?'wallpanel':pn.includes('wallpaper')?'wallpaper':'flooring';
       const nameEsc=(sku.product_name||'').replace(/"/g,'&quot;');
-      row.innerHTML=`<input class="ao-sku-code" placeholder="SKU code" value="${sku.variant_handle.replace(/"/g,'&quot;')}"><select class="ao-sku-type"><option value="flooring"${type==='flooring'?' selected':''}>Flooring</option><option value="wallpaper"${type==='wallpaper'?' selected':''}>Wallpaper</option></select><input type="hidden" class="ao-sku-name" value="${nameEsc}">`;
+      row.innerHTML=`<input class="ao-sku-code" placeholder="SKU code" value="${sku.variant_handle.replace(/"/g,'&quot;')}"><select class="ao-sku-type"><option value="flooring"${type==='flooring'?' selected':''}>Flooring</option><option value="wallpaper"${type==='wallpaper'?' selected':''}>Wallpaper</option><option value="wallpanel"${type==='wallpanel'?' selected':''}>Wall Panels</option></select><input type="hidden" class="ao-sku-name" value="${nameEsc}">`;
       list.appendChild(row);
     });
   }
@@ -2814,7 +2868,7 @@ async function genInstallPDFSM(o,sj,jobcard){
   function hdr(){y=mdPdfHeader(doc,{title:'Installation Job Card',right:o.pi,M});}
   hdr();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-    body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Installer',installerName],['Type',sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(sj.date)]]});
+    body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Installer',installerName],['Type',mdCategoryFor(sj.type).pdfLabel],['Date',fmtDate(sj.date)]]});
   y=doc.lastAutoTable.finalY+10;
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','Category','SKU']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||sj.type).pdfLabel,r.sku||'-'])});
@@ -2882,7 +2936,7 @@ async function submitRect(){
   if(!newPi){err.textContent='Enter a PI number for the new order.';err.classList.add('show');return;}
   const o=_rectOrder;const btn=document.getElementById('rect-submit');btn.disabled=true;
   try{
-    const _rectSvc={rectification_of:o.pi,issue,flooring:(o.service&&o.service.flooring)||[],wallpaper:(o.service&&o.service.wallpaper)||[]};
+    const _rectSvc={rectification_of:o.pi,issue,flooring:(o.service&&o.service.flooring)||[],wallpaper:(o.service&&o.service.wallpaper)||[],wallpanel:(o.service&&o.service.wallpanel)||[]};
     const base={pi:newPi,po:(o.po||[]).join(','),skus:o.skus||[],bm:o.bm,customer_name:o.name,phone:o.phone,addr:o.addr,status:'pending',service:_rectSvc,log:[{t:'Rectification order for '+o.pi,d:new Date().toISOString(),by:'manual',who:SESSION.name}],created_by_email:SESSION.email,...(CITY_ENABLED&&o.city?{city:o.city}:{})};
     if(svcType==='install')await sbPost('install_orders',{...base,status:'deliv_ontime',matched_audit:false,delivery_date:null,custom_wp:false,subjobs:null});
     else await sbPost('audit_orders',{...base,audit_ticked:[]});
@@ -2911,7 +2965,7 @@ async function submitAddStaff(){
   if(!name){err.textContent='Name is required.';err.classList.add('show');return;}
   if(!email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent='Enter a valid email address.';err.classList.add('show');return;}
   const role=roleVal==='site_auditor'?'site_auditor':roleVal.startsWith('auditor_installer')?'auditor_installer':'installer';
-  const installer_type=roleVal==='installer_flooring'||roleVal==='auditor_installer_flooring'?'flooring':roleVal==='installer_wallpaper'||roleVal==='auditor_installer_wallpaper'?'wallpaper':null;
+  const installer_type=roleVal==='installer_flooring'||roleVal==='auditor_installer_flooring'?'flooring':roleVal==='installer_wallpaper'||roleVal==='auditor_installer_wallpaper'?'wallpaper':roleVal==='installer_wallpanel'||roleVal==='auditor_installer_wallpanel'?'wallpanel':null;
   document.getElementById('as-submit').disabled=true;
   try{
     await sbPost('profiles',{name,email,role,installer_type,passcode:null});

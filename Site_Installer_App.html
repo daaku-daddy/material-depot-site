@@ -50,6 +50,7 @@
   .jcard .svc{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;background:var(--tealbg);color:var(--teal);border-radius:6px;padding:3px 9px;}
   .jcard .svc.fl{background:#fff4d6;color:#7a5800;}
   .jcard .svc.wp{background:var(--purplebg);color:var(--purple);}
+  .jcard .svc.wpl{background:var(--tealbg);color:var(--teal);}
   .jcard hr.div{border:0;border-top:1px solid var(--line);margin:10px 0;}
   .jcard .when{font-size:12.5px;color:var(--muted);font-weight:700;}
   .jcard .foot{display:flex;gap:8px;margin-top:10px;}
@@ -227,6 +228,11 @@ if(!SESSION||!['installer','auditor_installer'].includes(SESSION.role)){window.l
 history.replaceState(null,'',location.href);
 window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 const ME={name:SESSION?SESSION.name:'',email:SESSION?SESSION.email:'',type:'flooring',zone:''};
+// Short label/CSS-class per job type — 'Wallpaper'/'Wall Panels'/'Flooring'. For the longer
+// "Wooden Flooring"-style label already shown in a few spots, use mdCategoryFor(t).pdfLabel
+// instead (registry-driven, byte-identical to today's output for the 2 existing types).
+function jTypeLabel(t){return t==='wallpaper'?'Wallpaper':t==='wallpanel'?'Wall Panels':'Flooring';}
+function jTypeClass(t){return t==='wallpaper'?'wp':t==='wallpanel'?'wpl':'fl';}
 // fetch own profile to get installer_type
 (async()=>{try{const rows=await sbGet('profiles?email=eq.'+encodeURIComponent(ME.email)+'&select=installer_type&limit=1');if(Array.isArray(rows)&&rows[0]&&rows[0].installer_type)ME.type=rows[0].installer_type;}catch(e){}})();
 
@@ -542,7 +548,7 @@ let selDay=dstr(today);
 function listView(){
   autoFlip();
   if($("#meName"))$("#meName").textContent=ME.name;
-  if($("#meType"))$("#meType").textContent=(ME.type==="wallpaper"?"Wallpaper":"Flooring")+" Installer";
+  if($("#meType"))$("#meType").textContent=jTypeLabel(ME.type)+" Installer";
   const todayStr=dstr(today);
   const days=Array.from({length:37},(_,i)=>addDays(i-30));
   const tabs=days.map(d=>{const ds=dstr(d);const n=JOBS.filter(j=>j.date===ds).length;
@@ -560,7 +566,7 @@ function listView(){
       <a class="call" href="tel:${tel}" onclick="event.stopPropagation()">&#128222; Call</a>
       <a class="dir" href="${mapUrl(j.addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">&#128205; Directions</a>
     </div>`;};
-  const svcTag=j=>`<span class="svc ${j.type==='wallpaper'?'wp':'fl'}">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</span>`;
+  const svcTag=j=>`<span class="svc ${jTypeClass(j.type)}">${mdCategoryFor(j.type).pdfLabel}</span>`;
   const card=j=>`<div class="jcard" data-key="${j.pi}|${j.sjId}">
     <div class="top"><div class="nm">${j.name}</div>${badge(j.status)}</div>
     <div class="mr"><span class="ic">&#128205;</span><span class="t">${j.addr}</span></div>
@@ -659,7 +665,7 @@ function detailBody(j){
         <div class="k">Phone</div><div class="v">${j.phone}</div>
         <div class="k">Address</div><div class="v">${j.addr}</div>
         <div class="k">Product</div><div class="v">${j.sku.map(s=>[s.code,s.skuName].filter(Boolean).join(' · ')+(s.qty?`<span style="font-weight:600;color:var(--muted)"> · Qty: ${s.qty}</span>`:'')+(s.link?` <a href="${s.link}" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>`:'')).join("<br>")}</div>
-        <div class="k">Type</div><div class="v">${j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'}</div>
+        <div class="k">Type</div><div class="v">${mdCategoryFor(j.type).pdfLabel}</div>
         <div class="k">Your role</div><div class="v">${j.isPrimary?'<span style="font-weight:800;color:#7a5800;background:#fff4d6;border-radius:6px;padding:2px 9px">&#9733; Primary installer</span>':'<span style="color:var(--muted)">Additional installer</span>'}</div>
         <div class="k">Your BM</div><div class="v">${j.bm}</div>
         <div class="k">Date</div><div class="v">${fmtDate(j.date)}</div>
@@ -1049,7 +1055,7 @@ async function markAdditionalComplete(j){
         }else{sj.status='completed';sj.jobcard=j.jobcard;}
       }
       const freshLog=Array.isArray(parentRows[0].log)?[...parentRows[0].log]:[];
-      freshLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation done (additional installer: "+ME.name+")",d:new Date().toISOString(),by:"auto"});
+      freshLog.push({t:jTypeLabel(j.type)+" installation done (additional installer: "+ME.name+")",d:new Date().toISOString(),by:"auto"});
       const parentStatus=rollupStatus(subjobs,parentRows[0].status||'completed');
       await sbPatch('install_orders',j.id,{subjobs,status:parentStatus,log:freshLog});
       try{localStorage.removeItem('md_install_'+j.pi+'_'+j.sjId);}catch(e){}
@@ -1103,7 +1109,7 @@ async function _writePartial(j,note,sign){
   if(sign)jc.sign=sign;
   j.jobcard=jc;j.status='partial';
   j.parentLog=j.parentLog||[];
-  j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation partially completed — "+note,d:new Date().toISOString(),by:"auto",who:ME.name});
+  j.parentLog.push({t:jTypeLabel(j.type)+" installation partially completed — "+note,d:new Date().toISOString(),by:"auto",who:ME.name});
   toast("Saving...");
   if(j.id&&j.sjId){
     // Step 1: status + log (small). Independently queued/retried, never reverted.
@@ -1260,7 +1266,7 @@ function showInstallSignature(j,ratings){
     j.jobcard={rooms:collectRooms(),sign:{img:sigImg,name:$("#signName").value,ratings}};
     j.status="completed";
     j.parentLog=j.parentLog||[];
-    j.parentLog.push({t:(j.type==='wallpaper'?'Wallpaper':'Flooring')+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
+    j.parentLog.push({t:jTypeLabel(j.type)+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
     toast("Saving...");
     if(j.id&&j.sjId){
       // Step 1: update status immediately (small — ensures order leaves atsite in SM/admin).
@@ -1339,7 +1345,7 @@ async function genPDF(j){
   function header(){y=mdPdfHeader(doc,{title:cardTitle,right:j.pi,M});}
   header();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
-    body:[['Proforma Invoice No.',j.pi],['Client Name',j.name],['Client Mobile',j.phone],['Site Address',j.addr],['BM',j.bm],['Installer',ME.name],['Type',j.type==='wallpaper'?'Wallpaper':'Wooden Flooring'],['Date',fmtDate(j.date)]]});
+    body:[['Proforma Invoice No.',j.pi],['Client Name',j.name],['Client Mobile',j.phone],['Site Address',j.addr],['BM',j.bm],['Installer',ME.name],['Type',mdCategoryFor(j.type).pdfLabel],['Date',fmtDate(j.date)]]});
   y=doc.lastAutoTable.finalY+10;
   if(isPartial&&j.jobcard.note){doc.setFont('helvetica','italic');doc.setFontSize(9.5);doc.setTextColor(...muted);const nl=doc.splitTextToSize('Partial completion note: '+j.jobcard.note,W-2*M);doc.text(nl,M,y+4);y+=nl.length*12+6;}
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text(isPartial?'Rooms installed so far':'Rooms installed',M,y+4);y+=10;

@@ -380,6 +380,8 @@
           <label><input type="checkbox" id="ao-fl"> Wooden Flooring</label>
           <label><input type="checkbox" id="ao-wp"> Standard Wallpapers</label>
           <label><input type="checkbox" id="ao-cwp"> Custom Wallpapers</label>
+          <label><input type="checkbox" id="ao-cnc"> CNC</label>
+          <label><input type="checkbox" id="ao-wpnl"> Wall Panels</label>
         </div>
       </div>
       <div class="merr" id="ao-err"></div>
@@ -2013,7 +2015,7 @@ function openAddOrder(){
 function closeAddOrder(){
   document.getElementById("addOrderOverlay").classList.remove("show");
   ["ao-pi","ao-po","ao-name","ao-phone","ao-addr","ao-bm","ao-bm-select","ao-skus"].forEach(id=>{document.getElementById(id).value="";});
-  ["ao-fl","ao-wp","ao-cwp"].forEach(id=>{document.getElementById(id).checked=false;});
+  ["ao-fl","ao-wp","ao-cwp","ao-cnc","ao-wpnl"].forEach(id=>{document.getElementById(id).checked=false;});
   document.getElementById("ao-err").classList.remove("show");
   document.getElementById("ao-kylas-note").style.display="none";
 }
@@ -2050,6 +2052,8 @@ async function submitAddOrder(){
   if(document.getElementById("ao-fl").checked||autoFl)ticked.push("Wooden Flooring");
   if(document.getElementById("ao-wp").checked||autoWp)ticked.push("Standard Wallpapers");
   if(document.getElementById("ao-cwp").checked||autoCustomWp)ticked.push("Custom Wallpapers");
+  if(document.getElementById("ao-cnc").checked)ticked.push("CNC");
+  if(document.getElementById("ao-wpnl").checked)ticked.push("Wall Panels");
 
   const logEntry={t:"Order added manually by "+SESSION.name,d:new Date().toISOString()};
 
