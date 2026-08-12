@@ -872,21 +872,24 @@ async function openJobCard(j){
 }
 function addRoom(restore){
   const id=++jcSeq;
-  const room={id,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),qty:restore?restore.qty||'':(jcJob.sku[0]&&jcJob.sku[0].qty?jcJob.sku[0].qty:''),height:restore?restore.height||'':'',width:restore?restore.width||'':'',photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?restore.comments:''};
+  let category=restore?(restore.category||restore.type):(jcJob&&jcJob.type);
+  if(!MD_CATEGORIES[category])category='flooring';
+  const room={id,category,name:restore?restore.name:'',sku:restore?restore.sku:(jcJob.sku[0]?jcJob.sku[0].code:''),fields:(restore&&restore.fields)?Object.assign({},restore.fields):{},photos:restore?(restore.photos||(restore.photo?[restore.photo]:[])):[],comments:restore?(restore.comments||restore.notes||''):''};
   const block=el('div','roomblock');block.dataset.id=id;
   const top=el('div','roomtop');top.appendChild(el('div','rn','Room '+(jcRooms.length+1)));
   const rm=el('button','rm','Remove');rm.onclick=()=>{jcRooms=jcRooms.filter(r=>r.id!==id);block.remove();renumber();autosave();};top.appendChild(rm);block.appendChild(top);
+
+  const fc=el('div','fieldgap');fc.innerHTML='<label>Product category</label>';const catSel=document.createElement('select');Object.values(MD_CATEGORIES).forEach(c=>{const op=document.createElement('option');op.value=c.id;op.textContent=c.label;if(c.id===room.category)op.selected=true;catSel.appendChild(op);});fc.appendChild(catSel);block.appendChild(fc);
 
   const f1=el('div','fieldgap');f1.innerHTML='<label>Room name <span class="reqstar">★</span></label>';const nI=el('input');nI.placeholder='e.g. Living Room';nI.value=room.name;nI.oninput=()=>{room.name=nI.value;autosave();};f1.appendChild(nI);block.appendChild(f1);
 
   const f2=el('div','fieldgap');f2.innerHTML='<label>SKU Code <span class="reqstar">★</span></label>';const sI=el('input');sI.placeholder='e.g. '+room.sku;sI.value=room.sku;sI.oninput=()=>{room.sku=sI.value;autosave();};f2.appendChild(sI);block.appendChild(f2);
 
-  const f2b=el('div','fieldgap');f2b.innerHTML='<label>Quantity <span class="reqstar">★</span></label>';const qI=el('input');qI.placeholder='e.g. 12 boxes / 20 sq.ft / 5 rolls';qI.value=room.qty;qI.oninput=()=>{room.qty=qI.value;autosave();};f2b.appendChild(qI);block.appendChild(f2b);
-
-  const f2c=el('div','twocol');
-  const f2ch=el('div','fieldgap');f2ch.style.flex='1';f2ch.innerHTML='<label>Height</label>';const hI=el('input');hI.placeholder='e.g. 10 ft';hI.value=room.height;hI.oninput=()=>{room.height=hI.value;autosave();};f2ch.appendChild(hI);
-  const f2cw=el('div','fieldgap');f2cw.style.flex='1';f2cw.innerHTML='<label>Width</label>';const wI=el('input');wI.placeholder='e.g. 12 ft';wI.value=room.width;wI.oninput=()=>{room.width=wI.value;autosave();};f2cw.appendChild(wI);
-  f2c.appendChild(f2ch);f2c.appendChild(f2cw);block.appendChild(f2c);
+  // Installed-detail fields come from the category registry (installFields) — new categories adapt automatically.
+  const fFlds=el('div');block.appendChild(fFlds);
+  function renderInstallFields(){fFlds.innerHTML='';const cat=MD_CATEGORIES[room.category];(cat.installFields||[]).forEach(f=>{const fg=el('div','fieldgap');fg.innerHTML='<label>'+f.label+'</label>';const inp=document.createElement('input');if(f.input==='decimal')inp.setAttribute('inputmode','decimal');if(f.ph)inp.placeholder=f.ph;inp.value=(room.fields[f.k]!=null?room.fields[f.k]:'');inp.oninput=()=>{room.fields[f.k]=inp.value;autosave();};fg.appendChild(inp);fFlds.appendChild(fg);});}
+  renderInstallFields();
+  catSel.onchange=()=>{room.category=catSel.value;room.fields={};renderInstallFields();autosave();};
 
   const f3=el('div','fieldgap');f3.innerHTML='<label>Photos after installation <span class="reqstar">★</span></label>';
   const fileCam=document.createElement('input');fileCam.type='file';fileCam.accept='image/*';fileCam.capture='environment';fileCam.style.display='none';
@@ -932,7 +935,7 @@ function addRoom(restore){
   jcRooms.push(room);
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
-function collectRooms(){return jcRooms.map(r=>({name:r.name,sku:r.sku,qty:r.qty||'',height:r.height||'',width:r.width||'',photos:r.photos||[],comments:r.comments}));}
+function collectRooms(){return jcRooms.map(r=>({v:2,category:r.category,name:r.name,sku:r.sku,fields:Object.assign({},r.fields||{}),photos:r.photos||[],comments:r.comments||''}));}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
 let _localSaveTimer=null;
@@ -987,24 +990,10 @@ function finishCard(j){
   for(const r of jcRooms){
     if(!r.name.trim()){toast("Enter a room name");return;}
     if(!r.sku.trim()){toast("Enter the SKU code");return;}
-    if(!r.qty||!r.qty.trim()){toast("Enter the quantity for "+(r.name||"each room"));return;}
     if(!r.photos||!r.photos.length){toast("Add at least one photo for "+(r.name||"each room"));return;}
   }
   document.querySelector(".footer").classList.add("hide");
-  const roomCards=jcRooms.map((r,i)=>{
-    const photos=(r.photos||[]).map(p=>`<img src="${p}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;border:2px solid var(--line);flex:0 0 auto;">`).join('');
-    return `<div class="panel" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px">
-        <span style="background:var(--navy);color:#fff;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:800">Room ${i+1}</span>
-        <b style="font-size:17px">${r.name}</b>
-        ${r.sku?`<span style="font-size:13px;color:var(--muted)">SKU: ${r.sku}</span>`:''}
-        ${r.qty?`<span style="font-size:13px;color:var(--muted)">Qty: ${r.qty}</span>`:''}
-        ${(r.height||r.width)?`<span style="font-size:13px;color:var(--muted)">${[r.height&&'H: '+r.height,r.width&&'W: '+r.width].filter(Boolean).join(' · ')}</span>`:''}
-      </div>
-      ${photos?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">${photos}</div>`:''}
-      ${r.comments?`<div style="font-size:14px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px">${r.comments}</div>`:''}
-    </div>`;
-  }).join('');
+  const roomCards=collectRooms().map((r,i)=>`<div class="panel" style="margin-bottom:14px">${mdInstallRoomHtml(r,i)}</div>`).join('');
   $("#jcBody").innerHTML=`
     <div class="panel" style="background:var(--bg);margin-bottom:14px">
       <h2 style="margin:0 0 12px">Job summary</h2>
@@ -1354,24 +1343,14 @@ async function genPDF(j){
   y=doc.lastAutoTable.finalY+10;
   if(isPartial&&j.jobcard.note){doc.setFont('helvetica','italic');doc.setFontSize(9.5);doc.setTextColor(...muted);const nl=doc.splitTextToSize('Partial completion note: '+j.jobcard.note,W-2*M);doc.text(nl,M,y+4);y+=nl.length*12+6;}
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text(isPartial?'Rooms installed so far':'Rooms installed',M,y+4);y+=10;
-  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','SKU No.','Qty','H × W']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',r.sku||'-',r.qty||'-',[r.height,r.width].filter(Boolean).join(' × ')||'-'])});
+  doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','Category','SKU No.']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||r.type).pdfLabel,r.sku||'NA'])});
 
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;header();
+    const _cat=mdCategoryFor(r.category||r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
-    const hwStr=(r.height||r.width)?(' · H×W: '+[r.height,r.width].filter(Boolean).join(' × ')):'';
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text('SKU: '+(r.sku||'-')+(r.qty?' · Qty: '+r.qty:'')+hwStr,M,y+10);y+=24;
-    const rPhotos=r.photos&&r.photos.length?r.photos:(r.photo?[r.photo]:[]);
-    const piw=W-2*M,pih=piw*0.6;
-    for(let pi=0;pi<rPhotos.length;pi++){
-      const ph=await compress(rPhotos[pi],1600,0.88);
-      if(!ph)continue;
-      if(y+pih+20>H-M){doc.addPage();y=M;header();}
-      doc.setFontSize(8.5);doc.setTextColor(...muted);doc.text(pi===0?'Photo after installation':'Additional photo '+(pi+1),M,y);
-      try{doc.addImage(ph,'JPEG',M,y+6,piw,pih);}catch(e){}
-      y+=pih+18;
-    }
-    if(r.comments){doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...navy);doc.text('Comments',M,y);y+=12;doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);doc.text(doc.splitTextToSize(r.comments,W-2*M),M,y);}
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'-'),M,y+10);y+=24;
+    y=await mdPdfInstallRoom(doc,r,y,{M,W,H,header:()=>mdPdfHeader(doc,{title:cardTitle,right:j.pi,M})});
   }
 
   // consent + signature

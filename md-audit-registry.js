@@ -129,4 +129,33 @@
       +(nr.notes?'<div style="margin-top:8px;font-size:12px;color:var(--muted)">Notes: '+esc(nr.notes)+'</div>':'')
       +'</div>';
   };
+
+  // Shared ON-SCREEN renderer for one INSTALLATION room. New install rooms are flat v2
+  // {v:2,category,name,sku,fields:{installFields},photos,comments}; legacy install rooms are
+  // {name,sku,qty,height,width,photos,comments}. Both render through this one path.
+  window.mdInstallRoomHtml=function(room,i){
+    var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+    var KVW='<div style="display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:3px 12px;font-size:12.5px">';
+    var krow=function(l,v){return '<div style="color:var(--muted)">'+esc(l)+'</div><div>'+esc(v)+'</div>';};
+    var head, rows, photos, comments;
+    if(room && room.v>=2){
+      var cat=window.mdCategoryFor(room.category);
+      rows=(cat.installFields||[]).filter(function(f){var v=room.fields&&room.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(function(f){return krow(f.label,room.fields[f.k]);}).join('');
+      head=esc(room.name||'-')+' <span style="font-weight:600;color:var(--muted);font-size:11.5px">'+esc(cat.pdfLabel)+' &middot; SKU: '+esc(room.sku||'NA')+'</span>';
+      photos=(room.photos||[]).filter(Boolean);
+      comments=room.comments||room.notes||'';
+    }else{
+      rows=[['SKU',room.sku],['Quantity',room.qty],['H x W',[room.height,room.width].filter(Boolean).join(' x ')]].filter(function(p){return p[1]!==undefined&&p[1]!==null&&String(p[1])!=='';}).map(function(p){return krow(p[0],p[1]);}).join('');
+      head=esc(room.name||'-');
+      photos=(room.photos&&room.photos.length?room.photos:(room.photo?[room.photo]:[])).filter(Boolean);
+      comments=room.comments||'';
+    }
+    var ph=photos.map(function(p){return '<img src="'+esc(p)+'" style="width:60px;height:60px;object-fit:cover;border-radius:7px;border:1px solid var(--line)">';}).join('');
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">'
+      +'<div style="font-weight:800;color:var(--navy)">Room '+((i||0)+1)+': '+head+'</div>'
+      +(rows?KVW+rows+'</div>':'')
+      +(ph?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+ph+'</div>':'')
+      +(comments?'<div style="margin-top:8px;font-size:12px;color:var(--muted)">'+esc(comments)+'</div>':'')
+      +'</div>';
+  };
 })();

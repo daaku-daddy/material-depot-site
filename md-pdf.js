@@ -124,4 +124,35 @@
       doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);var ls=doc.splitTextToSize(nroom.notes,W-2*M);doc.text(ls,M,y);y+=ls.length*12+6; }
     return y;
   };
+
+  // Renders ONE INSTALLATION room's body — installed-detail table + photos + comments, page-break
+  // aware. Handles flat v2 install rooms ({v:2,category,fields,photos,comments}) and legacy install
+  // rooms ({sku,qty,height,width,photos,comments}). Returns new y. opts as mdPdfAuditRoom.
+  window.mdPdfInstallRoom=async function(doc, room, y, opts){
+    opts=opts||{};
+    var M=opts.M||40, W=opts.W||doc.internal.pageSize.getWidth(), H=opts.H||doc.internal.pageSize.getHeight();
+    var compress=opts.compress||window.mdCompress;
+    function ensure(space){ if(y+space>H-M){ doc.addPage(); y=opts.header?opts.header():M; } }
+    var rows, photos, comments;
+    if(room && room.v>=2){
+      var cat=window.mdCategoryFor(room.category);
+      rows=(cat.installFields||[]).filter(function(f){var v=room.fields&&room.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(function(f){return [f.label, String(room.fields[f.k])];});
+      photos=(room.photos||[]).filter(Boolean); comments=room.comments||room.notes||'';
+    }else{
+      rows=[['SKU',room.sku],['Quantity',room.qty],['Height x Width',[room.height,room.width].filter(Boolean).join(' x ')]].filter(function(p){return p[1]!==undefined&&p[1]!==null&&String(p[1])!=='';}).map(function(p){return [p[0],String(p[1])];});
+      photos=(room.photos&&room.photos.length?room.photos:(room.photo?[room.photo]:[])).filter(Boolean); comments=room.comments||'';
+    }
+    if(rows.length){ ensure(34+rows.length*20);
+      doc.autoTable(window.mdBrandGrid({startY:y, margin:{left:M,right:M}, head:[['Detail','Value']], body:rows,
+        columnStyles:{0:{cellWidth:210,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL}}}));
+      y=doc.lastAutoTable.finalY+8;
+    }
+    for(var p=0;p<photos.length;p++){ var img=await compress(photos[p]);
+      if(img){ var pw=W-2*M, phh=pw*0.56; ensure(phh+22);
+        doc.setFontSize(8.5);doc.setTextColor.apply(doc,window.MD_MUTED);doc.text('Photo '+(p+1),M,y);
+        try{doc.addImage(img,'JPEG',M,y+6,pw,phh);}catch(e){} y+=phh+16; } }
+    if(comments){ ensure(46); doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor.apply(doc,window.MD_INK);doc.text('Comments',M,y);y+=12;
+      doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);var cls=doc.splitTextToSize(comments,W-2*M);doc.text(cls,M,y);y+=cls.length*12+6; }
+    return y;
+  };
 })();
