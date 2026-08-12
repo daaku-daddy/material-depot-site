@@ -839,19 +839,23 @@ function ordersView(){
   const c={};Object.keys(STATUS).forEach(k=>c[k]=0);scoped.forEach(o=>c[o.status]++);
   const live=c.scheduled+c.assigned+c.onway+c.atsite;
   const mainOrderCount=scoped.filter(o=>!['slot_reserved','slot_converted'].includes(o.status)).length;
+  const missingBmCount=BM_EMAIL_ENABLED?scoped.filter(o=>!o.bmEmail).length:0;
   const stats=`<div class="stats">
     ${statTile(mainOrderCount,"Live audit orders","#1F3A5F","all")}
     ${c.slot_reserved?statTile(c.slot_reserved,"Store pre-bookings","#1a4a8a","slot_reserved"):''}
     ${statTile(c.pending+c.created+c.call_na,"Need action","#b3261e","action")}
     ${statTile(live,"Scheduled / in progress","#2E6CA8","live")}
     ${statTile(c.reschedule,"To reschedule","#9a6200","reschedule")}
-    ${statTile(c.completed,"Completed","#1f7a3f","completed")}</div>`;
+    ${statTile(c.completed,"Completed","#1f7a3f","completed")}
+    ${missingBmCount?statTile(missingBmCount,"Missing BM account link","#9a6200","missing_bm"):''}</div>`;
   const filters=["all","slot_reserved","followup","pending","created","scheduled","assigned","reschedule","completed"];
-  const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":STATUS[f]?STATUS[f].l:f}</button>`).join("");
+  if(missingBmCount)filters.push("missing_bm");
+  const fbtns=filters.map(f=>`<button class="${filterStatus===f?'active':''}" data-filter="${f}">${f==="all"?"All":f==="followup"?"Follow-up set":f==="missing_bm"?"Missing BM link":STATUS[f]?STATUS[f].l:f}</button>`).join("");
   const rows=scoped.filter(o=>{
     if(filterStatus==="all"){
       if(o.status==='slot_reserved'||o.status==='slot_converted')return false;
     } else {
+      if(filterStatus==="missing_bm")return !o.bmEmail;
       if(filterStatus==="action")return ["pending","created","call_na"].includes(o.status);
       if(filterStatus==="followup")return !!(o.service&&o.service.follow_up_date);
       if(filterStatus==="live")return ["scheduled","assigned","onway","atsite"].includes(o.status);
@@ -1187,7 +1191,16 @@ function drawerBody(o){
     <div class="k">PO numbers</div><div class="v">${o.po.join(", ")}</div>
     <div class="k">SKUs in cart</div><div class="v"><div class="pill-list">${skupills}</div></div>
     <div class="k">Audit ticked for</div><div class="v">${Array.isArray(o.auditTicked)?o.auditTicked.join(", ")||"—":"—"}</div>
-    <div class="k">BM</div><div class="v">${o.bm}</div></div></div>`;
+    <div class="k">BM</div><div class="v">${o.bm}${(!o.bmEmail&&BM_LIST.length)?' <span style="color:var(--amber);font-weight:700;font-size:11px">⚠ not linked to a BM account</span>':''}${BM_LIST.length?' <button class="btn ghost sm" id="editBmBtn" style="margin-left:6px;padding:3px 9px;font-size:11px">Change</button>':''}</div>
+  </div>
+  ${BM_LIST.length?`<div id="editBmWrap" style="display:none;margin-top:8px">
+    <select id="editBmSelect" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;width:100%;margin-bottom:6px">
+      <option value="">— Select a BM —</option>
+      ${BM_LIST.map(b=>`<option value="${b.email}" ${o.bmEmail===b.email?'selected':''}>${b.name}</option>`).join('')}
+    </select>
+    <button class="btn navy sm" id="saveBmBtn">Save</button>
+  </div>`:''}
+  </div>`;
   html+=`<div class="sec"><h3>Customer</h3><div class="kv">
     <div class="k">Name</div><div class="v">${o.name}</div>
     <div class="k">Phone</div><div class="v">${o.phone}</div>
@@ -1461,6 +1474,22 @@ function drawerFoot(o){
 let draft={};
 function wireDrawer(o){
   if(document.getElementById('journeyBody'))loadJourney(o);
+  if(document.getElementById('editBmBtn'))document.getElementById('editBmBtn').onclick=()=>{
+    const w=document.getElementById('editBmWrap');w.style.display=w.style.display==='none'?'block':'none';
+  };
+  if(document.getElementById('saveBmBtn'))document.getElementById('saveBmBtn').onclick=async()=>{
+    const email=document.getElementById('editBmSelect').value;
+    const match=BM_LIST.find(b=>b.email===email);
+    if(!match){toast('Select a BM first');return;}
+    const btn=document.getElementById('saveBmBtn');btn.disabled=true;btn.textContent='Saving…';
+    o.bm=match.name;o.bmEmail=match.email;
+    o.log.push({t:'BM assigned: '+match.name,d:new Date().toISOString(),by:'manual',who:SESSION.name});
+    try{
+      if(o.id)await sbPatch('audit_orders',o.id,{bm:match.name,bm_email:match.email,log:o.log});
+      toast('BM updated');
+      openOrder(o.pi);
+    }catch(e){toast('Failed — '+e.message);btn.disabled=false;btn.textContent='Save';}
+  };
   draft={flooring:[],wallpaper:[],slot:null,date:null,auditor:null,auditorOverride:false};
   if(o.service){
     draft.flooring=(o.service.flooring||[]).map(x=>({...x}));
@@ -2129,10 +2158,23 @@ function usePORow(r){
   document.getElementById('ao-po').value=r.po_number||'';
   document.getElementById('ao-name').value=r.customer&&r.customer.name||'';
   document.getElementById('ao-phone').value=r.customer&&r.customer.contact?String(r.customer.contact):'';
-  document.getElementById('ao-bm').value=r.bm&&r.bm.name||'';
+  const bmName=r.bm&&r.bm.name||'';
+  document.getElementById('ao-bm').value=bmName;
   document.getElementById('ao-addr').value=r.shipping_address&&r.shipping_address.address||'';
-  document.getElementById('ao-kylas-note').style.display='block';
+  const noteEl=document.getElementById('ao-kylas-note');
+  noteEl.innerHTML='Pre-filled from backend — verify PI number, address and details before saving.';
+  noteEl.style.display='block';
   openAddOrder();
+  // Best-effort exact (case-insensitive) name match against real BM accounts, to also prefill
+  // bm_email — deliberately never fuzzy/partial: a false-positive match would expose one BM's
+  // customer to another BM's dashboard, a privacy bug, not just a data-quality one. Zero or
+  // multiple matches leave bm_email unset — the SM picks the right BM manually below instead.
+  if(bmName&&BM_LIST.length){
+    const matches=BM_LIST.filter(b=>b.name.trim().toLowerCase()===bmName.trim().toLowerCase());
+    const sel=document.getElementById('ao-bm-select');
+    if(matches.length===1&&sel)sel.value=matches[0].email;
+    else noteEl.innerHTML+='<div style="margin-top:6px;color:var(--amber)">⚠ Could not auto-link "'+bmName+'" to a BM account — please select the correct BM below.</div>';
+  }
 }
 
 document.getElementById('kylasOverlay').addEventListener('click',e=>{if(e.target.id==='kylasOverlay')closeKylasSheet();});
