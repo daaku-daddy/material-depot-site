@@ -492,6 +492,7 @@ function drawUsersTable(m){
       </table>
     </div>`;
   document.getElementById('usrQ').oninput=e=>{usersQ=e.target.value;drawUsersTable(m);};
+  if(usersQ){const si=document.getElementById('usrQ');if(si){si.focus();si.setSelectionRange(usersQ.length,usersQ.length);}}
 }
 
 function openAddUser(){
