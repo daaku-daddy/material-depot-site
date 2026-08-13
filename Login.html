@@ -61,6 +61,10 @@ const ROLE_FILES={
   store_staff:        {label:"Store Team",               file:"Store_Team_App.html",    color:"#9a6200",note:"Experience centre slot booking"},
   bm:                 {label:"Business Manager",         file:"BM_Dashboard.html",      color:"#b3261e",note:"My orders & customer journey"},
   coe:                {label:"Category Ops Executive",   file:"COE_Dashboard.html",     color:"#0f6e74",note:"Order follow-ups & production tracking"},
+  // No dashboard yet — a real profile role (so they can be created, listed and assigned as
+  // shadowers) but nothing to log in to. file:null makes the login flow say so plainly
+  // instead of redirecting into a dead end. Give it a file when their screen is specced.
+  content_team:       {label:"Content Team",             file:null,                     color:"#b3261e",note:"No dashboard yet"},
 };
 
 const $=s=>document.querySelector(s);
@@ -267,8 +271,17 @@ async function tryChangePasscode(){
 
 /* ---- Screen 3: success ---- */
 function successScreen(){
-  const r=ROLE_FILES[state.user.role];
+  const r=ROLE_FILES[state.user.role]||{label:state.user.role,note:'',file:null};
   localStorage.setItem('md_user',JSON.stringify({name:state.user.name,email:state.user.email,role:state.user.role}));
+  if(!r.file){
+    // A real role that has no screen of its own yet. Say so, rather than bouncing them
+    // somewhere they don't belong or leaving a spinner running forever.
+    $("#card").innerHTML=`
+      <h1>Welcome, ${state.user.name.split(' ')[0]}</h1>
+      <p class="sub">Your account is set up, but there's no dashboard for your role yet.</p>
+      <div class="roleline"><span class="ic">&#10003;</span> Role: ${r.label}</div>`;
+    return;
+  }
   $("#card").innerHTML=`
     <h1>Welcome, ${state.user.name.split(' ')[0]}</h1>
     <p class="sub">You're signed in. Taking you to your dashboard…</p>
@@ -283,7 +296,7 @@ function successScreen(){
 (function(){
   try{
     var u=JSON.parse(localStorage.getItem('md_user')||'null');
-    if(u&&u.role&&ROLE_FILES[u.role]){window.location.replace('/'+ROLE_FILES[u.role].file);return;}
+    if(u&&u.role&&ROLE_FILES[u.role]&&ROLE_FILES[u.role].file){window.location.replace('/'+ROLE_FILES[u.role].file);return;}
   }catch(e){}
   emailScreen();
 })();

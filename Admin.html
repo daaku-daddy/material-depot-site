@@ -94,6 +94,7 @@
   .rb-store_staff{background:var(--amberbg);color:var(--amber);}
   .rb-bm{background:var(--redbg);color:var(--red);}
   .rb-coe{background:#e0f4f4;color:#0f6e74;}
+  .rb-content_team{background:var(--redbg);color:var(--red);}
 
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:20px;padding:4px 10px;white-space:nowrap;}
   .chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;}
@@ -330,8 +331,11 @@ const ROLES = {
   store_staff:        {label:'Store Team',               color:'#9a6200', file:'Store_Team_App.html'},
   bm:                 {label:'Business Manager',         color:'#b3261e', file:'BM_Dashboard.html'},
   coe:                {label:'Category Ops Executive',   color:'#0f6e74', file:'COE_Dashboard.html'},
+  // No `file` — a real profile role with no dashboard of its own yet. Everything that reads
+  // ROLES must therefore tolerate a missing file (see drawRoleViewer / loadRvIframe).
+  content_team:       {label:'Content Team',             color:'#b3261e'},
 };
-const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪', bm:'🧑‍💼', coe:'📞'};
+const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪', bm:'🧑‍💼', coe:'📞', content_team:'🎨'};
 const ROLE_DESCS = {
   service_mgr:'Audit scheduling & installation tracking dashboard',
   site_auditor:'Field audit mobile app — site visits & reports',
@@ -340,6 +344,7 @@ const ROLE_DESCS = {
   store_staff:'Experience centre slot booking for walk-in clients',
   bm:'My orders — customer journey, material selection & job card visibility',
   coe:'Site audit → order follow-up calls & custom wallpaper production tracking',
+  content_team:'Content team — no dashboard yet',
 };
 
 function roleBadge(r){const c=ROLES[r]||{label:r,color:'#999'};return `<span class="role-badge rb-${r}">${c.label}</span>`;}
@@ -407,7 +412,7 @@ async function renderOverview(m){
     sbGet('install_orders?status=in.(scheduled,onway,atsite)&select=id'),
   ]);
   const list=Array.isArray(users)?users:[];
-  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0,store_staff:0,bm:0,coe:0};
+  const c={admin:0,service_mgr:0,site_auditor:0,installer:0,auditor_installer:0,store_staff:0,bm:0,coe:0,content_team:0};
   list.forEach(u=>{if(c[u.role]!==undefined)c[u.role]++;});
   const total=list.length;
   const active=(Array.isArray(auditActive)?auditActive.length:0)+(Array.isArray(installActive)?installActive.length:0);
@@ -514,6 +519,7 @@ function openAddUser(){
           <option value="auditor_installer">Site Auditor + Installer</option>
           <option value="bm">Business Manager</option>
           <option value="coe">Category Ops Executive</option>
+          <option value="content_team">Content Team</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -581,6 +587,7 @@ function openEditRole(u){
           <option value="auditor_installer" ${u.role==='auditor_installer'?'selected':''}>Site Auditor + Installer</option>
           <option value="bm" ${u.role==='bm'?'selected':''}>Business Manager</option>
           <option value="coe" ${u.role==='coe'?'selected':''}>Category Ops Executive</option>
+          <option value="content_team" ${u.role==='content_team'?'selected':''}>Content Team</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
         </select>
       </div>
@@ -674,7 +681,12 @@ async function renderRoleViewer(m){
 function drawRoleViewer(m){
   const persons=rvRole?(rvPersons[rvRole]||[]):[];
   let frameHtml='';
-  if(rvRole&&rvPersonEmail){
+  if(rvRole&&!ROLES[rvRole].file&&!['service_mgr','auditor_installer'].includes(rvRole)){
+    // A real role that has no dashboard to preview yet. Listed here so Admin can still see
+    // who's on the team, but there is nothing to put in the iframe.
+    frameHtml=`<div class="card"><div class="empty"><div class="e-ico">${ROLE_ICONS[rvRole]||'👥'}</div>
+      <div class="e-msg">${ROLES[rvRole].label} has no dashboard yet — ${persons.length} member${persons.length===1?'':'s'} on the team.</div></div></div>`;
+  } else if(rvRole&&rvPersonEmail){
     const p=persons.find(x=>x.email===rvPersonEmail);
     const smTabs=rvRole==='service_mgr'?`<div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="filt-btn${rvSmTab==='audit'?' active':''}" onclick="setSmTab('audit')">Audit Dashboard</button>
@@ -695,7 +707,7 @@ function drawRoleViewer(m){
   m.innerHTML=`
     <div class="page-head"><h1>Role Viewer</h1><p>Preview exactly what each role sees when they log in.</p></div>
     <div class="role-cards">
-      ${['service_mgr','site_auditor','installer','auditor_installer','store_staff','bm','coe'].map(k=>{
+      ${['service_mgr','site_auditor','installer','auditor_installer','store_staff','bm','coe','content_team'].map(k=>{
         const cnt=(rvPersons[k]||[]).length;
         return `<div class="role-card${rvRole===k?' active':''}" onclick="setRoleView('${k}')">
           <div class="rc-ico">${ROLE_ICONS[k]}</div>
@@ -723,6 +735,7 @@ function loadRvIframe(){
     :rvRole==='auditor_installer'
     ?(rvAiTab==='auditor'?'Site_Auditor_App.html':'Site_Installer_App.html')
     :ROLES[rvRole].file;
+  if(!file) return;   // role has no dashboard yet — nothing to preview
   const adminSession=localStorage.getItem('md_user');
   localStorage.setItem('md_user',JSON.stringify({name:person.name,email:person.email,role:rvRole}));
   const iframe=document.createElement('iframe');

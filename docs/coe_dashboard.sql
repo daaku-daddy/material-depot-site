@@ -11,7 +11,8 @@
 --    dropped and recreated (there is no ALTER ... ADD VALUE for a CHECK list).
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
 ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK (role IN (
-  'admin','service_mgr','site_auditor','installer','auditor_installer','store_staff','bm','coe'
+  'admin','service_mgr','site_auditor','installer','auditor_installer','store_staff','bm','coe',
+  'content_team'
 ));
 
 -- 2. Site audit -> order conversion follow-up state. 1:1 with an audit order, so it
