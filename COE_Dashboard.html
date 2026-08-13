@@ -770,7 +770,8 @@ function wpRowHtml(x){
     ? `<span style="color:${lvl==='breach'?'var(--red)':lvl==='stalled'||lvl==='soon'?'var(--amber)':'var(--muted)'};font-weight:${lvl==='ok'||lvl==='none'?400:700}">${esc(window.mdWpFmtDur(x.sla.hours))}${x.sla.slaH?` / ${x.sla.slaH}h`:''}</span>`
     : '<span style="color:var(--muted)">—</span>';
   return `<tr data-id="${esc(r.id)}">
-    <td><div class="tname">${esc(r.customer_name||'—')}</div><div class="tsub">${esc(r.phone||'')}${r.bm?' · '+esc(r.bm):''}</div></td>
+    <td><div class="tname">${esc(r.customer_name||'—')}</div>
+      <div class="tsub">${r.phone?esc(r.phone):'<span style="color:var(--amber);font-weight:700">no contact yet</span>'}${r.bm?' · '+esc(r.bm):''}</div></td>
     <td><div>${esc(r.md_id||'—')}</div><div class="tsub">${esc(r.pi||'')}</div></td>
     <td>${esc(v.label)}</td>
     <td>${rounds.length>1?`<span class="catpill cwp">Round ${rounds.length}</span>`:'1'}</td>
@@ -879,10 +880,17 @@ function drawWpDrawer(){
 
       <div class="sec"><h3>Order details</h3>
         <div class="form">
+          ${!r.phone?`<div class="note" style="border-color:var(--amber);background:var(--amberbg);color:var(--amber)">
+            No customer details on this order. It came from the vendor sheet, which never recorded them, and its enquiry ID isn't in this app — so there was nothing to look them up from. Add them here to make it callable.</div>`:''}
+          <div class="row2">
+            <div><label>Client name</label><input id="wpName" value="${esc(r.customer_name||'')}"></div>
+            <div><label>Client phone</label><input id="wpPhone" value="${esc(r.phone||'')}"></div>
+          </div>
+          <label>BM</label><input id="wpBm" value="${esc(r.bm||'')}">
           <label>Notes (product / issue)</label>
           <textarea id="wpNotes">${esc(r.notes||'')}</textarea>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn gray sm" id="wpSaveNotes">Save notes</button>
+            <button class="btn gray sm" id="wpSaveNotes">Save details</button>
             ${r.state!=='cancelled'?`<button class="btn gray sm" id="wpHold">${r.state==='on_hold'?'Resume':'Put on hold'}</button>`:''}
             ${r.state!=='cancelled'?`<button class="btn red sm" id="wpCancel">Cancel PO</button>`:''}
           </div>
@@ -908,8 +916,18 @@ function drawWpDrawer(){
     catch(e){err.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='Mark done';}
   });
   on('wpSaveNotes',async()=>{
-    try{await patchWp(r,cur=>{cur.notes=($("#wpNotes").value||'').trim();return cur;},'Notes updated');toast('Notes saved');drawWpDrawer();}
-    catch(e){toast('Failed — '+e.message);}
+    const nm=($("#wpName").value||'').trim(), ph=($("#wpPhone").value||'').trim(), bmv=($("#wpBm").value||'').trim();
+    const changed=[];
+    if(nm!==(r.customer_name||''))changed.push('client name');
+    if(ph!==(r.phone||''))changed.push('phone');
+    if(bmv!==(r.bm||''))changed.push('BM');
+    try{
+      await patchWp(r,cur=>{
+        cur.customer_name=nm||null;cur.phone=ph||null;cur.bm=bmv||null;
+        cur.notes=($("#wpNotes").value||'').trim();return cur;
+      },changed.length?'Order details updated ('+changed.join(', ')+')':'Notes updated');
+      toast('Saved');drawWpDrawer();
+    }catch(e){toast('Failed — '+e.message);}
   });
   on('wpHold',async()=>{
     const to=r.state==='on_hold'?'active':'on_hold';
@@ -960,7 +978,8 @@ async function patchWp(row,mutate,logText){
   const next=mutate(cur);
   const log=Array.isArray(next.log)?next.log:[];
   if(logText)log.push({t:logText,d:new Date().toISOString(),by:'manual',who:SESSION.name});
-  const body={stages:next.stages||{},rounds:next.rounds||[],state:next.state||'active',notes:next.notes||'',log};
+  const body={stages:next.stages||{},rounds:next.rounds||[],state:next.state||'active',notes:next.notes||'',log,
+    customer_name:next.customer_name||null,phone:next.phone||null,bm:next.bm||null};
   await sbPatch('wp_production',row.id,body);
   Object.assign(row,body);
   const i=WP_ROWS.findIndex(x=>x.id===row.id);
