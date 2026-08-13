@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS wp_production (
   notes            text DEFAULT '',             -- free-text "Details / Product / Issue"
   install_order_id uuid,
   audit_order_id   uuid,
+  imported         boolean DEFAULT false,       -- came from the vendor spreadsheet, so its stage
+                                                -- timestamps are the order date, not real ones.
+                                                -- Excluded from the step-timing averages.
   log              jsonb DEFAULT '[]'::jsonb    -- {t,d,by,who} — same shape as order logs (note 39)
 );
 

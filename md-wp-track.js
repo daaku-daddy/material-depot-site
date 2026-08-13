@@ -148,6 +148,11 @@
     var s=window.mdWpStage(next.k);
     var from=window.mdWpPrevAt(row);
     if(!from)return{level:'none',next:next,hours:0,from:null};
+    // An imported row's "previous step" timestamp is the order date, not when that step actually
+    // finished — so a breach/stalled verdict off it would be invented precision. Report the real
+    // elapsed time since the order was placed, but never colour it as a missed target.
+    if(row.imported)return{level:'none',next:next,imported:true,from:from,slaH:s.slaH||null,
+      hours:((nowMs||Date.now())-new Date(from).getTime())/3600000};
     var hours=(( nowMs||Date.now())-new Date(from).getTime())/3600000;
     var level='ok';
     if(s.slaH){
@@ -187,6 +192,12 @@
      about what preceded what. */
   window.mdWpDurations=function(row){
     if(!row)return [];
+    // Rows imported from the vendor spreadsheets carry no real per-step timestamps — the sheet
+    // only ever recorded Yes/No ticks — so every stage was stamped with the order-placed date.
+    // Letting those through would produce a wall of fake "0 hrs" observations and quietly wreck
+    // the medians. They still count in the funnels (which step did it reach) — that IS answerable
+    // from the ticks; how long each step took simply is not.
+    if(row.imported)return [];
     var out=[],rounds=window.mdWpRounds(row),st=stages(row);
     var start=row.order_placed_at||row.created_at||null;
     function push(k,at,prev,n){
@@ -243,7 +254,9 @@
     var out='';
 
     var slaBadge='';
-    if(next){
+    if(next&&sla.imported){
+      slaBadge='<span style="color:var(--muted)">'+esc(fmtDur(sla.hours))+' since the order was placed</span>';
+    }else if(next){
       var col=sla.level==='breach'?'var(--red)':sla.level==='stalled'?'var(--amber)':sla.level==='soon'?'var(--amber)':'var(--muted)';
       var word=sla.level==='breach'?'SLA breached':sla.level==='stalled'?'Stalled':sla.level==='soon'?'Due soon':'On track';
       slaBadge='<span style="color:'+col+';font-weight:700">'+word+'</span>'
@@ -281,6 +294,8 @@
     });
 
     if(row.notes)out+='<div style="margin-top:10px;background:var(--lighter,#eef3f9);border-radius:8px;padding:8px 10px;font-size:12px"><b>Notes:</b> '+esc(row.notes)+'</div>';
+    if(row.imported)out+='<div style="margin-top:8px;font-size:11.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:8px">'
+      +'Imported from the vendor spreadsheet. The sheet only recorded whether each step was done, not when — so the dates above are the order date, and this order is left out of the step-timing averages.</div>';
     return out;
 
     function stepHtml(k,entry,isCurrentRound){
