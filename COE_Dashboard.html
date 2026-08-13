@@ -1103,13 +1103,13 @@ function renderInsights(m){
           <td><div class="tname">${esc(window.mdWpStageLabel(x.s.k,'other'))}</div></td>
           <td>${x.s.slaH?x.s.slaH+'h'+(x.s.soft?' <span style="color:var(--muted)">(soft)</span>':''):'—'}</td>
           <td>${x.med!=null?esc(window.mdWpFmtDur(x.med)):'<span style="color:var(--muted)">—</span>'}${x.n?`<div class="tsub">${x.n} observation${x.n===1?'':'s'}</div>`:''}</td>
-          <td>${x.over?`<span style="color:var(--red);font-weight:700">${x.over}</span>`:'<span style="color:var(--muted)">0</span>'}</td>
+          <td>${!x.s.slaH?'<span style="color:var(--muted)">—</span>':x.over?`<span style="color:var(--red);font-weight:700">${x.over}</span>`:'<span style="color:var(--muted)">0</span>'}</td>
           ${window.MD_WP_VENDORS.filter(v=>stageStats.some(s=>s.byV[v.k])).map(v=>`<td>${x.byV[v.k]?esc(window.mdWpFmtDur(x.byV[v.k].med)):'<span style="color:var(--muted)">—</span>'}</td>`).join('')}
           <td>${x.stuck?`${x.stuck}${x.stuckBad?` <span style="color:var(--red);font-weight:700">(${x.stuckBad} late)</span>`:''}`:'<span style="color:var(--muted)">—</span>'}</td>
         </tr>`).join('')}
       </tbody></table>
       <div style="padding:10px 14px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line)">
-        Median is measured from the moment the previous step was marked done. Every render round counts as its own observation, so a job that took three renders contributes three data points — that is deliberate, it is what makes a slow render cycle visible.
+        Median is measured from the moment the previous step was marked done. Every render round counts as its own observation, so a job that took three renders contributes three data points — that is deliberate, it is what makes a slow render cycle visible. Steps showing “—” under Target are <b>measured, not policed</b>: their time is recorded and compared, but no target is enforced against them.
       </div>
     </div>`:''}
 

@@ -27,11 +27,16 @@
 
   /* ---------- stage ladder ----------
      group    — which phase of the journey this belongs to (drives the COE's bucket tiles)
-     slaH     — hours allowed since the PREVIOUS stage was stamped
-     soft     — true = an attention threshold ("stalled"), false = a promised SLA ("breached").
-                The first five come straight from the vendor sheet's own column headers
-                (6hrs / 6hrs / 2hrs / 2hrs / 1day); the tail thresholds are ours, and are the
-                knob to turn if the team decides a different lag is acceptable.
+     slaH     — hours allowed since the PREVIOUS stage was stamped. OPTIONAL, and deliberately
+                absent from the back six: those come from the vendor sheet's own bracketed
+                headers only for the first five (6hrs / 6hrs / 2hrs / 2hrs / 1day), which are
+                Material Depot's real targets. Everything from printing onwards is MEASURED,
+                not policed — the Category Ops Executive is recording how long each step
+                actually takes, and attaching an invented target there would manufacture
+                "delays" that mean nothing. A stage with no slaH still contributes fully to
+                the medians; it just never gets a verdict rendered against it.
+     soft     — only meaningful alongside slaH: true = an attention threshold ("stalled"),
+                false = a promised SLA ("breached").
      round    — lives inside a render/approval round rather than the linear stage map
      decision — captures the client's verdict, which is what can send it round again        */
   window.MD_WP_STAGES=[
@@ -40,12 +45,13 @@
     {k:'render_to_bm',      label:'Render shared with BM',         group:'prepress',  slaH:2,  round:true},
     {k:'render_to_client',  label:'Shared with client by BM',      group:'prepress',  slaH:2,  round:true},
     {k:'client_approval',   label:'Approved by client',            group:'approval',  slaH:24, round:true, decision:true},
-    {k:'sent_for_printing', label:'Sent for printing',             group:'production',slaH:24, soft:true},
-    {k:'dispatched',        label:'Dispatched from {from}',        group:'production',slaH:48, soft:true},
-    {k:'at_warehouse',      label:'Reached our warehouse',         group:'logistics', slaH:72, soft:true},
-    {k:'out_for_delivery',  label:'Out for delivery',              group:'logistics', slaH:72, soft:true},
-    {k:'delivered',         label:'Delivered to client',           group:'logistics', slaH:24, soft:true},
-    {k:'install_scheduled', label:'Installation scheduled',        group:'logistics', slaH:72, soft:true}
+    // No slaH from here on — measured, not policed. See the note above.
+    {k:'sent_for_printing', label:'Sent for printing',             group:'production'},
+    {k:'dispatched',        label:'Dispatched from {from}',        group:'production'},
+    {k:'at_warehouse',      label:'Reached our warehouse',         group:'logistics'},
+    {k:'out_for_delivery',  label:'Out for delivery',              group:'logistics'},
+    {k:'delivered',         label:'Delivered to client',           group:'logistics'},
+    {k:'install_scheduled', label:'Installation scheduled',        group:'logistics'}
   ];
 
   window.MD_WP_DECISIONS=[
@@ -153,9 +159,13 @@
     // elapsed time since the order was placed, but never colour it as a missed target.
     if(row.imported)return{level:'none',next:next,imported:true,from:from,slaH:s.slaH||null,
       hours:((nowMs||Date.now())-new Date(from).getTime())/3600000};
-    var hours=(( nowMs||Date.now())-new Date(from).getTime())/3600000;
-    var level='ok';
+    var hours=((nowMs||Date.now())-new Date(from).getTime())/3600000;
+    // No target on this stage = no verdict. 'none' rather than 'ok', because calling a step
+    // "on track" against a target that doesn't exist is just as invented as calling it late.
+    // The elapsed hours are still returned — that's the number the COE actually wants.
+    var level='none';
     if(s.slaH){
+      level='ok';
       if(hours>s.slaH)level=s.soft?'stalled':'breach';
       else if(hours>=s.slaH*0.75)level='soon';
     }
@@ -256,6 +266,9 @@
     var slaBadge='';
     if(next&&sla.imported){
       slaBadge='<span style="color:var(--muted)">'+esc(fmtDur(sla.hours))+' since the order was placed</span>';
+    }else if(next&&sla.level==='none'){
+      // Measured, not policed: show how long it has been sitting here, pass no judgement.
+      slaBadge=sla.from?'<span style="color:var(--muted)">'+esc(fmtDur(sla.hours))+' at this step</span>':'';
     }else if(next){
       var col=sla.level==='breach'?'var(--red)':sla.level==='stalled'?'var(--amber)':sla.level==='soon'?'var(--amber)':'var(--muted)';
       var word=sla.level==='breach'?'SLA breached':sla.level==='stalled'?'Stalled':sla.level==='soon'?'Due soon':'On track';
