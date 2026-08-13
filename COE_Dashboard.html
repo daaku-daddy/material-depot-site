@@ -289,6 +289,16 @@ let ORDERS=[], INSTALLS=[], INSTALL_BY_PHONE=new Map(), WP_ROWS=[];
 let view='followups';
 let fuBucket='overdue', searchQ='', cityScopeVal=localStorage.getItem('md_city')||'all';
 let wpBucket='breach', wpSearchQ='', wpVendorFilter='all', _wpDrawerId=null, _wpAddSeed=null;
+// Both tabs open on the bucket that most needs attention. Until the user picks one
+// themselves, an empty default falls through to the first bucket that actually has rows —
+// otherwise you land on "Delayed" with nothing in it and think the tab is broken (which is
+// exactly what happens on day one, when every wallpaper row is imported history and no
+// imported row is ever flagged delayed).
+let fuBucketPicked=false, wpBucketPicked=false;
+function firstNonEmpty(order,counts,fallback){
+  for(var i=0;i<order.length;i++){if(counts[order[i]])return order[i];}
+  return fallback;
+}
 let _pollTid=null, _drawerPi=null;
 
 const VIEWS=[{k:'followups',l:'📞 Follow-ups'},{k:'wallpaper',l:'🖼️ Custom wallpaper'},{k:'insights',l:'📉 Where it stalls'}];
@@ -408,6 +418,7 @@ function renderFollowups(m){
   const all=followupRows();
   const counts={};BUCKETS.forEach(b=>counts[b.k]=0);
   all.forEach(r=>{counts[r.bucket]=(counts[r.bucket]||0)+1;});
+  if(!fuBucketPicked&&!counts[fuBucket])fuBucket=firstNonEmpty(BUCKETS.map(b=>b.k),counts,fuBucket);
   const list=searchFilter(all.filter(r=>r.bucket===fuBucket))
     .sort((a,b)=>String((a.nextDue&&a.nextDue.dueOn)||'9999').localeCompare(String((b.nextDue&&b.nextDue.dueOn)||'9999')));
 
@@ -436,7 +447,7 @@ function renderFollowups(m){
     </div>`;
 
   $("#searchInput").oninput=e=>{searchQ=e.target.value;renderFollowups($("#main"));const el=$("#searchInput");el.focus();el.setSelectionRange(el.value.length,el.value.length);};
-  document.querySelectorAll('[data-b]').forEach(el=>el.onclick=()=>{fuBucket=el.dataset.b;render();});
+  document.querySelectorAll('[data-b]').forEach(el=>el.onclick=()=>{fuBucket=el.dataset.b;fuBucketPicked=true;render();});
   document.querySelectorAll('[data-city]').forEach(el=>el.onclick=()=>{cityScopeVal=el.dataset.city;localStorage.setItem('md_city',cityScopeVal);render();});
   document.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>openOrder(tr.dataset.pi));
   $("#csvBtn").onclick=()=>exportCsv(list);
@@ -694,6 +705,7 @@ function renderWallpaper(m){
   const all=wpDerived();
   const counts={};window.MD_WP_BUCKETS.forEach(b=>counts[b.k]=0);
   all.forEach(x=>{counts[x.bucket]=(counts[x.bucket]||0)+1;});
+  if(!wpBucketPicked&&!counts[wpBucket])wpBucket=firstNonEmpty(window.MD_WP_BUCKETS.map(b=>b.k),counts,wpBucket);
   const q=wpSearchQ.toLowerCase();
   const list=all.filter(x=>x.bucket===wpBucket)
     .filter(x=>wpVendorFilter==='all'||x.r.vendor===wpVendorFilter)
@@ -737,7 +749,7 @@ function renderWallpaper(m){
     </div>`;
 
   $("#wpSearch").oninput=e=>{wpSearchQ=e.target.value;renderWallpaper($("#main"));const el=$("#wpSearch");el.focus();el.setSelectionRange(el.value.length,el.value.length);};
-  document.querySelectorAll('[data-wb]').forEach(el=>el.onclick=()=>{wpBucket=el.dataset.wb;render();});
+  document.querySelectorAll('[data-wb]').forEach(el=>el.onclick=()=>{wpBucket=el.dataset.wb;wpBucketPicked=true;render();});
   document.querySelectorAll('[data-wv]').forEach(el=>el.onclick=()=>{wpVendorFilter=el.dataset.wv;render();});
   document.querySelectorAll('[data-city]').forEach(el=>el.onclick=()=>{cityScopeVal=el.dataset.city;localStorage.setItem('md_city',cityScopeVal);render();});
   document.querySelectorAll('[data-seed]').forEach(el=>el.onclick=()=>openWpAdd(el.dataset.seed));
