@@ -743,6 +743,10 @@ function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'
 // combinable dimensions (added 2026-07-29) — e.g. Unassigned + Audit narrows to just the
 // unassigned audits, without losing the Unassigned scope the way a single shared filter would.
 let jobsType='all',jobsFilter='all',jobsDateFrom='',jobsDateTo='',jobsSearch='';
+// City is a SCOPE, not another filter: the header stat tiles count within it too, so the
+// numbers always match their own drill-down (note 82). Seeded from / persisted to the
+// app-wide md_city key, same as the Analytics tab, so switching tabs keeps one city.
+let jobsCity=localStorage.getItem('md_city')||'all';
 function setJobDateFrom(d){jobsDateFrom=d;drawJobs(document.getElementById('main'));}
 function setJobDateTo(d){jobsDateTo=d;drawJobs(document.getElementById('main'));}
 function clearJobDateRange(){jobsDateFrom='';jobsDateTo='';drawJobs(document.getElementById('main'));}
@@ -751,9 +755,13 @@ function _hhmmVal(s){if(!s)return 9999;const r=String(s).match(/^(\d{1,2}):(\d{2
 function fmtJobTime(s){if(!s)return '—';const r=String(s).match(/^(\d{1,2}):(\d{2})$/);if(!r)return s;const h=+r[1],mn=+r[2],ap=h>=12?'PM':'AM',h12=h%12||12;return h12+':'+(mn<10?'0':'')+mn+' '+ap;}
 let _realJobsAudit=[], _realJobsInstall=[], _jobsAuditFailed=false, _jobsInstallFailed=false;
 async function _loadJobsData(m){
+  // Re-probe while disabled so a transient boot-probe failure self-heals on the next poll
+  // instead of hiding the city column for the whole session (the Store Team / SM pattern).
+  if(!CITY_ENABLED)await detectCity();
+  const cityCol=CITY_ENABLED?',city':'';
   const [auditRes,installRes,profileRes]=await Promise.all([
-    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date,slot&status=not.in.(deleted,slot_reserved,slot_converted)&order=created_at.desc'),
-    sbGetLong('install_orders_slim?select=pi,customer_name,addr,subjobs,status,delivery_date&status=neq.deleted&order=created_at.desc'),
+    sbGet('audit_orders?select=pi,customer_name,addr,auditor_name,auditor_email,status,date,slot'+cityCol+'&status=not.in.(deleted,slot_reserved,slot_converted)&order=created_at.desc'),
+    sbGetLong('install_orders_slim?select=pi,customer_name,addr,subjobs,status,delivery_date'+cityCol+'&status=neq.deleted&order=created_at.desc'),
     sbGet('profiles?select=name,email&role=neq.admin'),
   ]);
   if(Array.isArray(profileRes)) profileRes.forEach(p=>{_jobsNameMap[p.email]=p.name;});
@@ -764,6 +772,7 @@ async function _loadJobsData(m){
       customer:r.customer_name||'—', addr:r.addr||'—',
       assignee:r.auditor_name||(r.auditor_email?_jobsNameMap[r.auditor_email]:null),
       status:r.status||'pending', date:r.date||null, time:r.slot||null,
+      city:r.city||null,
     }));
     _jobsAuditFailed=false;
   }else{
@@ -791,6 +800,7 @@ async function _loadJobsData(m){
         customer:r.customer_name||'—', addr:r.addr||'—',
         assignee:emails.length?emails.map(e=>_jobsNameMap[e]||e.split('@')[0]).join(', '):null,
         status:r.status||'pending', date:r.delivery_date||null, time,
+        city:r.city||null,
         installDates,
       };
     });
@@ -813,8 +823,15 @@ async function renderJobs(m){
   },30000);
 }
 
+// City scope, applied before everything else — including the header stat-tile counts, so a
+// tile's number always equals the row count you get by clicking it. Rows with no city yet
+// (pre-migration orders) read as Bengaluru, matching how the Analytics tab treats them.
+function cityScopedJobs(){
+  if(!CITY_ENABLED||jobsCity==='all')return realJobs;
+  return realJobs.filter(j=>(j.city||'Bengaluru')===jobsCity);
+}
 function getFilteredJobs(){
-  return realJobs.filter(j=>{
+  return cityScopedJobs().filter(j=>{
     if(jobsType==='audit')return j.type==='audit';
     if(jobsType==='install')return j.type==='install';
     return true;
@@ -838,10 +855,12 @@ function _csvEscape(v){const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+
 function downloadJobsCSV(){
   const rows=getFilteredJobs();
   if(!rows.length){toast('No jobs to export for the current filters');return;}
-  const header=['Job ID','Type','Customer','Location','Assigned To','Status','Time','Date'];
+  const header=['Job ID','Type','Customer'].concat(CITY_ENABLED?['City']:[]).concat(['Location','Assigned To','Status','Time','Date']);
   const lines=[header.join(',')].concat(rows.map(j=>[
-    j.id,j.type==='audit'?'Audit':'Install',j.customer,j.addr,j.assignee||'Unassigned',JOB_STATUS[j.status]?.l||j.status,fmtJobTime(j.time),j.date||''
-  ].map(_csvEscape).join(',')));
+    j.id,j.type==='audit'?'Audit':'Install',j.customer
+  ].concat(CITY_ENABLED?[j.city||'']:[]).concat([
+    j.addr,j.assignee||'Unassigned',JOB_STATUS[j.status]?.l||j.status,fmtJobTime(j.time),j.date||''
+  ]).map(_csvEscape).join(',')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -851,8 +870,9 @@ function downloadJobsCSV(){
 }
 
 function drawJobs(m){
-  const jc={total:realJobs.length,active:0,done:0,unassigned:0};
-  realJobs.forEach(j=>{
+  const scoped=cityScopedJobs();
+  const jc={total:scoped.length,active:0,done:0,unassigned:0};
+  scoped.forEach(j=>{
     if(['assigned','onway','atsite','scheduled'].includes(j.status))jc.active++;
     if(j.status==='completed')jc.done++;
     if(!j.assignee)jc.unassigned++;
@@ -879,6 +899,11 @@ function drawJobs(m){
             <button class="filt-btn${jobsType===t?' active':''}" onclick="setJobType('${t}')">
               ${t==='all'?'All Types':t==='audit'?'Audit':'Install'}
             </button>`).join('')}
+          ${CITY_ENABLED?`<span style="width:1px;background:var(--line);margin:2px 4px"></span>
+          ${['all','Bengaluru','Hyderabad'].map(c=>`
+            <button class="filt-btn${jobsCity===c?' active':''}" onclick="setJobCity('${c}')">
+              ${c==='all'?'All Cities':c}
+            </button>`).join('')}`:''}
           <span style="width:1px;background:var(--line);margin:2px 4px"></span>
           ${['all','active','unassigned','pending','assigned','scheduled','onway','atsite','completed','reschedule'].map(f=>`
             <button class="filt-btn${jobsFilter===f?' active':''}" onclick="setJobFilter('${f}')">
@@ -894,20 +919,21 @@ function drawJobs(m){
         </div>
       </div>
       <table>
-        <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th><th>Location</th><th>Assigned To</th><th>Status</th><th>Time</th><th>Date</th></tr></thead>
+        <thead><tr><th>Job ID</th><th>Type</th><th>Customer</th>${CITY_ENABLED?'<th>City</th>':''}<th>Location</th><th>Assigned To</th><th>Status</th><th>Time</th><th>Date</th></tr></thead>
         <tbody>
           ${filtered.length?filtered.map(j=>`
             <tr style="cursor:pointer" onclick="openJobDetail('${j.id}','${j.type}')">
               <td><b style="font-family:monospace;font-size:12px;color:var(--navy)">${j.id}</b></td>
               <td><span style="background:${j.type==='audit'?'#fff4d6':'var(--greenbg)'};color:${j.type==='audit'?'#7a5800':'var(--green)'};border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">${j.type==='audit'?'Audit':'Install'}</span></td>
               <td><b>${j.customer}</b></td>
+              ${CITY_ENABLED?`<td style="font-size:12px">${j.city||'<span style="color:var(--muted)">—</span>'}</td>`:''}
               <td style="color:var(--muted);font-size:12px">${j.addr}</td>
               <td>${j.assignee||'<span style="color:var(--red);font-weight:700">Unassigned</span>'}</td>
               <td>${jobChip(j.status)}</td>
               <td style="color:var(--muted)">${fmtJobTime(j.time)}</td>
               <td style="color:var(--muted)">${j.date||'—'}</td>
             </tr>`).join('')
-          :'<tr><td colspan="8"><div class="empty"><div class="e-ico">🔍</div><div class="e-msg">No jobs match this filter</div></div></td></tr>'}
+          :`<tr><td colspan="${CITY_ENABLED?9:8}"><div class="empty"><div class="e-ico">🔍</div><div class="e-msg">No jobs match this filter</div></div></td></tr>`}
         </tbody>
       </table>
     </div>`}`;
@@ -918,7 +944,11 @@ function setJobFilter(f){jobsFilter=f;drawJobs(document.getElementById('main'));
 // reset jobsFilter/date/search, so e.g. picking Audit while already on the Unassigned tab narrows
 // to just the unassigned audits instead of replacing the Unassigned scope entirely.
 function setJobType(t){jobsType=t;drawJobs(document.getElementById('main'));}
-// Stat-card clicks: the 4 header numbers are always computed over the full unfiltered realJobs,
+// City is a SCOPE rather than a pill filter: it also narrows the 4 header numbers, so it is
+// deliberately NOT cleared by a stat-card click (unlike type/date/search below). Persisted to
+// the app-wide md_city key so the Analytics tab and the SM dashboards stay on the same city.
+function setJobCity(c){jobsCity=c;localStorage.setItem('md_city',c);drawJobs(document.getElementById('main'));}
+// Stat-card clicks: the 4 header numbers are computed over every job in the current CITY scope,
 // across both types (see jc in drawJobs), so jumping to one of them also resets the type filter
 // and clears any active date range/search — otherwise clicking "380 Total Jobs" while, say, Audit
 // was still selected would show fewer than 380 rows.
