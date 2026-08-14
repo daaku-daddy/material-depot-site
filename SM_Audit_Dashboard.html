@@ -1250,6 +1250,19 @@ function drawerBody(o){
       </div>
       <div class="note">Auditors with a time conflict (booking within 2 hours) are flagged in amber — you can still assign them if the two sites are close by, with a confirmation. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div>${shadowerSelectHtml(o)}</div>`;
+  } else if(["assigned","onway","atsite"].includes(o.status)&&!o.auditor){
+    // Data-repair path: the order has moved past scheduling but has no auditor on file (e.g. a
+    // manual status override elsewhere wiped auditor_id/name/email — see CLAUDE.md's FLOW-index
+    // bug fix). The normal auditor picker only ever rendered for status==='scheduled', so an order
+    // that ends up here any other way had no in-app path to (re)assign an auditor short of first
+    // moving the status all the way back to Scheduled — reusing the "assigned"/"created" cascades
+    // and re-triggering the exact same kind of side effects. This repairs JUST the auditor, leaving
+    // status/date/slot untouched, so a workflow that "breaks" here always has a way back.
+    html+=`<div class="sec"><h3>Assign auditor</h3>
+      <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">⚠ No auditor on file for this order, even though its status is "${STATUS[o.status].l}". Pick one below to repair it — the current status, date and time will NOT change.</div>
+      <div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
+      <div class="auditorlist" id="auditorList"></div>${shadowerSelectHtml(o)}
+      <button class="btn navy sm" id="fixAuditor" style="margin-top:10px" disabled>Assign auditor</button></div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
     const slotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
@@ -1721,7 +1734,9 @@ function wireDrawer(o){
         } else {
           draft.auditorOverride=false;
         }
-        draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");$("#assignAuditor").disabled=false;});
+        draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");
+        if($("#assignAuditor"))$("#assignAuditor").disabled=false;
+        if($("#fixAuditor"))$("#fixAuditor").disabled=false;});
     };
     _renderAudList();
     loadOrders().then(()=>{if(currentPI===o.pi&&$("#auditorList"))_renderAudList();});
@@ -1740,6 +1755,29 @@ function wireDrawer(o){
       _shadowDiffLog(o,prev,sel);
     }
     if(o.id)await sbPatch('audit_orders',o.id,{status:o.status,auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,...shadPatch,log:o.log});
+    await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
+
+  // Data-repair path (see drawerBody's !o.auditor branch): fills in a missing auditor WITHOUT
+  // touching status/date/slot — the order is already assigned/onway/atsite, it just lost its
+  // auditor somewhere along the way. Deliberately a separate handler from #assignAuditor above,
+  // which always forces status="assigned" — that would be a real regression here (e.g. silently
+  // demoting a genuinely in-progress "At Site" job back to "Assigned" just to fix its auditor).
+  if($("#fixAuditor"))$("#fixAuditor").onclick=async()=>{
+    if(!draft.auditor){toast("Pick an auditor first");return;}
+    const a=auditorById(draft.auditor);
+    o.auditor=draft.auditor;
+    const overrideNote=draft.auditorOverride?" · ⚠ assigned despite 2-hour scheduling conflict (SM override)":"";
+    o.log.push({t:"Auditor (re)assigned: "+a.name+overrideNote+" — order had no auditor on file (data repair) · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    let shadPatch={};
+    const sel=readShadowers($("#drawer"));
+    if(sel){
+      const prev=parseShadowers(o.shadowerEmail,o.shadowerName);
+      const j=joinShadowers(sel);
+      o.shadowerEmail=j.email||null; o.shadowerName=j.name||null;
+      shadPatch={shadower_email:o.shadowerEmail,shadower_name:o.shadowerName};
+      _shadowDiffLog(o,prev,sel);
+    }
+    if(o.id)await sbPatch('audit_orders',o.id,{auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,...shadPatch,log:o.log});
     await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
 
   // Add / change / remove shadowers on an already-assigned audit (no auditor change).
