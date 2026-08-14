@@ -1282,11 +1282,16 @@ function drawerBody(o){
     const slotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
     const dateDefault=o.date&&o.date>=dstr(today)?o.date:dstr(today);
     html+=`<div class="sec"><h3>Assignment</h3><div class="kv">
-      <div class="k">Auditor</div><div class="v">${getAuditorName(o)} (${aPhone})</div>
+      <div class="k">Auditor</div><div class="v">${getAuditorName(o)} (${aPhone}) <button class="btn ghost sm" id="toggleChangeAuditor" style="margin-left:6px;padding:3px 9px;font-size:11px">Change</button></div>
       <div class="k">Time</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div>
       <div class="k">Live status</div><div class="v">${chip(o.status)}</div>
       ${o.shadowerName?`<div class="k">Shadowed by</div><div class="v">${parseShadowers(o.shadowerEmail,o.shadowerName).map(s=>s.name).join(', ')}</div>`:''}</div>
       <div class="note">Auditor's live steps appear here automatically.</div>
+      <div id="changeAuditorWrap" style="display:none;margin-top:10px">
+        <div class="note" style="margin-bottom:8px">Reassigning does NOT change this order's status — the new auditor picks up wherever this order currently is.</div>
+        <div class="auditorlist" id="auditorList"></div>
+        <button class="btn navy sm" id="saveNewAuditor" style="margin-top:8px" disabled>Save new auditor</button>
+      </div>
       ${shadowerSelectHtml(o)}
       <button class="btn navy sm" id="saveShadower" style="margin-top:8px">Save shadowers</button>
       <div id="inlineSlotWrap" style="display:none;margin-top:10px">
@@ -1750,7 +1755,8 @@ function wireDrawer(o){
         }
         draft.auditor=el.dataset.aud;list.querySelectorAll(".auditorrow").forEach(r=>r.classList.remove("on"));el.classList.add("on");
         if($("#assignAuditor"))$("#assignAuditor").disabled=false;
-        if($("#fixAuditor"))$("#fixAuditor").disabled=false;});
+        if($("#fixAuditor"))$("#fixAuditor").disabled=false;
+        if($("#saveNewAuditor"))$("#saveNewAuditor").disabled=false;});
     };
     _renderAudList();
     loadOrders().then(()=>{if(currentPI===o.pi&&$("#auditorList"))_renderAudList();});
@@ -1793,6 +1799,28 @@ function wireDrawer(o){
     }
     if(o.id)await sbPatch('audit_orders',o.id,{auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,...shadPatch,log:o.log});
     await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
+
+  // Reassign the auditor on an already-assigned/onway/atsite order (normal, not-broken case —
+  // "Change" button next to the Auditor row, consistent with the BM "Change" control). Deliberately
+  // never touches o.status/date/slot, unlike #assignAuditor above — reassigning mid-visit must not
+  // demote a genuinely in-progress "On The Way"/"At Site" order back to "Assigned".
+  if($("#toggleChangeAuditor"))$("#toggleChangeAuditor").onclick=()=>{
+    const wrap=$("#changeAuditorWrap");
+    const showing=wrap.style.display!=='none';
+    wrap.style.display=showing?'none':'block';
+    $("#toggleChangeAuditor").textContent=showing?'Change':'Cancel';
+  };
+  if($("#saveNewAuditor"))$("#saveNewAuditor").onclick=async()=>{
+    if(!draft.auditor){toast("Pick an auditor first");return;}
+    if(draft.auditor===o.auditor){toast("Already assigned to this auditor");return;}
+    const a=auditorById(draft.auditor);
+    const prevName=getAuditorName(o);
+    o.auditor=draft.auditor;
+    const overrideNote=draft.auditorOverride?" · ⚠ assigned despite 2-hour scheduling conflict (SM override)":"";
+    o.log.push({t:"Auditor reassigned: "+prevName+" → "+a.name+overrideNote+" (SM override) · SMS sent to customer with auditor details",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,log:o.log});
+    await loadOrders();toast("Reassigned to "+a.name);openOrder(o.pi);
+  };
 
   // Companion data-repair path: fills in a missing date/time WITHOUT touching status/auditor.
   // Deliberately separate from #saveSchSlot/#saveInlineSlot (those only ever render when a date
