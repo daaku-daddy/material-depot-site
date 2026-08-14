@@ -189,6 +189,10 @@ const DAYS_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 let MYSTORE=null,SELECTED_DATE=null;
 let DAY_ORDERS=[],AUDITOR_COUNT=3;
 let _refreshTimer=null;
+// Temporary ops block: no new store pre-bookings on these dates (any store, any slot). Existing
+// bookings/assignments on these dates still display normally — this only hides the "Book" action.
+// See CLAUDE.md note 107. Remove the entries (or the whole line) once the block is lifted.
+const BLOCKED_DATES=new Set(['2026-08-15','2026-08-16']);
 // City segregation is deploy-safe: it stays fully inert (behaves exactly as before) until the
 // `city` columns exist on BOTH profiles and audit_orders. Probe both; a missing column returns a
 // non-array error object, so the feature only self-activates once the SQL migration has run.
@@ -412,11 +416,12 @@ function renderSlots(date){
   const morningCutoffHit=(date===dstr(tmr))&&nowAbsMin>=MORNING_CUTOFF_MIN;
 
   // Slot groups
+  const dateBlocked=BLOCKED_DATES.has(date);
   ['Morning','Afternoon','Evening'].forEach(grp=>{
     const cutMorning=grp==='Morning'&&morningCutoffHit;
-    const slots=cutMorning?[]:SLOT_DEFS.filter(s=>s.group===grp&&(nowMin===null||s.startMin>nowMin));
+    const slots=dateBlocked?[]:(cutMorning?[]:SLOT_DEFS.filter(s=>s.group===grp&&(nowMin===null||s.startMin>nowMin)));
     html+=`<div class="slot-group"><div class="slot-grp-title">${grp}</div>`;
-    if(!slots.length){html+=`<div style="font-size:13px;color:var(--muted);padding:10px 4px">${cutMorning?'Morning slots for tomorrow close at 6:00 PM. Please pick an afternoon/evening slot, or a morning slot on a later day.':'No upcoming slots'}</div></div>`;return;}
+    if(!slots.length){html+=`<div style="font-size:13px;color:var(--muted);padding:10px 4px">${dateBlocked?'Bookings are closed for this date.':cutMorning?'Morning slots for tomorrow close at 6:00 PM. Please pick an afternoon/evening slot, or a morning slot on a later day.':'No upcoming slots'}</div></div>`;return;}
     slots.forEach(sl=>{
       const av=getAvailability(sl.id);
       const isFull=av.available<=0;
@@ -529,6 +534,7 @@ function renderSlots(date){
 
 /* ── Booking sheet ───────────────────────────────────────────────────────────── */
 function openBookingSheet(slotId,date){
+  if(BLOCKED_DATES.has(date)){toast('Bookings are closed for this date.');return;}
   const slot=SLOT_DEFS.find(s=>s.id===slotId);if(!slot)return;
   const sheet=document.getElementById('bookSheet');
   const overlay=document.getElementById('bookOverlay');
