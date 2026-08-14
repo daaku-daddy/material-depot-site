@@ -71,13 +71,14 @@
   .empty{text-align:center;color:var(--muted);padding:46px 16px;}
   /* detail screen */
   .screen{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:520px;margin:0 auto;}
-  body.loc-banner-show .app{padding-top:46px;}
-  body.loc-banner-show .screen{top:46px;}
-  body.pending-sync-banner-show .app{padding-top:40px;}
-  body.pending-sync-banner-show .screen{top:40px;}
-  body.loc-banner-show.pending-sync-banner-show .app{padding-top:86px;}
-  body.loc-banner-show.pending-sync-banner-show .screen{top:86px;}
-  body.loc-banner-show #pendingSyncBanner{top:46px;}
+  :root{--loc-banner-h:46px;--sync-banner-h:40px;}
+  body.loc-banner-show .app{padding-top:var(--loc-banner-h);}
+  body.loc-banner-show .screen{top:var(--loc-banner-h);}
+  body.pending-sync-banner-show .app{padding-top:var(--sync-banner-h);}
+  body.pending-sync-banner-show .screen{top:var(--sync-banner-h);}
+  body.loc-banner-show.pending-sync-banner-show .app{padding-top:calc(var(--loc-banner-h) + var(--sync-banner-h));}
+  body.loc-banner-show.pending-sync-banner-show .screen{top:calc(var(--loc-banner-h) + var(--sync-banner-h));}
+  body.loc-banner-show #pendingSyncBanner{top:var(--loc-banner-h);}
   .shead{background:var(--navy);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;}
   .shead .back{border:0;background:rgba(255,255,255,.14);color:#fff;width:34px;height:34px;border-radius:9px;font-size:18px;cursor:pointer;}
   .shead .ti{font-weight:700;font-size:16px;} .shead .su{font-size:11px;color:#9fb2cd;}
@@ -285,6 +286,20 @@ async function _archiveAuditTicked(orderId,ticked,reason){
 // not-yet-synced key across both the completion queue (ps/pjc) and the status-transition queue
 // (actq). Called after loadJobs()/_flushActionQueue()/_retryPendingCompletions() so it stays
 // current without a dedicated interval.
+// The push-down CSS assumed a fixed banner height (one text line). On narrow phones or with
+// larger system font sizes the location banner wraps to 2-3 lines and grows well past that
+// fixed height, so it silently overlapped (hid) the top of the actual content below it —
+// including, on small enough screens, the day-strip/job list itself. Measuring the real
+// rendered height and feeding it into a CSS var keeps the push-down correct on any device.
+function _syncBannerOffsets(){
+  const lb=document.getElementById('locDeniedBanner');
+  const sb=document.getElementById('pendingSyncBanner');
+  const lh=(lb&&lb.style.display!=='none')?lb.offsetHeight:0;
+  const sh=(sb&&sb.style.display!=='none')?sb.offsetHeight:0;
+  document.documentElement.style.setProperty('--loc-banner-h',lh+'px');
+  document.documentElement.style.setProperty('--sync-banner-h',sh+'px');
+}
+window.addEventListener('resize',_syncBannerOffsets);
 function _updatePendingSyncBanner(){
   const n=Object.keys(localStorage).filter(k=>k.startsWith('md_audit_actq_')||k.startsWith('md_audit_ps_')||k.startsWith('md_audit_pjc_')).length;
   const b=document.getElementById('pendingSyncBanner');
@@ -292,6 +307,7 @@ function _updatePendingSyncBanner(){
   document.body.classList.toggle('pending-sync-banner-show',n>0);
   b.style.display=n>0?'block':'none';
   if(n>0)document.getElementById('pendingSyncText').textContent=n===1?'⏳ 1 update saved — syncing automatically':`⏳ ${n} updates saved — syncing automatically`;
+  _syncBannerOffsets();
 }
 
 let _retryingCompletion=false;
@@ -1508,6 +1524,7 @@ function _applyGeoPermState(state){
   const b=document.getElementById('locDeniedBanner');
   if(b)b.style.display=denied?'block':'none';
   document.body.classList.toggle('loc-banner-show',denied);
+  _syncBannerOffsets();
   if(state==='prompt'&&navigator.geolocation){
     // Only way to make the native dialog reappear once dismissed without a decision.
     navigator.geolocation.getCurrentPosition(()=>{},()=>{},{timeout:8000,maximumAge:0});
