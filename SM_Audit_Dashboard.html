@@ -1250,19 +1250,33 @@ function drawerBody(o){
       </div>
       <div class="note">Auditors with a time conflict (booking within 2 hours) are flagged in amber — you can still assign them if the two sites are close by, with a confirmation. Assigning SMSes the auditor's details to the customer.</div>
       <div class="auditorlist" id="auditorList"></div>${shadowerSelectHtml(o)}</div>`;
-  } else if(["assigned","onway","atsite"].includes(o.status)&&!o.auditor){
-    // Data-repair path: the order has moved past scheduling but has no auditor on file (e.g. a
-    // manual status override elsewhere wiped auditor_id/name/email — see CLAUDE.md's FLOW-index
-    // bug fix). The normal auditor picker only ever rendered for status==='scheduled', so an order
-    // that ends up here any other way had no in-app path to (re)assign an auditor short of first
-    // moving the status all the way back to Scheduled — reusing the "assigned"/"created" cascades
-    // and re-triggering the exact same kind of side effects. This repairs JUST the auditor, leaving
-    // status/date/slot untouched, so a workflow that "breaks" here always has a way back.
-    html+=`<div class="sec"><h3>Assign auditor</h3>
-      <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">⚠ No auditor on file for this order, even though its status is "${STATUS[o.status].l}". Pick one below to repair it — the current status, date and time will NOT change.</div>
-      <div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>
-      <div class="auditorlist" id="auditorList"></div>${shadowerSelectHtml(o)}
-      <button class="btn navy sm" id="fixAuditor" style="margin-top:10px" disabled>Assign auditor</button></div>`;
+  } else if(["assigned","onway","atsite"].includes(o.status)&&(!o.auditor||!o.date||!o.slot)){
+    // Data-repair path: the order has moved past scheduling but is missing its auditor and/or its
+    // date/time on file (e.g. a manual status override elsewhere wiped these — see CLAUDE.md's
+    // FLOW-index bug fix; that specific bug clears BOTH the auditor and the date/slot together).
+    // The normal picker/booking widgets only ever rendered for status==='scheduled', so an order
+    // that ends up here any other way had no in-app path to repair it short of first moving the
+    // status all the way back to Scheduled — reusing the "assigned"/"created" cascades and
+    // re-triggering the exact same kind of side effects. This repairs JUST the missing piece(s),
+    // leaving status untouched, so a workflow that "breaks" here always has a way back.
+    const missingSlot=!o.date||!o.slot, missingAuditor=!o.auditor;
+    const whatMissing=missingSlot&&missingAuditor?"its date/time AND an auditor":missingSlot?"its date/time":"an auditor";
+    html+=`<div class="sec"><h3>Repair this order</h3>
+      <div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">⚠ This order is missing ${whatMissing}, even though its status is "${STATUS[o.status].l}". Fix below — the status itself will NOT change.</div>`;
+    if(missingSlot){
+      html+=`<div class="field"><label>Date</label><input type="date" id="repairDate" min="${dstr(today)}" value="${dstr(today)}"></div>
+        <div class="field"><label>Time</label><input type="time" id="repairTime" value="09:00" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-weight:700;color:var(--navy);background:#fff;min-width:150px"></div>
+        <button class="btn navy sm" id="fixSlot" style="margin-top:6px">Save date &amp; time</button>`;
+    } else {
+      html+=`<div class="kv" style="margin-bottom:10px"><div class="k">Booked for</div><div class="v">${fmtDate(o.date)} · ${slotLabel(o.slot)}</div></div>`;
+    }
+    if(missingAuditor){
+      html+=missingSlot
+        ? `<div class="note" style="margin-top:10px">Save the date &amp; time above first — auditor availability/conflict checks need a real date to check against.</div>`
+        : `<div class="auditorlist" id="auditorList" style="margin-top:10px"></div>${shadowerSelectHtml(o)}
+           <button class="btn navy sm" id="fixAuditor" style="margin-top:10px" disabled>Assign auditor</button>`;
+    }
+    html+=`</div>`;
   } else if(["assigned","onway","atsite"].includes(o.status)){
     const a=auditorById(o.auditor);const aPhone=a?a.phone:'—';
     const slotDefault=o.slot&&/^\d{1,2}:\d{2}$/.test(o.slot)?o.slot:'09:00';
@@ -1779,6 +1793,20 @@ function wireDrawer(o){
     }
     if(o.id)await sbPatch('audit_orders',o.id,{auditor_id:a.id,auditor_name:a.name,auditor_email:a.email,...shadPatch,log:o.log});
     await loadOrders();toast("Assigned "+a.name+(draft.auditorOverride?" (conflict override)":"")+" · customer notified");openOrder(o.pi);};
+
+  // Companion data-repair path: fills in a missing date/time WITHOUT touching status/auditor.
+  // Deliberately separate from #saveSchSlot/#saveInlineSlot (those only ever render when a date
+  // already exists) — this is the one path that can set a date/slot from scratch on an order past
+  // scheduling. Gated in drawerBody to render only when the auditor picker (if also missing) is
+  // hidden, so the SM fixes the date first, then reopens to a proper auditor-availability check.
+  if($("#fixSlot"))$("#fixSlot").onclick=async()=>{
+    const nd=$("#repairDate").value,nt=$("#repairTime").value;
+    if(!nd||!nt){toast("Pick a date and time");return;}
+    o.date=nd;o.slot=nt;
+    o.log.push({t:"Date and time restored: "+fmtDate(nd)+" · "+slotLabel(nt)+" — order was missing these even though its status was \""+STATUS[o.status].l+"\" (data repair)",d:new Date().toISOString(),by:"manual",who:SESSION.name});
+    if(o.id)await sbPatch('audit_orders',o.id,{date:o.date,slot:o.slot,log:o.log});
+    await loadOrders();toast("Date & time saved");openOrder(o.pi);
+  };
 
   // Add / change / remove shadowers on an already-assigned audit (no auditor change).
   if($("#saveShadower"))$("#saveShadower").onclick=async()=>{
