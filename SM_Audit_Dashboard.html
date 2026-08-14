@@ -1583,7 +1583,14 @@ function wireDrawer(o){
       }
     }
     // Determine effective positions for clearing forward data
-    const tEff=(st==='reschedule'||st==='call_na')?FLOW.indexOf('created'):FLOW.indexOf(st);
+    // 'onway'/'atsite' are real, separately-settable statuses (see STATUS/AUTO_STATUSES) but were
+    // never added to FLOW, so FLOW.indexOf(st) returned -1 for them — always "before pending",
+    // which made every manual "On The Way"/"At Site" override look like a huge backward move and
+    // silently wipe the auditor AND the date/slot (removing the order from the Schedule tab).
+    // Collapsing them to the same index as 'assigned' on the TARGET side too (mirroring the
+    // existing collapse already done for the CURRENT side just below) fixes this — do not revert
+    // to a bare FLOW.indexOf(st) for the target.
+    const tEff=(st==='reschedule'||st==='call_na')?FLOW.indexOf('created'):(['assigned','onway','atsite'].includes(st)?FLOW.indexOf('assigned'):FLOW.indexOf(st));
     let curEff=FLOW.indexOf(o.status);
     if(['assigned','onway','atsite'].includes(o.status))curEff=FLOW.indexOf('assigned');
     if(o.status==='completed')curEff=FLOW.length-1;

@@ -1550,12 +1550,23 @@ function openArrivalModal(cb){
     startCam();
   };
   confirm.onclick=async()=>{
+    // This flow can take up to ~24s on a slow connection (4s geo timeout + up to 20s photo
+    // upload timeout) with no other visual change — without disabling the button immediately,
+    // an impatient worker re-tapping mid-flight fires this whole handler again in parallel,
+    // each completing normally and pushing its own duplicate "arrived at site" log entry (root
+    // cause of repeated identical log lines within the same minute). Guard against re-entry.
+    if(confirm.disabled)return;
+    confirm.disabled=true;confirm.style.opacity='0.6';
+    const origLabel=confirm.textContent;confirm.textContent='Saving…';
     if(capturedLat===null&&navigator.geolocation&&_lastPermState!=='denied'){
       await new Promise(res=>navigator.geolocation.getCurrentPosition(p=>{capturedLat=p.coords.latitude;capturedLng=p.coords.longitude;res();},()=>res(),{timeout:4000,enableHighAccuracy:true}));
     }
     let locOverride=false;
     if(capturedLat===null){
-      if(!window.confirm("Location wasn't captured for this arrival — it's required for site verification.\n\nContinue without it anyway?"))return;
+      if(!window.confirm("Location wasn't captured for this arrival — it's required for site verification.\n\nContinue without it anyway?")){
+        confirm.disabled=false;confirm.style.opacity='1';confirm.textContent=origLabel;
+        return;
+      }
       locOverride=true;
     }
     let ph=_photo;if(ph){try{ph=await _uploadPhoto(ph);}catch(e){}}
