@@ -590,7 +590,12 @@ function wireDetail(o){
   if($("#custYes"))$("#custYes").onclick=()=>showCommentThen("Confirming on the way",c=>{adv("onway","Auditor on the way · customer confirmed"+(c?` — ${c}`:``));});
   if($("#atSite"))$("#atSite").onclick=()=>openArrivalModal(({photo,lat,lng,locOverride})=>{
     const extra={};
-    if(photo)extra.arrivalPhoto=photo;
+    // Only ever store a Storage URL here, never a raw base64 fallback — log[] is always
+    // fetched in full by every poll/select in this app (no slim/stripped view exists for
+    // it), so an upload failure embedding the photo directly would permanently bloat this
+    // order's payload for every future read. Losing the photo on a failed upload is an
+    // acceptable trade-off; a multi-MB unstrippable log entry is not (found 2026-08-17).
+    if(photo&&photo.startsWith('http'))extra.arrivalPhoto=photo;
     if(lat!=null&&lng!=null){extra.lat=lat;extra.lng=lng;}
     if(locOverride)extra.locOverride=true;
     adv("atsite","At site — open the Job Card",locOverride?"Auditor arrived at site ⚠ (no location — worker override)":null,extra);
