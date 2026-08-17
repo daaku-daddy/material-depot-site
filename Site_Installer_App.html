@@ -958,6 +958,22 @@ function addRoom(restore){
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .roomblock')].forEach((b,i)=>{const rn=b.querySelector('.rn');if(rn)rn.textContent='Room '+(i+1);});}
 function collectRooms(){return jcRooms.map(r=>({v:2,category:r.category,name:r.name,sku:r.sku,fields:Object.assign({},r.fields||{}),photos:r.photos||[],comments:r.comments||''}));}
+// One last upload attempt for any room photo still stuck as a base64 fallback (weak
+// connectivity when it was taken, note 96) — runs right before the completion/partial write
+// so the jobcard / jobcard_history archive never permanently embeds a full-size photo when a
+// real Storage URL is achievable. Best-effort: a photo that still can't upload keeps its
+// base64 fallback exactly as before (no behavior change on failure, just one more try).
+async function _finalizeRoomPhotos(rooms){
+  for(const r of (rooms||[])){
+    if(!Array.isArray(r.photos))continue;
+    for(let i=0;i<r.photos.length;i++){
+      const ph=r.photos[i];
+      if(typeof ph==='string'&&ph.startsWith('data:')){
+        try{r.photos[i]=await _uploadPhoto(ph);}catch(e){/* keep base64 fallback */}
+      }
+    }
+  }
+}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
 let _localSaveTimer=null;
@@ -1121,7 +1137,9 @@ function _partialSignScreen(j,note){
 }
 async function _writePartial(j,note,sign){
   clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
-  const jc={partial:true,rooms:collectRooms(),note,partialBy:ME.name,partialAt:new Date().toISOString()};
+  const partRooms=collectRooms();
+  try{await _finalizeRoomPhotos(partRooms);}catch(e){/* best-effort — never block on this */}
+  const jc={partial:true,rooms:partRooms,note,partialBy:ME.name,partialAt:new Date().toISOString()};
   if(sign)jc.sign=sign;
   j.jobcard=jc;j.status='partial';
   j.parentLog=j.parentLog||[];
@@ -1279,7 +1297,9 @@ function showInstallSignature(j,ratings){
     // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
     let sigImg=jcSignPad.export();
     try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
-    j.jobcard={rooms:collectRooms(),sign:{img:sigImg,name:$("#signName").value,ratings}};
+    const finRooms=collectRooms();
+    try{await _finalizeRoomPhotos(finRooms);}catch(e){/* best-effort — never block completion on this */}
+    j.jobcard={rooms:finRooms,sign:{img:sigImg,name:$("#signName").value,ratings}};
     j.status="completed";
     j.parentLog=j.parentLog||[];
     j.parentLog.push({t:jTypeLabel(j.type)+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});

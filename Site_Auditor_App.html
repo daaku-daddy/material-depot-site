@@ -838,6 +838,24 @@ function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((
 function collectRooms(){return jcRooms.map(r=>({v:2,category:r.category,name:r.name,sku:r.sku,variant:r.variant||null,notes:r.notes,
   sketchStrokes:r._sketch?r._sketch.strokes:(r._sketchStrokes||[]),
   segments:(r.segments||[]).map(s=>({id:s.sid,facing:s.facing||null,fields:Object.assign({},s.fields),photos:(s.photos||[]).slice(),prereq:Object.assign({},s.prereq),flagged:mdPrereqFlagged({prereq:s.prereq})}))}));}
+// One last upload attempt for any segment photo still stuck as a base64 fallback (weak
+// connectivity when it was taken, note 96) — runs right before the completion write so
+// audit_ticked / audit_ticked_history never permanently embed a full-size photo when a
+// real Storage URL is achievable. Best-effort: a photo that still can't upload keeps its
+// base64 fallback exactly as before (no behavior change on failure, just one more try).
+async function _finalizeRoomPhotos(rooms){
+  for(const r of (rooms||[])){
+    for(const s of (r.segments||[])){
+      if(!Array.isArray(s.photos))continue;
+      for(let i=0;i<s.photos.length;i++){
+        const ph=s.photos[i];
+        if(typeof ph==='string'&&ph.startsWith('data:')){
+          try{s.photos[i]=await _uploadPhoto(ph);}catch(e){/* keep base64 fallback */}
+        }
+      }
+    }
+  }
+}
 let _autosaveTimer=null;
 let _autosaveSeq=0;
 let _localSaveTimer=null;
@@ -1067,6 +1085,7 @@ function showAuditSignature(o,ratings){
     o.status="completed";
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto",who:ME.name});
     if(o.id){
+      try{await _finalizeRoomPhotos(o.jobcard.rooms);}catch(e){/* best-effort — never block completion on this */}
       const ticked={auditor:ME.name,date:dstr(new Date()),sign:jcSign,rooms:o.jobcard.rooms};
       // Step 1: mark status completed immediately (small, fast — ensures order moves out of atsite in SM/admin)
       try{
