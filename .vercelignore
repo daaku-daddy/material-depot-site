@@ -1,0 +1,10 @@
+# `vercel --prod` uploads the local working directory, not the git tree (see the
+# Deployment Workflow note in CLAUDE.md), so anything sitting in the repo ships
+# publicly. Keep internal notes and OS junk out of the deployment.
+#
+# Deliberately narrow: docs/*.sql are already public and are left that way, and
+# nothing here excludes an app file. Verify with a byte-diff after deploying.
+.DS_Store
+**/.DS_Store
+.superpowers/
+docs/supabase_auth_rls_scope.md

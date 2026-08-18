@@ -389,6 +389,22 @@ let SESSION = null;
 let CITY_ENABLED=false;
 async function detectCity(){try{const r=await sbGet('profiles?select=city&limit=1');CITY_ENABLED=Array.isArray(r);}catch(e){CITY_ENABLED=false;}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+/* Role Viewer preview identity. loadRvIframe() impersonates the previewed person in
+   localStorage only long enough for the iframe's FIRST paint, then restores the admin's own
+   session (so a reload can never strand an admin inside someone else's account). That means a
+   real page navigation *inside* the preview — the `<a href="Admin.html">Analytics</a>` link in
+   both SM dashboards, and BM/COE's link to the Shadower app — used to re-read localStorage and
+   find the ADMIN session, rendering the full Admin Console instead of what the previewed role
+   actually gets. The parent frame publishes who it is previewing on window.__mdRolePreview;
+   any page that can be navigated to from inside a preview prefers it over localStorage.
+   Same-origin only, and never consulted when this page is the top-level window. */
+function rvPreviewSession(){
+  try{
+    if(window.top===window.self)return null;
+    const p=window.parent&&window.parent.__mdRolePreview;
+    return (p&&p.role)?{name:p.name,email:p.email,role:p.role}:null;
+  }catch(e){return null;}   /* cross-origin parent — not one of our previews */
+}
 function signOut(){localStorage.removeItem('md_user');window.location.href='Login.html';}
 
 const ROLES = {
@@ -868,6 +884,9 @@ function loadRvIframe(){
     ?(rvAiTab==='auditor'?'Site_Auditor_App.html':'Site_Installer_App.html')
     :ROLES[rvRole].file;
   if(!file) return;   // role has no dashboard yet — nothing to preview
+  // Survives the localStorage restore below, so navigations *within* the preview stay in
+  // character — see rvPreviewSession().
+  window.__mdRolePreview={name:person.name,email:person.email,role:rvRole};
   const adminSession=localStorage.getItem('md_user');
   localStorage.setItem('md_user',JSON.stringify({name:person.name,email:person.email,role:rvRole}));
   const iframe=document.createElement('iframe');
@@ -878,7 +897,7 @@ function loadRvIframe(){
   wrap.appendChild(iframe);
 }
 
-function setRoleView(k){rvRole=k;rvPersonEmail=null;drawRoleViewer(document.getElementById('main'));}
+function setRoleView(k){rvRole=k;rvPersonEmail=null;window.__mdRolePreview=null;drawRoleViewer(document.getElementById('main'));}
 function setRvPerson(email){rvPersonEmail=email;drawRoleViewer(document.getElementById('main'));}
 function setSmTab(tab){rvSmTab=tab;drawRoleViewer(document.getElementById('main'));}
 function setAiTab(tab){rvAiTab=tab;drawRoleViewer(document.getElementById('main'));}
@@ -3002,7 +3021,7 @@ async function _drawLiveLocations(m){
 
 /* ---- INIT ---- */
 (function(){
-  SESSION=getSession();
+  SESSION=rvPreviewSession()||getSession();
   if(!SESSION||!['admin','service_mgr'].includes(SESSION.role)){window.location.href='Login.html';return;}
   document.getElementById('app').hidden=false;
   detectCity();

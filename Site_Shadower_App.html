@@ -89,8 +89,19 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const H={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
 async function sbGet(q){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,signal:ac.signal});return r.json();}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+/* Role Viewer preview identity — see the matching helper in Admin.html for why localStorage
+   can't be trusted here: BM/COE dashboards link to this page with a real href, and inside a
+   preview iframe the impersonated session has already been restored to the admin's own, so a
+   preview of someone's shadowing schedule would show the ADMIN's schedule instead of theirs. */
+function rvPreviewSession(){
+  try{
+    if(window.top===window.self)return null;
+    const p=window.parent&&window.parent.__mdRolePreview;
+    return (p&&p.role)?{name:p.name,email:p.email,role:p.role}:null;
+  }catch(e){return null;}   /* cross-origin parent — not one of our previews */
+}
 
-const SESSION=getSession();
+const SESSION=rvPreviewSession()||getSession();
 // "My Shadowing" is reachable by ANYONE logged in (any role) — a shadower can be any registered
 // person. Just require a session; a signed-out visitor is bounced to Login.
 if(!SESSION||!SESSION.email){window.location.href='Login.html';}
