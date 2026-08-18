@@ -1,4 +1,12 @@
 (function(){
+  // Ask the browser not to evict this site's storage (localStorage — incl. md_user login
+  // session, note "Auth / Session" in CLAUDE.md) under low-disk-space pressure. Without this,
+  // storage is only "best-effort" even for an installed/home-screen PWA on a low-storage
+  // Android phone, and can be silently cleared — the exact cause of "have to log in every
+  // time" reported 2026-08-17 for field workers with no code-level session expiry at all.
+  // Safe no-op where unsupported (older Safari/iOS); does not require any user gesture.
+  if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+
   // Already installed as standalone PWA — never show
   if(window.matchMedia('(display-mode: standalone)').matches||navigator.standalone)return;
   // Dismissed this session — don't show until next browser open
