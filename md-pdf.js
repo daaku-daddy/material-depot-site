@@ -90,7 +90,7 @@
       }
       var rows;
       if(isV2){
-        rows=cat.fields.filter(function(f){var v=seg.fields&&seg.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';})
+        rows=window.mdFieldsFor(cat,nroom).filter(function(f){var v=seg.fields&&seg.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';})
           .map(function(f){return [f.label, String(seg.fields[f.k])];});
       }else{
         rows=(cat.legacyFields||[]).filter(function(p){var v=seg.fields&&seg.fields[p[0]];return v!==undefined&&v!==null&&String(v)!=='';})
@@ -99,6 +99,15 @@
       if(rows.length){ ensure(34+rows.length*20);
         doc.autoTable(window.mdBrandGrid({startY:y, margin:{left:M,right:M}, head:[['Measurement','Value']], body:rows,
           columnStyles:{0:{cellWidth:250,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL}}}));
+        y=doc.lastAutoTable.finalY+8;
+      }
+      // Area adjustments (note 109) — small add/subtract areas, each with the reason it was taken.
+      var adjRows=isV2?(window.mdAdjRows?window.mdAdjRows(cat,nroom,seg.adjust):[]):[];
+      if(adjRows.length){ ensure(34+adjRows.length*20);
+        doc.autoTable(window.mdBrandGrid({startY:y, margin:{left:M,right:M},
+          head:[['Area adjustment','Size','sq.ft','Reason']],
+          body:adjRows.map(function(a){return [a.label, a.size, a.area, a.reason||'—'];}),
+          columnStyles:{0:{cellWidth:78,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL},1:{cellWidth:104},2:{cellWidth:52}}}));
         y=doc.lastAutoTable.finalY+8;
       }
       if(isV2 && seg.prereq && cat.prerequisites){

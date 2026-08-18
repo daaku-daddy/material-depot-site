@@ -99,8 +99,12 @@ window.addEventListener('popstate',()=>history.pushState(null,'',location.href))
 const ME={name:SESSION?SESSION.name:'',email:SESSION?(SESSION.email||''):''};
 document.getElementById('meName').textContent=ME.name;
 // Back button routes to the viewer's own primary app (mirrors Login's ROLE_FILES, minus site_shadower).
-const ROLE_HOME={admin:'Admin.html',service_mgr:'SM_Audit_Dashboard.html',site_auditor:'Site_Auditor_App.html',installer:'Site_Installer_App.html',auditor_installer:'Site_Auditor_App.html',store_staff:'Store_Team_App.html'};
-document.getElementById('backApp').onclick=()=>{window.location.href=ROLE_HOME[SESSION.role]||'Login.html';};
+// A role with no entry here has no other app to go back to — this screen IS its dashboard (Content
+// Team, note 109) — so the button is hidden rather than bouncing them through Login and back here.
+const ROLE_HOME={admin:'Admin.html',service_mgr:'SM_Audit_Dashboard.html',site_auditor:'Site_Auditor_App.html',installer:'Site_Installer_App.html',auditor_installer:'Site_Auditor_App.html',store_staff:'Store_Team_App.html',bm:'BM_Dashboard.html',coe:'COE_Dashboard.html'};
+const _backBtn=document.getElementById('backApp');
+if(ROLE_HOME[SESSION.role])_backBtn.onclick=()=>{window.location.href=ROLE_HOME[SESSION.role];};
+else _backBtn.style.display='none';
 document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localStorage.removeItem('md_user');window.location.href='Login.html';}};
 
 /* ============== DATA ============== */

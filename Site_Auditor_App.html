@@ -718,9 +718,13 @@ function addRoom(restore){
   const nr=restore?mdNormalizeRoom(restore):null;
   let category=nr?nr.category:(jcOrder.skus[0]?jcOrder.skus[0].type:'flooring');
   if(!MD_CATEGORIES[category])category='flooring';
-  function blankSeg(catKey){const cat=MD_CATEGORIES[catKey],f={};(cat.fields||[]).forEach(x=>{if(x.default!==undefined)f[x.k]=x.default;});mdComputeDerived(cat,f);return {sid:0,facing:null,photos:[],fields:f,prereq:{}};}
+  function blankSeg(catKey,variant){const cat=MD_CATEGORIES[catKey],f={};(cat.fields||[]).forEach(x=>{if(x.default!==undefined)f[x.k]=x.default;});mdComputeDerived(cat,f,{v:MD_ROOM_V,variant:variant||null});return {sid:0,facing:null,photos:[],fields:f,prereq:{},adjust:[]};}
+  // `v` = this room's captured schema version (note 109). A resumed v2 draft keeps v2 so its
+  // wallpaper measurements stay interpreted in the millimetres they were typed in; anything new
+  // (or re-categorised) is captured at MD_ROOM_V, where Standard wallpaper measures in feet.
   const room={id,category,name:nr?nr.name:'',sku:nr?nr.sku:'',variant:nr?(nr.variant||null):null,notes:nr?nr.notes:'',
-    segments: nr?nr.segments.map(s=>({sid:0,facing:s.facing||null,photos:(s.photos||[]).slice(),fields:Object.assign({},s.fields||{}),prereq:Object.assign({},s.prereq||{})})):[blankSeg(category)],
+    v:(nr&&nr.v>=2)?nr.v:MD_ROOM_V,
+    segments: nr?nr.segments.map(s=>({sid:0,facing:s.facing||null,photos:(s.photos||[]).slice(),fields:Object.assign({},s.fields||{}),prereq:Object.assign({},s.prereq||{}),adjust:(s.adjust||[]).map(a=>Object.assign({},a))})):[blankSeg(category)],
     _sketchStrokes: nr?(nr.sketchStrokes||[]):[]};
   let _sc=0;room.segments.forEach(s=>s.sid=++_sc);room._nextSid=_sc;
 
@@ -741,7 +745,21 @@ function addRoom(restore){
 
   // variant (per-room; only when the category defines variants, e.g. Standard/Customized wallpaper)
   const varRow=el('div');varRow.style.marginTop='10px';card.appendChild(varRow);
-  function renderVariant(){varRow.innerHTML='';const cat=MD_CATEGORIES[room.category];if(cat.variants){varRow.appendChild(el('label',null,cat.label+' type'));const vs=document.createElement('select');[''].concat(cat.variants).forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v||'Select...';if((room.variant||'')===v)op.selected=true;vs.appendChild(op);});vs.onchange=()=>{room.variant=vs.value||null;autosave();};varRow.appendChild(vs);}else room.variant=null;}
+  function renderVariant(){varRow.innerHTML='';const cat=MD_CATEGORIES[room.category];if(cat.variants){varRow.appendChild(el('label',null,cat.label+' type'));const vs=document.createElement('select');[''].concat(cat.variants).forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v||'Select...';if((room.variant||'')===v)op.selected=true;vs.appendChild(op);});
+    // The variant can decide the measurement UNIT (Standard wallpaper = ft, Customized = mm, note
+    // 109), so switching it re-renders the segments. If that flips the unit and measurements are
+    // already typed in, confirm first and clear them — silently re-labelling 2800 mm as 2800 ft
+    // would put a ~300x wrong area on the job card.
+    vs.onchange=()=>{
+      const prev=room.variant, next=vs.value||null;
+      const unitFlips=mdUnitFor(cat,{v:room.v,variant:prev})!==mdUnitFor(cat,{v:room.v,variant:next});
+      const hasData=room.segments.some(s=>['height','width','length'].some(k=>String(s.fields&&s.fields[k]||'')!=='')||(s.adjust||[]).some(a=>String(a.h||'')!==''||String(a.w||'')!==''));
+      if(prev&&next&&unitFlips&&hasData&&!confirm('Switching to '+next+' changes the measurement unit from '+mdUnitFor(cat,{v:room.v,variant:prev})+' to '+mdUnitFor(cat,{v:room.v,variant:next})+'.\n\nThe measurements already entered will be cleared so they can be re-taken in the new unit. Continue?')){vs.value=prev;return;}
+      room.variant=next;
+      if(prev&&next&&unitFlips)room.segments.forEach(s=>{['height','width','length','area','adjArea','netArea','areaW','rolls'].forEach(k=>{delete s.fields[k];});s.adjust=[];});
+      renderSegments();autosave();
+    };
+    varRow.appendChild(vs);}else room.variant=null;}
 
   // segments (walls for multi categories, single floor for single), add button, soft-flag banner
   const segWrap=el('div');segWrap.style.marginTop='2px';card.appendChild(segWrap);
@@ -777,17 +795,70 @@ function addRoom(restore){
   // ---- measurement fields (grouped; derived fields are read-only and update IN PLACE, no re-render) ----
   function renderFields(seg,box){
     box.innerHTML='';const cat=MD_CATEGORIES[room.category];const derivedNodes={};let curGroup=null,grid=null;
-    (cat.fields||[]).forEach(f=>{
+    // Some categories measure in a unit that depends on the room-level type (Standard wallpaper in
+    // feet, Customized in millimetres — note 109). Until that type is picked there is no unit to
+    // label the inputs with, so prompt for it instead of showing ambiguous fields.
+    if(mdNeedsVariant(cat,room)){
+      const pr=el('div',null,cat.variantPrompt||('Pick the '+cat.label+' type above to enter measurements.'));
+      pr.style.cssText='background:#fff4e0;border:1px solid #f0c674;color:#7a5200;padding:10px 12px;border-radius:9px;font-size:12.5px;font-weight:600;margin-top:10px';
+      box.appendChild(pr);return;
+    }
+    const fields=mdFieldsFor(cat,room);
+    // One recompute path for both the measurement inputs and the adjustment rows: refresh adjArea
+    // from the adjustment list, run the derived chain, then push values into the read-only nodes
+    // IN PLACE (never re-render mid-typing — that loses focus on Android keyboards).
+    const recalc=()=>{
+      const sum=mdAdjSum(cat,room,seg.adjust);
+      seg.fields.adjArea=sum||'';
+      mdComputeDerived(cat,seg.fields,room);
+      Object.keys(derivedNodes).forEach(dk=>{const v=seg.fields[dk];derivedNodes[dk].value=(v===undefined||v===null)?'':v;});
+    };
+    fields.forEach(f=>{
       if(f.showIf&&!f.showIf(seg.fields))return;
       if(f.group!==curGroup){curGroup=f.group;const gl=el('div');gl.style.cssText='font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 2px';gl.textContent=f.group;box.appendChild(gl);grid=el('div','grid2');box.appendChild(grid);}
       const wrap=el('div');wrap.appendChild(el('label',null,f.label));let inp;
       if(f.input==='select'){inp=document.createElement('select');(f.opts||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;inp.appendChild(op);});if(seg.fields[f.k]===undefined||seg.fields[f.k]===null)seg.fields[f.k]=(f.opts&&f.opts[0])||'';inp.value=seg.fields[f.k];}
       else{inp=document.createElement('input');if(f.input==='decimal')inp.setAttribute('inputmode','decimal');inp.value=(seg.fields[f.k]!==undefined&&seg.fields[f.k]!==null)?seg.fields[f.k]:'';}
       if(f.derived){inp.readOnly=true;inp.style.background='#f4f6f8';inp.style.color='var(--muted)';derivedNodes[f.k]=inp;}
-      else if(f.input==='select'){inp.addEventListener('change',()=>{seg.fields[f.k]=inp.value;mdComputeDerived(cat,seg.fields);autosave();renderFields(seg,box);});}
-      else{const upd=()=>{seg.fields[f.k]=inp.value;mdComputeDerived(cat,seg.fields);Object.keys(derivedNodes).forEach(dk=>{const v=seg.fields[dk];derivedNodes[dk].value=(v===undefined||v===null)?'':v;});autosave();};inp.addEventListener('input',upd);inp.addEventListener('change',upd);}
+      else if(f.input==='select'){inp.addEventListener('change',()=>{seg.fields[f.k]=inp.value;mdComputeDerived(cat,seg.fields,room);autosave();renderFields(seg,box);});}
+      else{const upd=()=>{seg.fields[f.k]=inp.value;recalc();autosave();};inp.addEventListener('input',upd);inp.addEventListener('change',upd);}
       wrap.appendChild(inp);grid.appendChild(wrap);
     });
+    renderAdjust(seg,box,recalc,()=>renderFields(seg,box));
+    recalc();
+  }
+  // ---- per-segment area adjustments (note 109): add or subtract a small area that belongs to THIS
+  // wall/floor rather than to a room of its own — a door or window to deduct, a niche to add — each
+  // with the reason it was taken. Dimensions are in the segment's own unit; the signed sq.ft total
+  // lands in fields.adjArea and flows through net area -> wastage -> rolls. ----
+  function renderAdjust(seg,box,recalc,rerender){
+    const cat=MD_CATEGORIES[room.category],u=mdUnitFor(cat,room),segLabel=(cat.segment&&cat.segment.segLabel||'segment').toLowerCase();
+    seg.adjust=seg.adjust||[];
+    const hl=el('div');hl.style.cssText='font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 2px';hl.textContent='Area adjustments (optional)';box.appendChild(hl);
+    const hint=el('div',null,'Add or subtract a small area for this '+segLabel+' — e.g. subtract a door or window opening. Give a reason for each one.');
+    hint.style.cssText='font-size:12px;color:var(--muted);margin-bottom:4px';box.appendChild(hint);
+    seg.adjust.forEach((a,ai)=>{
+      const c=el('div');c.style.cssText='border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:8px;background:#fff';
+      // Label-left / input-right, one field per line — the same vertical layout the install SKU rows
+      // use, so two short number fields can never be confused for one another.
+      const gr=el('div');gr.style.cssText='display:grid;grid-template-columns:minmax(88px,40%) 1fr;gap:7px 10px;align-items:center';
+      const mk=(labelText,node)=>{const l=el('div',null,labelText);l.style.cssText='font-size:12.5px;color:var(--muted);font-weight:600';gr.appendChild(l);gr.appendChild(node);};
+      const sign=document.createElement('select');[['-','Subtract'],['+','Add']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];if((a.sign||'-')===o[0])op.selected=true;sign.appendChild(op);});
+      const hI=document.createElement('input');hI.setAttribute('inputmode','decimal');hI.value=a.h||'';
+      const wI=document.createElement('input');wI.setAttribute('inputmode','decimal');wI.value=a.w||'';
+      const aI=document.createElement('input');aI.readOnly=true;aI.style.background='#f4f6f8';aI.style.color='var(--muted)';
+      const rI=document.createElement('input');rI.placeholder='e.g. Door opening';rI.value=a.reason||'';
+      const paint=()=>{const v=mdAdjSum(cat,room,[a]);aI.value=v?((v>0?'+':'')+v):'';rI.style.borderColor=(v&&!String(rI.value).trim())?'var(--red)':'';};
+      const upd=()=>{a.sign=sign.value;a.h=hI.value;a.w=wI.value;a.reason=rI.value;paint();recalc();autosave();};
+      [sign,hI,wI,rI].forEach(n=>{n.addEventListener('input',upd);n.addEventListener('change',upd);});
+      mk('Add or subtract',sign);mk('Height ('+u+')',hI);mk('Width ('+u+')',wI);mk('Area (sq.ft)',aI);mk('Reason',rI);
+      c.appendChild(gr);
+      const del=el('button','btn warn sm','Remove adjustment');del.style.marginTop='8px';del.onclick=()=>{seg.adjust.splice(ai,1);rerender();autosave();};
+      c.appendChild(del);box.appendChild(c);paint();
+    });
+    const add=el('button','btn ghost sm','+ Add adjustment');add.style.marginTop='8px';
+    add.onclick=()=>{seg.adjust.push({sign:'-',h:'',w:'',reason:''});rerender();autosave();};
+    box.appendChild(add);
   }
   // ---- per-segment prerequisite checklist (OK / Not OK / N/A + optional note) ----
   function renderPrereq(seg,box){
@@ -821,17 +892,22 @@ function addRoom(restore){
   }
   function renderSegments(){
     segWrap.innerHTML='';const cat=MD_CATEGORIES[room.category];const multi=cat.segment.model==='multi';
-    if(room.category==='wallpaper'){
-      const mmNote=el('div',null,'📏 Wall height & width are now entered in millimetres (mm), not inches — the calculated area still shows in sq.ft.');
-      mmNote.style.cssText='background:#fff4e0;border:1px solid #f0c674;color:#7a5200;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:8px;';
-      segWrap.appendChild(mmNote);
+    // Unit banner, straight from the registry (note 109) — per-variant where the type decides the
+    // unit, otherwise the category's own. Replaces the old hardcoded wallpaper-is-mm note.
+    const un=mdUnitNote(cat,room);
+    if(un){
+      const note=el('div',null,'📏 '+un);
+      note.style.cssText='background:#fff4e0;border:1px solid #f0c674;color:#7a5200;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:8px;';
+      segWrap.appendChild(note);
     }
     room.segments.forEach((s,i)=>segWrap.appendChild(segCard(s,i)));
     addSegBtn.style.display=multi?'inline-flex':'none';addSegBtn.textContent='+ '+(cat.segment.addLabel||'Add');
     paintFlag();
   }
-  addSegBtn.onclick=()=>{const s=blankSeg(room.category);s.sid=++room._nextSid;room.segments.push(s);renderSegments();autosave();};
-  catSel.onchange=()=>{room.category=catSel.value;const s=blankSeg(room.category);s.sid=1;room.segments=[s];room._nextSid=1;renderVariant();renderSegments();autosave();};
+  addSegBtn.onclick=()=>{const s=blankSeg(room.category,room.variant);s.sid=++room._nextSid;room.segments.push(s);renderSegments();autosave();};
+  // Changing the category throws the segments away and starts a fresh capture, so the room is
+  // re-stamped at the current schema version (note 109) — nothing of the old shape survives.
+  catSel.onchange=()=>{room.category=catSel.value;room.v=MD_ROOM_V;room.variant=null;const s=blankSeg(room.category,null);s.sid=1;room.segments=[s];room._nextSid=1;renderVariant();renderSegments();autosave();};
 
   $("#roomsWrap").appendChild(card);
   const sk=new Sketch(cv);room._sketch=sk;sk.onchange=autosave;undo.onclick=()=>{sk.undo();autosave();};clr.onclick=()=>{sk.clear();autosave();};window.addEventListener('resize',()=>sk.fit());setTimeout(()=>sk.fit(),60);
@@ -840,9 +916,13 @@ function addRoom(restore){
   jcRooms.push(room);
 }
 function renumber(){[...document.querySelectorAll('#roomsWrap .card')].forEach((c,i)=>{const rn=c.querySelector('.rn');if(rn)rn.textContent='Room / Space '+(i+1);});}
-function collectRooms(){return jcRooms.map(r=>({v:2,category:r.category,name:r.name,sku:r.sku,variant:r.variant||null,notes:r.notes,
+function collectRooms(){return jcRooms.map(r=>({v:r.v||MD_ROOM_V,category:r.category,name:r.name,sku:r.sku,variant:r.variant||null,notes:r.notes,
   sketchStrokes:r._sketch?r._sketch.strokes:(r._sketchStrokes||[]),
-  segments:(r.segments||[]).map(s=>({id:s.sid,facing:s.facing||null,fields:Object.assign({},s.fields),photos:(s.photos||[]).slice(),prereq:Object.assign({},s.prereq),flagged:mdPrereqFlagged({prereq:s.prereq})}))}));}
+  segments:(r.segments||[]).map(s=>({id:s.sid,facing:s.facing||null,fields:Object.assign({},s.fields),photos:(s.photos||[]).slice(),prereq:Object.assign({},s.prereq),
+    // Adjustment rows are stored verbatim (note 109) — including a half-typed one, so a resumed
+    // draft never loses a row mid-entry. Every renderer drops rows with no height x width.
+    adjust:(s.adjust||[]).map(a=>({sign:a.sign||'-',h:a.h||'',w:a.w||'',reason:a.reason||''})),
+    flagged:mdPrereqFlagged({prereq:s.prereq})}))}));}
 // One last upload attempt for any segment photo still stuck as a base64 fallback (weak
 // connectivity when it was taken, note 96) — runs right before the completion write so
 // audit_ticked / audit_ticked_history never permanently embed a full-size photo when a
@@ -905,17 +985,25 @@ function showSaveStatus(state){
 /* ============== REVIEW + SIGN ============== */
 function reviewAndSign(o){
   if(jcRooms.length===0){toast("Add at least one room");return;}
+  // Soft gate (note 109): an area adjustment without a stated reason is the whole point of the
+  // feature missing, but a field auditor mid-visit is never hard-blocked over it — acknowledge and
+  // the job card records it as given (matching this app's soft-gate convention for field workers).
+  const _noReason=jcRooms.some(r=>(r.segments||[]).some(s=>mdAdjMissingReason(mdCategoryFor(r.category),r,s.adjust)));
+  if(_noReason&&!confirm('One or more area adjustments have no reason written against them.\n\nThe reason is what tells the office why the area was added or subtracted. Continue without it?'))return;
   $("#jcFooter").classList.add("hide");
   const roomCards=jcRooms.map((r,i)=>{
     const cat=mdCategoryFor(r.category);const multi=cat.segment&&cat.segment.model==='multi';
     const segHtml=(r.segments||[]).map((s,si)=>{
-      const meas=(cat.fields||[]).filter(f=>{const v=s.fields&&s.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(f=>`<div class="k">${f.label}</div><div class="v">${s.fields[f.k]}</div>`).join('');
+      const meas=mdFieldsFor(cat,r).filter(f=>{const v=s.fields&&s.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(f=>`<div class="k">${f.label}</div><div class="v">${s.fields[f.k]}</div>`).join('');
+      const adjRows=mdAdjRows(cat,r,s.adjust);
+      const adj=adjRows.length?`<div class="kv" style="margin-top:6px">${adjRows.map(a=>`<div class="k">${a.label} ${a.size}</div><div class="v" style="color:${a.neg?'var(--red)':'var(--green)'}">${a.area} sq.ft${a.reason?` <span style="color:var(--muted)">- ${a.reason}</span>`:' <i style="color:var(--red)">- no reason given</i>'}</div>`).join('')}</div>`:'';
       const prq=(cat.prerequisites||[]).filter(p=>s.prereq&&s.prereq[p.k]&&s.prereq[p.k].status).map(p=>{const st=s.prereq[p.k].status;const col=st==='Not OK'?'var(--red)':(st==='OK'?'var(--green)':'var(--muted)');return `<div class="k">${p.label}</div><div class="v" style="color:${col}">${st}${s.prereq[p.k].note?' - '+s.prereq[p.k].note:''}</div>`;}).join('');
       const photos=(s.photos||[]).map(p=>`<img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:0 0 auto;">`).join('');
       const flagged=mdPrereqFlagged({prereq:s.prereq});
       return `<div style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:8px">
         ${multi?`<div style="font-weight:800;font-size:13px;color:var(--navy);margin-bottom:6px">${cat.segment.segLabel} ${si+1}${s.facing?' - '+s.facing:''}${flagged?' <span style="color:var(--red)">&#9888;</span>':''}</div>`:''}
         ${meas?`<div class="kv">${meas}</div>`:'<div style="font-size:12px;color:var(--muted)">No measurements recorded.</div>'}
+        ${adj}
         ${prq?`<div class="kv" style="margin-top:6px">${prq}</div>`:''}
         ${photos?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">${photos}</div>`:''}
       </div>`;

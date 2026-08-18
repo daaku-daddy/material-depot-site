@@ -8,7 +8,7 @@
     (function(){
       try{
         var u=JSON.parse(localStorage.getItem('md_user')||'null');
-        var map={admin:'Admin.html',service_mgr:'SM_Audit_Dashboard.html',site_auditor:'Site_Auditor_App.html',installer:'Site_Installer_App.html',auditor_installer:'Site_Auditor_App.html',store_staff:'Store_Team_App.html',bm:'BM_Dashboard.html',coe:'COE_Dashboard.html'};
+        var map={admin:'Admin.html',service_mgr:'SM_Audit_Dashboard.html',site_auditor:'Site_Auditor_App.html',installer:'Site_Installer_App.html',auditor_installer:'Site_Auditor_App.html',store_staff:'Store_Team_App.html',bm:'BM_Dashboard.html',coe:'COE_Dashboard.html',content_team:'Site_Shadower_App.html'};
         if(u&&u.role&&map[u.role]){window.location.replace('/'+map[u.role]);return;}
       }catch(e){}
       window.location.replace('/Login.html');

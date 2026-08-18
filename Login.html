@@ -61,10 +61,12 @@ const ROLE_FILES={
   store_staff:        {label:"Store Team",               file:"Store_Team_App.html",    color:"#9a6200",note:"Experience centre slot booking"},
   bm:                 {label:"Business Manager",         file:"BM_Dashboard.html",      color:"#b3261e",note:"My orders & customer journey"},
   coe:                {label:"Category Ops Executive",   file:"COE_Dashboard.html",     color:"#0f6e74",note:"Order follow-ups & production tracking"},
-  // No dashboard yet — a real profile role (so they can be created, listed and assigned as
-  // shadowers) but nothing to log in to. file:null makes the login flow say so plainly
-  // instead of redirecting into a dead end. Give it a file when their screen is specced.
-  content_team:       {label:"Content Team",             file:null,                     color:"#b3261e",note:"No dashboard yet"},
+  // Content Team has no dashboard of its own, so their landing screen is the site-shadowing
+  // schedule (note 109): they can be assigned to shadow audits/installs like anyone else, and
+  // this is the one screen that is genuinely useful to them. The fileless-role handling in
+  // successScreen() / the auto-forward below is deliberately left in place for any FUTURE role
+  // that has no screen yet.
+  content_team:       {label:"Content Team",             file:"Site_Shadower_App.html", color:"#b3261e",note:"Site shadowing schedule"},
 };
 
 const $=s=>document.querySelector(s);

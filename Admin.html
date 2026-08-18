@@ -331,9 +331,10 @@ const ROLES = {
   store_staff:        {label:'Store Team',               color:'#9a6200', file:'Store_Team_App.html'},
   bm:                 {label:'Business Manager',         color:'#b3261e', file:'BM_Dashboard.html'},
   coe:                {label:'Category Ops Executive',   color:'#0f6e74', file:'COE_Dashboard.html'},
-  // No `file` — a real profile role with no dashboard of its own yet. Everything that reads
-  // ROLES must therefore tolerate a missing file (see drawRoleViewer / loadRvIframe).
-  content_team:       {label:'Content Team',             color:'#b3261e'},
+  // Content Team has no dashboard of its own — the site-shadowing schedule is their landing
+  // screen (note 109). The missing-file tolerance in drawRoleViewer / loadRvIframe stays for any
+  // future role that has no screen yet.
+  content_team:       {label:'Content Team',             color:'#b3261e', file:'Site_Shadower_App.html'},
 };
 const ROLE_ICONS = {service_mgr:'📋', site_auditor:'🔍', installer:'🔧', auditor_installer:'🔍🔧', store_staff:'🏪', bm:'🧑‍💼', coe:'📞', content_team:'🎨'};
 const ROLE_DESCS = {
@@ -344,7 +345,7 @@ const ROLE_DESCS = {
   store_staff:'Experience centre slot booking for walk-in clients',
   bm:'My orders — customer journey, material selection & job card visibility',
   coe:'Site audit → order follow-up calls & custom wallpaper production tracking',
-  content_team:'Content team — no dashboard yet',
+  content_team:'Site shadowing schedule — audits & installations they are assigned to observe',
 };
 
 function roleBadge(r){const c=ROLES[r]||{label:r,color:'#999'};return `<span class="role-badge rb-${r}">${c.label}</span>`;}
