@@ -13,6 +13,7 @@
 <script src="/md-audit-registry.js"></script>
 <script src="/md-pdf.js"></script>
 <script src="/md-wp-track.js"></script>
+<script src="/md-cat-analytics.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -227,6 +228,74 @@
   .an-deliv-lbl{font-size:11px;color:var(--muted);font-weight:600;}
   .an-na-note{padding:20px;text-align:center;color:var(--muted);font-size:13px;border-bottom:1px solid var(--line);}
   .an-footer{font-size:11.5px;color:var(--muted);padding:14px 20px;background:#f8f9fc;border-radius:10px;border:1px solid var(--line);line-height:1.8;margin-top:4px;}
+  /* ── Analytics V3: category & commercial tabs (see md-cat-analytics.js) ────────────── */
+  .an-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;border-bottom:1px solid var(--line);padding-bottom:0;}
+  .an-tab{border:1px solid var(--line);border-bottom:0;background:#f8f9fc;color:var(--muted);border-radius:10px 10px 0 0;
+    padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px;position:relative;top:1px;}
+  .an-tab:hover{background:#fff;color:var(--ink);}
+  .an-tab.active{background:#fff;color:var(--navy);border-color:var(--line);border-bottom:1px solid #fff;box-shadow:0 -2px 0 var(--navy) inset;}
+  .an-tab small{display:block;font-size:10px;font-weight:600;color:var(--muted);}
+  .an-filter{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;margin:0 0 16px;}
+  .an-filter label{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px;}
+  .an-note-row{font-size:11.5px;color:var(--muted);line-height:1.65;background:#f8f9fc;border:1px solid var(--line);
+    border-radius:10px;padding:10px 14px;margin:0 0 16px;}
+  .an-kpi{display:grid;grid-template-columns:1.6fr repeat(4,1fr);gap:12px;margin:0 0 16px;}
+  .an-kpi-hero,.an-kpi-tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0;}
+  .an-kpi-lbl{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .an-hero-fig{font-size:48px;font-weight:800;color:var(--navy);line-height:1.05;margin:6px 0 4px;letter-spacing:-1px;}
+  .an-kpi-val{font-size:26px;font-weight:800;color:var(--ink);line-height:1.1;margin:6px 0 3px;}
+  .an-kpi-sub{font-size:11.5px;color:var(--muted);line-height:1.5;}
+  .an-catgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;}
+  .an-catcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 15px;display:flex;flex-direction:column;gap:9px;}
+  .an-catcard-head{display:flex;align-items:flex-start;gap:9px;}
+  .an-catcard-title{font-size:13.5px;font-weight:800;color:var(--navy);}
+  .an-catcard-sub{font-size:11px;color:var(--muted);margin-top:1px;}
+  .an-catcard-val{font-size:27px;font-weight:800;line-height:1;color:var(--ink);}
+  .an-catcard-lbl{font-size:10.5px;color:var(--muted);font-weight:600;margin-top:2px;}
+  .an-catcard-spark{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 0;}
+  .an-catcard-rows{display:flex;gap:14px;flex-wrap:wrap;}
+  .an-catcard-rows>div{display:flex;flex-direction:column;gap:1px;}
+  .an-catcard-rows span{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .an-catcard-rows b{font-size:13.5px;color:var(--ink);}
+  .an-catcard-block{border-top:1px solid var(--line);padding-top:8px;}
+  .an-catcard-note{font-size:10.5px;color:var(--muted);line-height:1.55;border-top:1px dashed var(--line);padding-top:7px;}
+  .an-mini-lbl{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;}
+  .an-mini-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:10.5px;color:var(--muted);font-weight:600;}
+  .an-mini-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
+  .an-mini-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:10.5px;color:var(--muted);font-weight:600;}
+  .an-attach{display:flex;align-items:baseline;gap:7px;margin-bottom:5px;}
+  .an-attach b{font-size:19px;font-weight:800;color:var(--ink);}
+  .an-attach span{font-size:10.5px;color:var(--muted);}
+  .an-badge-mod{font-size:9px;font-weight:800;color:var(--purple);background:var(--purplebg);border-radius:20px;
+    padding:2px 7px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;}
+  .an-link{border:0;background:none;color:var(--blue);font-size:10.5px;font-weight:800;cursor:pointer;padding:0;}
+  .an-csv{margin-left:auto;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:7px;
+    padding:6px 11px;font-weight:800;font-size:11.5px;cursor:pointer;white-space:nowrap;}
+  .an-matrix tbody td{padding:0 0;}
+  .an-matrix tbody td:first-child{padding:9px 14px;}
+  .an-scale{display:flex;align-items:center;gap:6px;padding:9px 18px;font-size:10.5px;color:var(--muted);font-weight:600;flex-wrap:wrap;}
+  .an-scale i{display:inline-block;width:20px;height:9px;border-radius:2px;}
+  .an-gap{background:var(--amberbg);border:1px solid #e8c97a;border-radius:10px;padding:9px 12px;font-size:11.5px;
+    color:var(--amber);font-weight:600;line-height:1.5;flex:1 1 260px;}
+  .an-gap b{color:var(--ink);}
+  .an-gap span{color:var(--muted);font-weight:600;}
+  .an-wow-charts{display:flex;gap:18px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line);}
+  .an-fig{flex:1 1 260px;min-width:0;margin:0;}
+  .an-fig figcaption{font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;}
+  .an-tgt-inp{width:66px;padding:5px 6px;border:1.5px solid var(--line);border-radius:6px;font-size:12.5px;
+    font-weight:700;text-align:right;color:var(--navy);background:#fff;font-variant-numeric:tabular-nums;}
+  .an-tgt-inp:focus{outline:none;border-color:var(--navy);}
+  .an-inst-table td,.an-inst-table th{font-variant-numeric:tabular-nums;}
+  @media(max-width:1100px){
+    .an-kpi{grid-template-columns:1fr 1fr;}
+    .an-kpi-hero{grid-column:1 / -1;}
+  }
+  @media(max-width:620px){
+    .an-kpi{grid-template-columns:1fr;}
+    .an-catgrid{grid-template-columns:1fr;}
+    .an-tab small{display:none;}
+  }
   @media(max-width:780px){
     .an-grid{grid-template-columns:repeat(2,1fr);}
     .an-grid .an-card:nth-child(3n){border-right:1px solid var(--line);}
@@ -288,7 +357,7 @@
       <button class="nav-item admin-only" data-view="roleviewer"><span class="ico">👁</span>Role Viewer</button>
       <button class="nav-item admin-only" data-view="jobs"><span class="ico">📋</span>Job Overview</button>
       <button class="nav-item admin-only" data-view="perf"><span class="ico">📊</span>Performance</button>
-      <button class="nav-item" data-view="analytics"><span class="ico">📉</span>Analytics</button>
+      <button class="nav-item" data-view="analytics"><span class="ico">📉</span>Analytics<span class="nav-badge" id="an-alert-badge" style="display:none;background:var(--redbg);color:var(--red)"></span></button>
       <button class="nav-item admin-only" data-view="payouts"><span class="ico">💰</span>Payouts</button>
       <button class="nav-item admin-only" data-view="live"><span class="ico">📍</span>Live</button>
     </nav>
@@ -404,6 +473,67 @@ async function renderView(v){
   else if(v==='live')      await renderLiveLocations(m);
 }
 
+/* ────────────────────────────────────────────────────────────────────────────────────────────
+   TARGET ALERT (added 2026-08-18 with the Analytics V3 revamp)
+   Computes "is any store failing its target this month" once at boot, so the answer is visible on
+   the rail and on the Overview page rather than only to someone who thinks to open Analytics →
+   Targets. Scope is the CURRENT month to date (clamped to the data window while the commercial
+   source is the dummy generator), which is the window a manager can still act on.
+   ──────────────────────────────────────────────────────────────────────────────────────────── */
+let _anAlert=null;
+async function anLoadAlert(){
+  if(SESSION&&SESSION.role!=='admin')return null;   // commercial targets are admin-scope
+  try{
+    if(!_anCatDs)_anCatDs=await mdAnDataset();
+    if(!anTargets){const st=await _loadSetting('cat_analytics_targets');_anTargetsId=st.id;anTargets=mdAnTargetsMerge(st.value);}
+    const t=new Date();
+    let to=_anClamp(_anDstr(t)), from=_anClamp(_anDstr(new Date(t.getFullYear(),t.getMonth(),1)));
+    if(from>to)from=to;
+    const f={from:from,to:to,store:'all',city:'all'};
+    const ev=mdAnEvaluate(_anCatDs,f,mdAnAggregate(_anCatDs,f),anTargets);
+    _anAlert={from:from,to:to,risk:ev.risk.length,watch:ev.watch.length,pairs:ev.pairs,
+      stores:ev.storesAtRisk,top:ev.bad.slice(0,5)};
+  }catch(e){_anAlert=null;}
+  anPaintAlertBadge();
+  return _anAlert;
+}
+function anPaintAlertBadge(){
+  const b=document.getElementById('an-alert-badge');
+  if(!b)return;
+  if(!_anAlert||!_anAlert.risk){b.style.display='none';return;}
+  b.style.display='';
+  b.textContent='⚠ '+_anAlert.risk;
+  b.title=_anAlert.risk+' target check'+(_anAlert.risk===1?'':'s')+' at risk this month across '+_anAlert.pairs+' store–category pair'+(_anAlert.pairs===1?'':'s');
+}
+// The Overview card. Returns '' when nothing is failing — an always-on banner that usually says
+// "fine" is a banner people stop reading.
+function anAlertCardHtml(){
+  const a=_anAlert;
+  if(!a||(!a.risk&&!a.watch))return '';
+  const fmt=r=>{
+    const f=r.unit==='₹'?mdAnRup:(r.unit==='%'?(v=>mdAnPct(v,true)):mdAnNum);
+    return `<tr><td style="padding:5px 8px;font-weight:700">${r.storeLabel}</td><td style="padding:5px 8px">${r.catLabel}</td>
+      <td style="padding:5px 8px;color:var(--muted)">${r.metric}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:700">${f(r.actual)}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--muted)">of ${f(r.target)}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:800;color:${MD_AN_LEVELS[r.level].col}">${Math.round(r.pct)}%</td></tr>`;
+  };
+  return `<div class="card" style="border:1.5px solid ${a.risk?'#e6b3ad':'#e8c97a'};margin-bottom:18px">
+    <div class="card-head"><h2 style="color:${a.risk?'var(--red)':'var(--amber)'}">${a.risk?'⚠':'▲'} Category targets — ${a.from.slice(8)}–${a.to.slice(8)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+a.to.slice(5,7)-1]} ${a.to.slice(0,4)}</h2>
+      <button class="btn-primary" style="margin-left:auto" onclick="navigate('analytics');anSetTab('targets')">Open Targets →</button></div>
+    <div style="padding:0 4px 6px;font-size:13px;color:var(--muted);line-height:1.6">
+      <b style="color:${a.risk?'var(--red)':'var(--amber)'}">${a.risk} check${a.risk===1?'':'s'} at risk</b>${a.watch?` and ${a.watch} to watch`:''}
+      across <b>${a.pairs}</b> store–category pair${a.pairs===1?'':'s'}, measured against this month's target pro-rated to ${a.from} → ${a.to}.
+      ${a.stores.length?`Stores at risk: <b>${a.stores.map(mdAnStoreLabel).join(', ')}</b>.`:''}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr style="text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">
+        <th style="padding:5px 8px">Store</th><th style="padding:5px 8px">Category</th><th style="padding:5px 8px">Metric</th>
+        <th style="padding:5px 8px;text-align:right">Actual</th><th style="padding:5px 8px;text-align:right">Target</th><th style="padding:5px 8px;text-align:right">Achieved</th>
+      </tr></thead><tbody>${a.top.map(fmt).join('')}</tbody></table>
+  </div>`;
+}
+
 /* ---- OVERVIEW ---- */
 async function renderOverview(m){
   m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
@@ -424,6 +554,7 @@ async function renderOverview(m){
       <h1>Welcome back, ${SESSION.name.split(' ')[0]} 👋</h1>
       <p>Here's a snapshot of your team and active work.</p>
     </div>
+    ${anAlertCardHtml()}
     <div class="stats">
       <div class="stat-card"><div class="val">${total}</div><div class="lbl">Total Users</div><div class="bar"><div class="bar-fill" style="width:100%;background:var(--navy)"></div></div></div>
       <div class="stat-card"><div class="val">${c.service_mgr}</div><div class="lbl">Service Managers</div><div class="bar"><div class="bar-fill" style="width:${total?c.service_mgr/total*100:0}%;background:var(--navy)"></div></div></div>
@@ -1415,7 +1546,7 @@ let analyticsAuditFrom='', analyticsAuditTo='', analyticsInstallFrom='', analyti
 // the Site Audit and Site Installation sections. Persisted to the app-wide md_city key so an SM who
 // picked a city in the SM dashboards lands here on the same city. Only honoured when CITY_ENABLED.
 let analyticsCity=(function(){try{return localStorage.getItem('md_city')||'all';}catch(e){return 'all';}})();
-function setAnalyticsCity(c){analyticsCity=c;try{localStorage.setItem('md_city',c);}catch(e){}drawAnalytics(document.getElementById('main'));}
+function setAnalyticsCity(c){anSetCity(c);}
 
 function _anDstr(d){const z=n=>n<10?'0'+n:n;return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());}
 function _anToIST(iso){return new Date(new Date(iso).getTime()+19800000);}
@@ -1675,41 +1806,279 @@ async function _anFetchData(){
   return true;
 }
 
+/* ────────────────────────────────────────────────────────────────────────────────────────────
+   ANALYTICS V3 — one tab per question (added 2026-08-18, see CLAUDE.md note 111)
+   The Analytics view is now a tab bar over one shared date/store/city filter:
+     Category · Execution · Week on week · Penetration · Targets
+   'Execution' is the pre-existing V2 content (site audit / site installation operations, straight
+   off the ops DB in Supabase) PLUS the new bookings-vs-executions and TAT sections. Every other
+   tab is COMMERCIAL — carts, orders, order value, attach rate, audit→order conversion, store
+   penetration, targets — and reads the order book through md-cat-analytics.js, which is currently
+   served by a dummy generator seeded from the Jun–Aug 2026 category workbook and swaps to the
+   Metabase question by implementing MD_AN_SOURCE.metabase(). The two halves are deliberately kept
+   apart: an order lives in Metabase, a site visit lives in Supabase, and the only bridge between
+   them is the customer phone number.
+   `service_mgr` sessions are scoped to the Execution tab only — the commercial tabs carry revenue
+   and target data that role does not get (same reasoning as the .admin-only rail items).
+   ──────────────────────────────────────────────────────────────────────────────────────────── */
+let anTab=(function(){try{return localStorage.getItem('md_an_tab')||'category';}catch(e){return 'category';}})();
+let anCatFrom='', anCatTo='', anCatStore='all', anTargetMonthSel='';
+let anTargets=null, _anTargetsId=null, _anCatDs=null, _anCtx=null, _anCatErr='';
+
+// Every analytics redraw writes into #anTabBody, never into #main — the tab bar and the filter row
+// above it must survive a redraw (they hold the controls that triggered it).
+function _anBody(){return document.getElementById('anTabBody')||document.getElementById('main');}
+function _anIsExec(){return anTab==='execution';}
+function _anClamp(d){
+  // The dummy source only holds 1 Jun – 17 Aug 2026. Clamping the pickers to it stops an empty
+  // "last 7 days" (today is past the data cut) reading as a broken dashboard.
+  if(window.MD_AN_SOURCE&&window.MD_AN_SOURCE.mode!=='dummy')return d;
+  if(d<MD_AN_DATA_FROM)return MD_AN_DATA_FROM;
+  if(d>MD_AN_DATA_TO)return MD_AN_DATA_TO;
+  return d;
+}
+function anFilter(){return {from:anCatFrom,to:anCatTo,store:anCatStore,city:CITY_ENABLED?analyticsCity:'all'};}
+
 async function renderAnalytics(m){
-  m.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  if(SESSION&&SESSION.role==='service_mgr')anTab='execution';
+  // The Execution tab keeps its own two independent ranges (note 77) — default each to the last 7
+  // days. This init MUST live here: drawAnalytics compares order dates against these strings, and
+  // an empty string matches nothing, so an uninitialised range renders a silently empty tab.
   if(!analyticsAuditFrom){
-    const t=new Date();
-    analyticsAuditTo=_anDstr(t);
-    t.setDate(t.getDate()-6);
-    analyticsAuditFrom=_anDstr(t);
+    const t=new Date();analyticsAuditTo=_anDstr(t);t.setDate(t.getDate()-6);analyticsAuditFrom=_anDstr(t);
   }
   if(!analyticsInstallFrom){
-    const t=new Date();
-    analyticsInstallTo=_anDstr(t);
-    t.setDate(t.getDate()-6);
-    analyticsInstallFrom=_anDstr(t);
+    const t=new Date();analyticsInstallTo=_anDstr(t);t.setDate(t.getDate()-6);analyticsInstallFrom=_anDstr(t);
   }
-  const ok=await _anFetchData();
-  if(!ok){
-    m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load analytics data — network timeout. Please try again.</div>`;
+  if(!anCatFrom){
+    const t=new Date();
+    anCatTo=_anClamp(_anDstr(t));
+    anCatFrom=_anClamp(_anDstr(new Date(t.getFullYear(),t.getMonth(),1)));
+    if(anCatFrom>anCatTo)anCatFrom=_anClamp(MD_AN_DATA_FROM);
+  }
+  m.innerHTML=`
+    <div class="page-head"><h1>Analytics</h1><p>Category commercial performance and field-operations execution, in one place. Each tab keeps its own definitions visible — no number on this page is left unexplained.</p></div>
+    <div class="an-tabs" id="anTabs">${MD_AN_TABS.filter(t=>!(SESSION&&SESSION.role==='service_mgr'&&t.k!=='execution')).map(t=>
+      `<button class="an-tab${t.k===anTab?' active':''}" data-antab="${t.k}" onclick="anSetTab('${t.k}')">${t.ico} ${t.label}<small>${t.sub}</small></button>`).join('')}</div>
+    <div id="anTabBody"><div class="loading-row"><span class="spinner"></span></div></div>`;
+  await anRenderTab();
+}
+function anSetTab(tab){
+  // Defence in depth: the commercial tabs carry revenue and target data a service_mgr does not get.
+  // renderAnalytics already forces them onto Execution, and their tab bar only renders that one
+  // button — this guard is what stops a stale localStorage value or a stray call from getting past
+  // it. (Role gating in this app is client-side throughout, so this is a scoping rule, not a
+  // security boundary — same as the .admin-only rail items.)
+  if(SESSION&&SESSION.role==='service_mgr'&&tab!=='execution')return;
+  anTab=tab;
+  try{localStorage.setItem('md_an_tab',tab);}catch(e){}
+  document.querySelectorAll('#anTabs .an-tab').forEach(b=>b.classList.toggle('active',b.dataset.antab===tab));
+  anRenderTab();
+}
+async function anRenderTab(){
+  const body=_anBody();
+  body.innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  if(_anIsExec()){
+    const ok=await _anFetchData();
+    if(!ok){body.innerHTML='<div style="padding:24px;color:var(--red);font-weight:600">⚠ Failed to load operations data — network timeout. Please try again.</div>';return;}
+    try{drawAnalytics(body);}catch(e){
+      body.innerHTML='<div style="padding:24px;color:var(--red);font-weight:600">⚠ Analytics render error: '+e.message+'. Please reload.</div>';
+    }
+    _anStartPoll();
     return;
   }
-  try{drawAnalytics(m);}catch(e){
-    m.innerHTML=`<div class="page-head"><h1>Analytics</h1></div><div style="padding:24px;color:var(--red);font-weight:600">⚠ Analytics render error: ${e.message}. Please reload.</div>`;
+  if(_anPollTid){clearInterval(_anPollTid);_anPollTid=null;}
+  try{
+    if(!_anCatDs)_anCatDs=await mdAnDataset();
+    if(!anTargets){
+      const st=await _loadSetting('cat_analytics_targets');
+      _anTargetsId=st.id;anTargets=mdAnTargetsMerge(st.value);
+    }
+  }catch(e){
+    body.innerHTML='<div style="padding:24px;color:var(--red);font-weight:600">⚠ Could not load category analytics — '+(e.message||'try again')+'</div>';return;
   }
-  // Auto-refresh: re-fetch every 60s while this tab is active and visible, so a metric like
-  // Site Audit → Order Conversion % picks up conversions that happen days after the audit
-  // without the admin needing to leave and re-enter the Analytics view. Silent — no spinner —
-  // so it doesn't interrupt someone mid-read; skipped while a date-range input is focused so it
-  // never clobbers an in-progress (not-yet-applied) edit.
+  anDrawCat();
+}
+// Auto-refresh only matters for the Execution tab (live ops data). The commercial dataset is a
+// fixed snapshot until the Metabase source is wired, so polling it would just burn a redraw.
+function _anStartPoll(){
   if(_anPollTid)clearInterval(_anPollTid);
   _anPollTid=setInterval(async()=>{
-    if(currentView!=='analytics'||document.hidden)return;
+    if(currentView!=='analytics'||!_anIsExec()||document.hidden)return;
     const active=document.activeElement;
     if(active&&['anAuditFrom','anAuditTo','anInstallFrom','anInstallTo'].includes(active.id))return;
     const fresh=await _anFetchData();
-    if(fresh&&currentView==='analytics')drawAnalytics(document.getElementById('main'));
+    if(fresh&&currentView==='analytics'&&_anIsExec())drawAnalytics(_anBody());
   },60000);
+}
+
+/* ---- the shared filter row above every commercial tab (one filter row, not one per chart) ---- */
+function _anFilterRowHtml(){
+  const src=window.MD_AN_SOURCE.mode;
+  const storeOpts=['<option value="all">All stores &amp; channels</option>'].concat(MD_AN_STORE_IDS.map(s=>
+    `<option value="${s}"${anCatStore===s?' selected':''}>${mdAnStoreLabel(s)}${MD_AN_STORES[s].kind==='channel'?' (channel)':''}</option>`)).join('');
+  const cityBtns=CITY_ENABLED?`<div><label>City</label><div style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+      ${[['all','All'],['Bengaluru','Bengaluru'],['Hyderabad','Hyderabad']].map(([c,l],i)=>{const on=analyticsCity===c;
+        return `<button onclick="anSetCity('${c}')" style="padding:7px 12px;border:0;${i?'border-left:1px solid var(--line);':''}cursor:pointer;font-weight:700;font-size:12.5px;background:${on?'var(--navy)':'#fff'};color:${on?'#fff':'var(--ink)'}">${l}</button>`;}).join('')}
+    </div></div>`:'';
+  return `<div class="an-filter">
+    <div><label>From</label><input type="date" id="anCatFrom" class="an-date-inp" value="${anCatFrom}" min="${MD_AN_DATA_FROM}" max="${MD_AN_DATA_TO}"></div>
+    <div><label>To</label><input type="date" id="anCatTo" class="an-date-inp" value="${anCatTo}" min="${MD_AN_DATA_FROM}" max="${MD_AN_DATA_TO}"></div>
+    <button class="an-apply-btn" onclick="anApplyRange()">Apply</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="filt-btn" onclick="anQuickRange('month')">This month</button>
+      <button class="filt-btn" onclick="anQuickRange('lastmonth')">Last month</button>
+      <button class="filt-btn" onclick="anQuickRange('30')">Last 30 days</button>
+      <button class="filt-btn" onclick="anQuickRange('all')">All data</button>
+    </div>
+    <div><label>Store</label><select class="an-date-inp" onchange="anSetStore(this.value)">${storeOpts}</select></div>
+    ${cityBtns}
+    <div style="margin-left:auto;text-align:right;font-size:11px;color:var(--muted);line-height:1.5">
+      <b style="color:${src==='dummy'?'var(--amber)':'var(--green)'}">${src==='dummy'?'◆ Dummy data':'● Live (Metabase)'}</b><br>
+      ${src==='dummy'?`Seeded from the Jun–Aug 2026 category workbook · data window ${MD_AN_DATA_FROM} → ${MD_AN_DATA_TO}`:'Order book via Metabase'}
+    </div>
+  </div>`;
+}
+function anApplyRange(){
+  const a=document.getElementById('anCatFrom'), b=document.getElementById('anCatTo');
+  if(a&&a.value)anCatFrom=_anClamp(a.value);
+  if(b&&b.value)anCatTo=_anClamp(b.value);
+  if(anCatFrom>anCatTo){const t=anCatFrom;anCatFrom=anCatTo;anCatTo=t;}
+  anDrawCat();
+}
+function anQuickRange(kind){
+  const t=new Date();
+  if(kind==='month'){anCatFrom=_anDstr(new Date(t.getFullYear(),t.getMonth(),1));anCatTo=_anDstr(t);}
+  else if(kind==='lastmonth'){anCatFrom=_anDstr(new Date(t.getFullYear(),t.getMonth()-1,1));anCatTo=_anDstr(new Date(t.getFullYear(),t.getMonth(),0));}
+  else if(kind==='30'){anCatTo=_anDstr(t);const x=new Date(t);x.setDate(x.getDate()-29);anCatFrom=_anDstr(x);}
+  else{anCatFrom=MD_AN_DATA_FROM;anCatTo=MD_AN_DATA_TO;}
+  anCatFrom=_anClamp(anCatFrom);anCatTo=_anClamp(anCatTo);
+  if(anCatFrom>anCatTo)anCatFrom=anCatTo;
+  anDrawCat();
+}
+function anSetStore(v){anCatStore=v;anDrawCat();}
+function anSetCity(c){
+  analyticsCity=c;try{localStorage.setItem('md_city',c);}catch(e){}
+  if(_anIsExec())drawAnalytics(_anBody());else anDrawCat();
+}
+function anTargetMonth(m){anTargetMonthSel=m;anDrawCat();}
+function anDrawCat(){
+  const body=_anBody();
+  let h=_anFilterRowHtml();
+  try{
+    _anCtx=mdAnBuildCtx(_anCatDs,anFilter(),anTargets);
+    if(anTab==='category')h+=mdAnWarnBanner(_anCtx)+mdAnRenderCategory(_anCtx);
+    else if(anTab==='weekly')h+=mdAnWarnBanner(_anCtx)+mdAnRenderWeekly(_anCtx);
+    else if(anTab==='penetration')h+=mdAnWarnBanner(_anCtx)+mdAnRenderPenetration(_anCtx);
+    else if(anTab==='targets')h+=mdAnRenderTargets(_anCtx,anTargetMonthSel);
+    h+=_anCatFooter();
+  }catch(e){
+    h+='<div style="padding:24px;color:var(--red);font-weight:600">⚠ Could not render this tab — '+e.message+'</div>';
+  }
+  body.innerHTML=h;
+}
+function _anCatFooter(){
+  const L=MD_AN_LIMITS,A=MD_AN_ASSUMPTIONS;
+  const modelled=MD_AN_CAT_IDS.filter(c=>MD_AN_CATEGORIES[c].modelled).map(c=>MD_AN_CATEGORIES[c].label);
+  return `<div class="an-footer">
+    <b>Where these numbers come from:</b> the order book (Metabase question on <code>materialdepot_azure</code>), using the same order definition as the Sales Rep Analytics dashboard — confirmed/placed/shipped/delivered estimates only, quotes and cancellations excluded, order date = <code>COALESCE(order_placed_time, created_at)</code>. Right now that source is a <b>dummy generator seeded from the Jun–Aug 2026 category workbook</b>: every store-month total, order value, quantity, customer count, attach count and cart figure adds back up to the workbook exactly.<br>
+    <b>Order count</b> is distinct orders CONTAINING the category — an order with wallpaper and flooring counts in both. <b>Order value</b> is only that category's line value (net of discount, incl. tax), never the whole order.<br>
+    <b>Attach rate:</b> ${L.attachIdentical}<br>
+    <b>Site audit:</b> ${L.auditCategory}<br>
+    <b>Site audit → order conversion</b> is judged per audit, never "has this phone ever ordered", and splits material-only from material + installation so the customers who did NOT take installation from us stay visible. ${A.auditConv}<br>
+    <b>Carts:</b> ${L.cartStore}<br>
+    <b>August:</b> ${L.augPartial}<br>
+    <b>Modelled categories:</b> ${modelled.join(' and ')} — ${A.modelledCats}<br>
+    <b>Within-month dates:</b> ${A.intraMonth}<br>
+    <b>Excluded:</b> ${L.testAccounts} 3 orders (2 wallpaper Jun, 1 wallpaper Jul, 1 flooring Jul) carry no branch_id and sit outside the store tables, so they appear in no store row.
+  </div>`;
+}
+
+/* ---- generic drill-down modal for the commercial tabs (payload published by md-cat-analytics) ---- */
+function anDrill(key){
+  const d=window.MD_AN_DRILL&&window.MD_AN_DRILL[key];
+  if(!d){toast('No detail available for this metric');return;}
+  const head=d.cols.map(c=>`<th style="padding:6px 8px;text-align:left">${c}</th>`).join('');
+  const body=d.rows.length?d.rows.map(r=>`<tr style="border-bottom:1px solid var(--line)">${
+    r.map((v,i)=>`<td style="padding:6px 8px;${i===0?'font-family:monospace;font-size:12px;':''}${/^✓/.test(String(v))?'color:var(--green);font-weight:700;':/^✗/.test(String(v))?'color:var(--red);':''}">${v==null?'—':v}</td>`).join('')
+  }</tr>`).join(''):`<tr><td colspan="${d.cols.length}" style="padding:14px;color:var(--muted)">No rows</td></tr>`;
+  showModal(`<div class="modal-head"><h3>${d.title}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div style="padding:16px 20px;max-height:65vh;overflow:auto">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">${d.note}<br><b>${d.rows.length}</b> row(s).</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--line)">${head}</tr></thead><tbody>${body}</tbody></table>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end">
+      <button class="btn-primary" onclick="anDrillCsv('${key}')">⬇ Download CSV</button>
+    </div>`);
+  document.getElementById('modal').className='modal wide';
+}
+function _anDownloadCsv(name,rows){
+  const lines=rows.map(r=>(r||[]).map(_csvEscape).join(','));
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.csv';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function anDrillCsv(key){
+  const d=window.MD_AN_DRILL&&window.MD_AN_DRILL[key];
+  if(!d||!d.rows.length){toast('Nothing to export');return;}
+  _anDownloadCsv(d.title.replace(/[^a-z0-9]+/gi,'_').toLowerCase(),[d.cols].concat(d.rows));
+}
+function anCsv(key){
+  const c=mdAnCsvData(key,_anCtx,anTargetMonthSel);
+  if(!c){toast('Nothing to export');return;}
+  _anDownloadCsv(c.name,c.rows);
+}
+
+/* ---- target editing. Kept in memory until Save, so a mis-typed cell can be abandoned by
+        switching tabs; Save writes the whole object to app_settings.cat_analytics_targets. ---- */
+function _anTgtNum(el,max){
+  let v=parseFloat(el.value);
+  if(isNaN(v)||v<0)v=0;
+  if(max!=null&&v>max)v=max;
+  el.value=v;return v;
+}
+function anTargetInput(month,store,cat,el){
+  const v=_anTgtNum(el);
+  anTargets.orders[month]=anTargets.orders[month]||{};
+  anTargets.orders[month][store]=anTargets.orders[month][store]||{};
+  anTargets.orders[month][store][cat]=v;
+  // Installation is derived, never typed — recompute this store's row so the grid stays truthful.
+  const row=anTargets.orders[month][store];
+  let d=0;
+  ['wallpaper','flooring','wallpanel','cnc'].forEach(c=>{d+=(row[c]||0)*(((anTargets.attach[month]||{})[c]||0)/100);});
+  d+=((row.wallpaper||0)+(row.flooring||0))*0.04575;
+  row.installation=Math.round(d);
+  anDrawCat();
+}
+function anTargetRate(kind,month,cat,el){
+  const v=_anTgtNum(el,100);
+  if(kind==='auditConv')anTargets.auditConv[month]=v;
+  else{anTargets[kind][month]=anTargets[kind][month]||{};anTargets[kind][month][cat]=v;}
+  if(kind==='attach'){ // attach feeds the derived installation targets for every store in the month
+    Object.keys(anTargets.orders[month]||{}).forEach(s=>{
+      const row=anTargets.orders[month][s];let d=0;
+      ['wallpaper','flooring','wallpanel','cnc'].forEach(c=>{d+=(row[c]||0)*(((anTargets.attach[month]||{})[c]||0)/100);});
+      d+=((row.wallpaper||0)+(row.flooring||0))*0.04575;row.installation=Math.round(d);
+    });
+  }
+  anDrawCat();
+}
+function anTargetAov(cat,el){anTargets.aov[cat]=_anTgtNum(el);anDrawCat();}
+function anTargetWarnAt(el){anTargets.warnAtPct=_anTgtNum(el,100)||80;anDrawCat();}
+async function anSaveTargets(){
+  try{
+    anTargets.savedAt=new Date().toISOString();
+    anTargets.savedBy=SESSION?SESSION.name:'';
+    _anTargetsId=await _saveSetting('cat_analytics_targets',anTargets,_anTargetsId);
+    toast('✓ Targets saved for everyone');
+  }catch(e){toast('⚠ Could not save targets — '+(e.message||'the app_settings table may be missing (run the SQL)'));}
+  anDrawCat();
+}
+function anResetTargets(){
+  if(!confirm('Reset every target back to the plan seeded from the workbook? Unsaved edits are lost, and the saved copy is only replaced when you press Save afterwards.'))return;
+  anTargets=mdAnTargetsMerge(null);
+  toast('Targets reset to the seeded plan — press Save to make it stick');
+  anDrawCat();
 }
 
 // Returns one canonical row per subjob within [from,to] — never more than one, regardless of
@@ -2099,12 +2468,60 @@ function _anDateRowHtml(kind){
     <input type="date" id="${idF}" class="an-date-inp" value="${from}">
     <span style="color:var(--muted);font-size:13px;padding:0 2px">to</span>
     <input type="date" id="${idT}" class="an-date-inp" value="${to}">
-    <button class="an-apply-btn" onclick="${varF}=document.getElementById('${idF}').value;${varT}=document.getElementById('${idT}').value;drawAnalytics(document.getElementById('main'))">Apply</button>
-    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-6);${varF}=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 7 days</button>
-    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-29);${varF}=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 30 days</button>
-    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-89);${varF}=_anDstr(t);drawAnalytics(document.getElementById('main'))})()">Last 90 days</button>
+    <button class="an-apply-btn" onclick="${varF}=document.getElementById('${idF}').value;${varT}=document.getElementById('${idT}').value;drawAnalytics(_anBody())">Apply</button>
+    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-6);${varF}=_anDstr(t);drawAnalytics(_anBody())})()">Last 7 days</button>
+    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-29);${varF}=_anDstr(t);drawAnalytics(_anBody())})()">Last 30 days</button>
+    <button class="filt-btn" onclick="(function(){const t=new Date();${varT}=_anDstr(t);t.setDate(t.getDate()-89);${varF}=_anDstr(t);drawAnalytics(_anBody())})()">Last 90 days</button>
   </div>`;
 }
+/* ────────────────────────────────────────────────────────────────────────────────────────────
+   BOOKINGS vs EXECUTIONS and TAT  (Execution tab, added 2026-08-18 with the V3 revamp)
+   A booking and its execution are two different days and belong on two different dates: someone
+   who buys a ₹999 site audit today for the day after tomorrow is a BOOKING today and an EXECUTION
+   the day after tomorrow. Same for an installation — the order is placed on one day and the
+   installers turn up on another. So this block counts, per day/week/month in the selected range:
+     • bookings  = orders CREATED in the bucket (audit: audit_orders.created_at · install: the
+                   parent install order's created_at, counted once per order, not per sub-job)
+     • executions= work actually DONE in the bucket (audit: the "Site audit completed" log date,
+                   falling back to the scheduled date · install: the canonical per-sub-job
+                   completion date already used by every other install metric on this tab)
+     • TAT       = execution date − booking date, in days, per executed row
+   The two series are never added together and never share an axis scale trick: they are the same
+   unit (jobs) on one axis, which is exactly when a grouped column chart is honest.
+   Booking-side counts are NOT comparable to the Category tab's order counts: this side counts
+   ops rows in Supabase, that side counts order lines in the order book.
+   ──────────────────────────────────────────────────────────────────────────────────────────── */
+function _anBookExecHtml(cfg){
+  const buckets=mdAnBuckets(cfg.from,cfg.to).map(b=>({...b,vals:[
+    cfg.bookings.filter(x=>x.date>=b.from&&x.date<=b.to).length,
+    cfg.executions.filter(x=>x.date>=b.from&&x.date<=b.to).length]}));
+  const nb=cfg.bookings.length, ne=cfg.executions.length;
+  const tat=mdAnTatStats(cfg.tats);
+  const days=Math.round((new Date(cfg.to)-new Date(cfg.from))/86400000)+1;
+  const series=[{label:'Booked ('+cfg.bookLabel+')',color:'#5b3aa6'},{label:'Executed ('+cfg.execLabel+')',color:'#0f6e74'}];
+  return `
+    <div class="an-sub-head">Bookings vs executions</div>
+    <div class="an-deliv-row">
+      <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--purple)">${nb}</div><div class="an-deliv-lbl">Booked in range<br><span style="font-weight:400">${mdAnNum1(nb/days)} / day</span></div></div>
+      <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--teal)">${ne}</div><div class="an-deliv-lbl">Executed in range<br><span style="font-weight:400">${mdAnNum1(ne/days)} / day</span></div></div>
+      <div class="an-deliv-stat"><div class="an-deliv-val" style="color:${nb-ne>0?'var(--amber)':'var(--green)'}">${nb-ne>0?'+':''}${nb-ne}</div><div class="an-deliv-lbl">Booked minus executed<br><span style="font-weight:400">${nb-ne>0?'work flowing into the queue':'queue drained in this window'}</span></div></div>
+      <div style="font-size:11.5px;color:var(--muted);align-self:center;max-width:340px;line-height:1.55">A booking counts on the day it was <b>sold</b>; an execution counts on the day the work was <b>done</b>. The two rarely land in the same bucket, which is the whole point of splitting them.</div>
+    </div>
+    <div style="padding:14px 20px 4px">${mdAnGrouped(buckets,series,160)}</div>
+    <div style="overflow-x:auto;padding:0 0 6px"><table class="an-inst-table">
+      <thead><tr><th>${buckets.length&&buckets[0].days===1?'Day':'Bucket'}</th><th style="text-align:right">Days</th>
+        <th style="text-align:right">Booked</th><th style="text-align:right">Booked / day</th>
+        <th style="text-align:right">Executed</th><th style="text-align:right">Executed / day</th></tr></thead>
+      <tbody>${buckets.map(b=>`<tr><td style="font-weight:700;white-space:nowrap">${b.label}</td>
+        <td style="text-align:right;color:var(--muted)">${b.days}</td>
+        <td style="text-align:right">${b.vals[0]}</td><td style="text-align:right;color:var(--muted)">${mdAnNum1(b.vals[0]/b.days)}</td>
+        <td style="text-align:right">${b.vals[1]}</td><td style="text-align:right;color:var(--muted)">${mdAnNum1(b.vals[1]/b.days)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <div class="an-sub-head">Turnaround — booking to execution</div>
+    ${mdAnTatHtml(tat,cfg.tatLabel)}
+    <div style="font-size:11.5px;color:var(--muted);padding:0 20px 14px;line-height:1.6">${cfg.tatNote}</div>`;
+}
+
 function drawAnalytics(m){
   window._anDrill={};
   let {installs,audits,ratings}=window._anData||{installs:[],audits:[],ratings:[]};
@@ -2186,6 +2603,35 @@ function drawAnalytics(m){
   // Delivery breakdown
   const origTracked=iCanon.filter(a=>a.originalDelivery).length;
   const confirmedDelayed=iCanon.filter(a=>a.hasDelay).length;
+
+  /* ---- bookings / executions / TAT (see _anBookExecHtml above) ---- */
+  // Audit execution date: the real "Site audit completed" log entry when there is one, else the
+  // scheduled date (orders completed before that log line existed, or with a broken log).
+  // Some live log rows carry a `d` that Date() cannot parse (258 such entries in audit_orders on
+  // 2026-08-18) — _anDateIST would throw RangeError on those and blank the whole tab, so every
+  // date derived from log/DB text goes through this guard first.
+  const _anDateSafe=iso=>{const t=iso?new Date(iso):null;return t&&!isNaN(t)?_anDateIST(iso):null;};
+  const _aExecDate=o=>{
+    let cd=null;
+    for(const l of (o.log||[])){
+      if(!l.t||!l.d||!/site audit completed/i.test(l.t))continue;
+      const d=_anDateSafe(l.d);
+      if(d&&(!cd||d>cd))cd=d;
+    }
+    return cd||o.date||null;
+  };
+  const _dayDiff=(a,b)=>(!a||!b)?null:Math.round((new Date(a)-new Date(b))/86400000);
+  const aBookings=audits.map(o=>({date:_anDateSafe(o.created_at),pi:o.pi}))
+    .filter(x=>x.date&&x.date>=aFrom&&x.date<=aTo);
+  const aExecs=audits.filter(o=>o.status==='completed').map(o=>({o,date:_aExecDate(o)}))
+    .filter(x=>x.date&&x.date>=aFrom&&x.date<=aTo);
+  const aTats=aExecs.map(x=>_dayDiff(x.date,_anDateSafe(x.o.created_at)));
+  // Install: bookings are ORDERS (created_at, once per order); executions are SUB-JOBS, using the
+  // same canonical completion date every other install metric on this tab uses.
+  const iBookings=installs.map(o=>({date:_anDateSafe(o.created_at),pi:o.pi}))
+    .filter(x=>x.date&&x.date>=iFrom&&x.date<=iTo);
+  const iExecs=iCanon.filter(r=>r.status==='completed'||r.status==='partial');
+  const iTats=iExecs.map(r=>_dayDiff(r.date,r.order?_anDateSafe(r.order.created_at):null));
 
   // Need action — live across all non-deleted install orders
   const naCount=installs.filter(o=>{
@@ -2290,7 +2736,7 @@ function drawAnalytics(m){
     aArr.tagged.map(t=>({pi:t.pi,date:t.date,..._aRow(t.order),result:t.bucket==='onTime'?'✓ On time'+(t.name?' ('+t.name+')':''):t.bucket==='late'?'✗ Late'+(t.name?' ('+t.name+')':''):'— No arrival log matched (excluded from %)'})));
   _anSetDrill('aReschedule','Site Audit — Reschedule Rate %','Every audit scheduled in this date range.','audit',
     aFiltered.map(o=>({pi:o.pi,date:o.date,..._aRow(o),result:o.status==='reschedule'?'✓ In reschedule status':'✗ Not in reschedule ('+(JOB_STATUS[o.status]?.l||o.status)+')'})));
-  _anSetDrill('aConversion','Site Audit → Order Conversion %','One row per distinct customer phone audited in this range. "Converted" = that phone placed an install order at any time, even after the range ends.','audit',
+  _anSetDrill('aConversion','Site Audit → Installation Order %','One row per distinct customer phone audited in this range. "Converted" = that phone placed an INSTALLATION order at any time, even after the range ends. Material-only orders are invisible to this tab (they live in the order book, not the ops DB) — the Category tab reports those.','audit',
     [...aPhonesInRange].map(p=>{const rep=aFiltered.find(o=>o.phone===p);return {pi:rep?rep.pi:'',date:rep?rep.date:'',...(rep?_aRow(rep):{customer:'',phone:p,bm:''}),result:aConvertedPhones.includes(p)?'✓ Converted to install order':'✗ Not converted yet'};}));
   _anSetDrill('aRatings','Site Audit — Client Ratings','Every audit with a client rating attached in this range (used by NPS, Q1, Q2, Q3).','audit',
     [...aRatingMap.entries()].map(([o,r])=>({pi:o.pi,date:o.date,..._aRow(o),result:(r.q1_score>=9?'✓ Promoter':r.q1_score<=7?'✗ Detractor':'● Neutral')+' — Q1 '+r.q1_score+' · Q2 '+r.q2_score+' · Q3 '+(r.q3_score??'—')})));
@@ -2350,7 +2796,7 @@ function drawAnalytics(m){
         ${pctCard('Completion %',aCompleted,aTotal,'Audits that reached completed status','','aCompletion')}
         ${pctCard('Auditor Arrival On Time %',aArrTot.onTime,aArrTot.onTime+aArrTot.late,'&gt; 3 min past slot = delayed — one entry per real logged arrival, so a reassigned audit counts each auditor\'s own attempt',aArrNote,'aArrival')}
         ${pctCard('Reschedule Rate %',aRescheduled,aTotal,'Audits currently in reschedule status','','aReschedule')}
-        ${pctCard('Site Audit → Order Conversion %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an install order — any time, even after the range end','','aConversion')}
+        ${pctCard('Site Audit → Installation Order %',aConvertedPhones.length,aPhonesInRange.size,'Distinct audit customers (by phone) in this range who eventually placed an INSTALLATION order — any time, even after the range end. This tab only sees the ops database, so a customer who bought material and skipped installation does not count here: for the full picture (material-only vs material + installation) use the <b>Category</b> tab’s audit → order conversion, which reads the order book.','','aConversion')}
         ${npsCard('NPS Score',AR_nps,AR_prom,AR_det,AR.length,'aRatings')}
         ${ratingCard('Q1 — Overall Service',AR_q1,AR.length,'aRatings')}
         ${ratingCard('Q2 — Auditor Rating',AR_q2,AR.length,'aRatings')}
@@ -2358,6 +2804,10 @@ function drawAnalytics(m){
       </div>
 
       <div style="font-size:11.5px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line)">Note: Rescheduled audits originally scheduled in range but moved to a future date appear under the original date AND the new date. Reschedule Rate counts audits currently in reschedule status within the selected range.</div>
+
+      ${_anBookExecHtml({from:aFrom,to:aTo,bookings:aBookings,executions:aExecs,tats:aTats,
+        bookLabel:'audit sold',execLabel:'audit done',tatLabel:'site audits',
+        tatNote:'One row per completed site audit whose execution lands in this range. Booking date is the audit order\'s created_at (IST); execution date is its “Site audit completed” log entry, falling back to the scheduled date where no such entry exists. A pre-booking made by store staff only appears once it becomes a real audit order — reserved slots are excluded from this tab entirely.'})}
 
       <div class="an-sub-head">Per-Auditor Breakdown</div>
       ${auditors.length?`<div style="overflow-x:auto"><table class="an-inst-table">
@@ -2403,6 +2853,10 @@ function drawAnalytics(m){
         </div>`).join('')}
       </div>
 
+      ${_anBookExecHtml({from:iFrom,to:iTo,bookings:iBookings,executions:iExecs,tats:iTats,
+        bookLabel:'order placed',execLabel:'sub-job done',tatLabel:'installations',
+        tatNote:'Bookings are counted once per install ORDER on its created_at; executions are counted per SUB-JOB on its completion date, so an order with a wallpaper and a flooring sub-job books once and executes twice. TAT is measured from the parent order\'s created_at to each sub-job\'s completion date. Orders created before 1 Jul 2026 carry no log in this tab\'s payload, so their completion date falls back to the scheduled date — the same documented limitation as the metrics above.'})}
+
       <div class="an-sub-head">Delivery Date Tracking</div>
       <div class="an-deliv-row">
         <div class="an-deliv-stat"><div class="an-deliv-val" style="color:var(--red)">${iDelayed}</div><div class="an-deliv-lbl">Delay mentioned in log</div></div>
@@ -2438,7 +2892,7 @@ function drawAnalytics(m){
       <b>Ratings (NPS / Q1 / Q2 / Q3):</b> Attached to each completed order via its own ID (audit: unambiguous; install: matched by assigned-installer email, with a nearest-completion-time fallback) — not an independent date filter on the ratings table. Count is always a subset of that section's completed total. Known limitation: if the same installer completes two subjobs on one order, the rating may occasionally be attributed to the wrong one of the two.<br>
       <b>Arrival on time:</b> Only counted among jobs that actually reached site (audit: completed; install: completed or partially completed), floor 2 Jul 2026 (when tracking began). &gt;3 min late = delayed. N/T = no tracked data in range.<br>
       <b>Material Depot Audit %:</b> Fully automated — phone-number match between install and site-audit orders, no manual "audit type" input is used. Matched against phone numbers for all non-deleted install orders, regardless of creation date.<br>
-      <b>Site Audit → Order Conversion %:</b> Of the distinct customers (by phone) audited in this range, the % who placed an install order at any time — including after the range ends.<br>
+      <b>Site Audit → Installation Order %:</b> Of the distinct customers (by phone) audited in this range, the % who placed an <b>installation</b> order at any time — including after the range ends. This is the ops-DB view and is deliberately narrower than the <b>Category</b> tab's <b>site audit → order conversion</b>, which reads the order book and therefore also counts customers who bought material only and took no installation from us. Expect the Category figure to be the higher of the two.<br>
       <b>Delivery delay (log-based):</b> Any log entry mentioning "delay". <b>Confirmed delayed (new):</b> compares original_delivery_date vs current delivery_date — set for orders created from 2 Jul 2026.<br>
       <b>One row per subjob:</b> reschedule history and multi-day custom installs never produce more than one row per subjob in this section's counts.<br>
       <b>NPS:</b> Promoters Q1 ≥ 9, Detractors Q1 ≤ 7. Range −100 to +100.
@@ -2553,6 +3007,9 @@ async function _drawLiveLocations(m){
   document.getElementById('app').hidden=false;
   detectCity();
   document.getElementById('hdr-name').textContent=SESSION.name;
+  // Fire-and-forget: the target alert must never delay the first paint, and a failure to compute it
+  // must never blank the console (note 94's lesson) — anLoadAlert swallows its own errors.
+  setTimeout(()=>{anLoadAlert().then(()=>{if(currentView==='overview')renderOverview(document.getElementById('main'));});},50);
   if(SESSION.role==='service_mgr'){
     // Service Managers get a scoped, read-only view of this console — Analytics only.
     // See CLAUDE.md note on service_mgr Analytics access: reuses this tab instead of
