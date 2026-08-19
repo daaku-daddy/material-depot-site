@@ -1777,7 +1777,8 @@ function drawerBody(o){
         ${sj.type==='wallpaper'
           ?`<div class="wp-dur-badge"><span>${totalSqft?totalSqft+' sq.ft → ':''}${rolls} roll${rolls===1?'':'s'} → <strong>${slotsN} slot${slotsN>1?'s':''} · ${slotsN*3} hours</strong></span><span style="font-size:18px">🕐</span></div>`
           :`<div class="fl-fullday-note">${sjTypeLabel(sj.type)} — 1 full day per installer visit</div>`}
-        ${sj.status==='completed'?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download Job Card PDF</button>`:''}
+        ${sj.status==='completed'||(sj.status==='partial'&&sj.jobcard&&(sj.jobcard.rooms||[]).length)
+          ?`<button class="btn ghost sm" data-dljc="${sj.id}" style="margin-bottom:10px">&#128229; Download ${sj.status==='partial'?'partial ':''}Job Card PDF</button>`:''}
         ${inDeliveryPhase?'':`<div data-assignsection="${sj.id}"></div>`}
         ${!['completed','partial'].includes(sj.status)&&(sj.items||[]).length>1?`<button class="btn ghost sm" data-splitcat="${sj.id}" style="margin-top:8px">✂ Split into separate visits…</button>`:''}
         ${/_\d+$/.test(sj.id)&&(!sj.assignments||!sj.assignments.length)&&!sj.jobcard?`<button class="btn ghost sm" data-mergesj="${sj.id}" style="margin-top:8px">↩ Merge back into ${sjTypeLabel(sj.type)}</button>`:''}
@@ -2556,7 +2557,10 @@ function wireDrawer(o){
     });
   }
 
-  // ---- download completed subjob PDFs ----
+  // ---- download completed (or partially-completed) subjob PDFs ----
+  // A partial sub-job has a real job card — rooms, photos, installer note — but no client
+  // signature. The button used to render only for status==='completed', which made partial
+  // cards undownloadable here (CLAUDE.md note 114).
   document.querySelectorAll("[data-dljc]").forEach(btn=>btn.onclick=async()=>{
     const sjId=btn.dataset.dljc;
     const orig=btn.innerHTML;btn.disabled=true;btn.textContent="Building…";
@@ -2566,7 +2570,7 @@ function wireDrawer(o){
       const freshSj=(Array.isArray(rows)&&rows[0]&&rows[0].subjobs||[]).find(s=>s.id===sjId);
       const sj=o.subjobs.find(s=>s.id===sjId);
       const jobcard=(freshSj&&freshSj.jobcard)||(sj&&sj.jobcard)||null;
-      if(!jobcard){toast("Job card not submitted yet — installer must complete and sign it first");btn.disabled=false;btn.innerHTML=orig;return;}
+      if(!jobcard){toast("Job card not submitted yet — installer must fill it in on site first");btn.disabled=false;btn.innerHTML=orig;return;}
       await genInstallPDFSM(o,freshSj||sj,jobcard);
     }catch(e){toast("PDF failed: "+e.message);}
     btn.disabled=false;btn.innerHTML=orig;
