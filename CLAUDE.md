@@ -1192,6 +1192,27 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
 
     **Verified in real Chrome, GET-only, against production data**: previewing an SM and clicking Analytics now yields badge `ANALYTICS`, subtitle `Analytics`, "Signed in as Basavaraj Shivaputrappa" and `['execution']` as the only tab; the admin's own top-level Analytics still renders all five tabs (`category, execution, weekly, penetration, targets`); a real top-level `service_mgr` session is unchanged and `rvPreviewSession()` returns `null` for it; previewing a BM and clicking My Shadowing now shows that BM's name. Zero console errors. **Local-testing gotcha worth remembering: the app's own service worker (`sw.js`, cache `md-v2`) and Chrome's HTTP cache will keep serving the pre-edit HTML from `localhost` and make a correct fix look broken** — unregister the SW, delete `caches`, and serve from a fresh port with `Cache-Control: no-store` before concluding anything.
 
+113. **A single failed roster fetch permanently killed auditor/installer assignment for the whole tab (`SM_Audit_Dashboard.html`, `SM_Install_Dashboard.html`, 2026-08-19)**. User reported one order (`ENQ2026081686267`, "Urve", Hyderabad) where the SM had rebooked the slot, the drawer sat in **Site Audit Scheduled**, and **"Assign auditor" was greyed out with no auditor list and no error** — just a blank gap between the conflict note and "Shadowed by".
+
+    **Root cause — it was never about that order.** `loadAuditors()` runs exactly ONCE at boot; the picker reads `AUDITORS` on every drawer open. Two things made a single failed fetch permanent and invisible:
+    - `sbGet` returns `r.json()` **without checking `r.ok`**, and aborts after 12s. So a flaky connection or any 4xx/5xx delivered a PostgREST *error object* where an array was expected, and `Array.isArray(rows)?rows:[]` quietly turned that into **zero auditors** — indistinguishable from "nobody is registered".
+    - Nothing retried it and nothing surfaced it. `catch(e){console.error(...)}` swallowed the failure; the `_setConnErr` banner and the 8s retry loop were wired into `loadOrders()` **only**. Orders kept polling and the dashboard looked completely healthy while the picker was dead.
+
+    In an **installed PWA a tab lives for days**, so one blip at boot silently broke assignment for *every* order until the SM force-quit the app — which is why the same SM could re-assign this order successfully 24 minutes later (log: 11:43 am rebook → 12:07 pm assigned).
+
+    **Reproduced exactly** in real Chrome against production (read-only, fake session, in-memory `status='scheduled'` + `auditor=null`, nothing written): with `AUDITORS=[]` the drawer renders a blank picker and a disabled button, pixel-matching the report. With the roster present it renders 10 rows, 7 selectable — the order, the city (`Hyderabad`, 5 auditors) and the `cityFilter` were all fine, ruling those out first.
+
+    **Fix** (same shape in both dashboards, `loadInstallers()` had the identical flaw for installer assignment):
+    - **A non-array response is a FAILED load, not an empty roster** — it now throws instead of being mapped to `[]`.
+    - **A failed load keeps the last good roster.** A blip while the app is running no longer blanks a working picker; verified — the picker still rendered all 10 rows through a forced fetch rejection.
+    - **Retry with the 8s backoff `loadOrders()` already used**, self-clearing on success, plus a retry on the 30s/60s poll and on `visibilitychange` **only while the roster is known broken** (returning to a backgrounded PWA is exactly when a stale-empty picker gets hit; the healthy case costs nothing extra).
+    - **An empty picker now names its own cause** — `auditorPoolNotice()` / `installerPoolNotice(type)` distinguish *couldn't load* (red, "this is a connection problem, not an empty roster", + **Retry now**) from *none in this city* (amber, points at the CITY toggle) from *none registered at all* (amber, points at Auditors & caps / Installers). They return `null` when the pool has anyone in it, so a healthy picker is byte-for-byte unchanged.
+    - Redraws are guarded on the failure notice actually being on screen (only that branch emits `[data-retry-auditors]`/`[data-retry-installers]`), so a background retry can never discard a drawer the SM is part-way through filling in.
+
+    **Verified in real Chrome**: the notice renders in place of the blank gap; **Retry now** refills the picker (10 rows, 7 selectable, notice gone); the 8s auto-retry heals an already-open drawer with **no user action**; selecting an auditor flips "Assign auditor" from disabled to enabled (Assign itself was never clicked — no writes). Healthy state returns `null` from both notice helpers.
+
+    **The general lesson for this codebase**: any `sbGet` result fed straight into `Array.isArray(x)?x:[]` treats a server error as legitimately-empty data. That is fine for a count or a badge, and dangerous for anything a workflow is gated on. `loadShadowers()`, `loadBmList()` and the `detect*` probes share the pattern but degrade safely (optional shadower, free-text BM fallback, feature stays inert); the two assignment rosters were the ones that hard-blocked work.
+
 
 ## Deployment Workflow
 ```bash

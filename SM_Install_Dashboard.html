@@ -793,13 +793,50 @@ let _connErr=false,_retryTid=null;
 function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner');if(b)b.classList.toggle('show',v);}
 
 /* ============== SUPABASE LOAD ============== */
+/* Same one-shot-load trap the auditor roster had in SM_Audit_Dashboard (see loadAuditors there):
+   INSTALLERS is fetched once at boot but the assignment picker reads it on every drawer open, so a
+   single failed fetch emptied the installer dropdown for the life of the tab — no rows, no error,
+   no way to assign — and an installed PWA keeps that tab alive for days. A non-array response is a
+   FAILED load, not "zero installers", and a failed load keeps the last good roster. */
+let INSTALLERS_ERR=false,_instRetryTid=null;
 async function loadInstallers(){
   try{
     const rows=await sbGet('profiles?role=in.(installer,auditor_installer)&select=id,name,email,installer_type'+(CITY_ENABLED?',city':'')+(AVAIL_ENABLED?',weekly_off,leave_dates':''));
-    INSTALLERS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:'',city:r.city||'Bengaluru',weeklyOff:(r.weekly_off==null?null:r.weekly_off),leaveDates:Array.isArray(r.leave_dates)?r.leave_dates.slice():[]}));
+    if(!Array.isArray(rows))throw new Error((rows&&(rows.message||rows.error))||'installer roster unavailable');
+    INSTALLERS=rows.map(r=>({id:r.id,name:r.name,email:r.email,type:r.installer_type||'flooring',zone:'',phone:'',city:r.city||'Bengaluru',weeklyOff:(r.weekly_off==null?null:r.weekly_off),leaveDates:Array.isArray(r.leave_dates)?r.leave_dates.slice():[]}));
     // snapshot for the Installers-view Save diff (weekly_off / leave_dates)
     INSTALLERS.forEach(a=>{a._orig={weeklyOff:a.weeklyOff,leaveDates:a.leaveDates.slice()};});
-  }catch(e){console.error('loadInstallers',e);}
+    INSTALLERS_ERR=false;
+    if(_instRetryTid){clearTimeout(_instRetryTid);_instRetryTid=null;}
+    // Redraw only if the failure notice is actually on screen (only that branch emits the attribute),
+    // so a successful retry can never blow away a drawer the SM is part-way through filling in.
+    if(document.querySelector('[data-retry-installers]'))render();
+    return true;
+  }catch(e){
+    console.error('loadInstallers',e);
+    INSTALLERS_ERR=true;
+    if(!_instRetryTid)_instRetryTid=setTimeout(()=>{_instRetryTid=null;loadInstallers();},8000);
+    return false;
+  }
+}
+/* Why the installer dropdown is empty, in the SM's words — an empty <select> on its own reads as
+   "nobody is free", which sends the SM chasing a capacity problem that isn't there. `type` is the
+   trade this subjob needs (flooring / wallpaper / wallpanel). Returns null when the pool has
+   someone in it, i.e. render the picker normally. */
+function installerPoolNotice(type){
+  if(installersInCity().filter(i=>i.type===type).length)return null;
+  if(INSTALLERS_ERR)return `<div class="note amber" style="margin-bottom:10px;border-color:var(--red);color:var(--red)">&#9888; <b>Couldn't load the installer list</b>, so there's nobody to assign — this is a connection problem, not a full team. Retrying automatically. <button class="btn ghost sm" data-retry-installers style="padding:3px 10px;font-size:11.5px;margin-left:4px">Retry now</button></div>`;
+  if(INSTALLERS.length)return `<div class="note amber" style="margin-bottom:10px">&#9888; No <b>${type}</b> installers are registered${(CITY_ENABLED&&cityFilter!=='all')?' in <b>'+cityFilter+'</b>':''}. ${(CITY_ENABLED&&cityFilter!=='all')?'Switch the CITY toggle in the header, or add':'Add'} them under <b>Installers</b>.</div>`;
+  return `<div class="note amber" style="margin-bottom:10px">&#9888; No installers are registered yet — add them under <b>Installers</b> before assigning.</div>`;
+}
+function wireInstallerRetry(box){
+  if(!box)return;
+  box.querySelectorAll('[data-retry-installers]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;b.textContent='Retrying…';
+    const ok=await loadInstallers();
+    if(ok)render();
+    else toast('Still cannot reach the server — will keep retrying');
+  });
 }
 // Shadower pool = EVERYONE registered (any role can shadow any installation). store_staff excluded
 // (open-access app, no login session → no personal schedule view). Kept SEPARATE from INSTALLERS so it
@@ -1780,7 +1817,9 @@ function renderAssignSection(o,sj,container){
     const rawSlot=sj.slot||(assigns[0]&&assigns[0].slots&&assigns[0].slots[0])||'';
     const curTime=/^\d{1,2}:\d{2}$/.test(rawSlot)?rawSlot:'09:00';
 
-    let html=`<div class="assign-mode-toggle">
+    // An empty `pool` renders as an empty <select> in either mode — say which of the three reasons it is.
+    const poolNotice=installerPoolNotice(sj.type)||'';
+    let html=poolNotice+`<div class="assign-mode-toggle">
       <div class="assign-mode-btn ${!customMode?'on':''}" data-mode="standard">Standard</div>
       <div class="assign-mode-btn ${customMode?'on':''}" data-mode="custom">Custom / Multi-day</div>
     </div>`;
@@ -1886,6 +1925,7 @@ function renderAssignSection(o,sj,container){
     }
 
     container.innerHTML=html;
+    wireInstallerRetry(container);
 
     // Mode toggle
     container.querySelectorAll('.assign-mode-btn').forEach(btn=>btn.onclick=()=>{
@@ -3201,8 +3241,10 @@ async function saveFoamCfg(){
 Promise.all([detectCity(),detectAvail()]).then(()=>Promise.all([loadInstallers(),loadShadowers(),loadOrders(),loadFoam()])).then(()=>{
   renderCityToggle();
   counts();
-  setInterval(()=>{if(!document.hidden)loadOrders();},60000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
+  // Roster only re-fetches while it is KNOWN to be broken, so the healthy case costs nothing extra.
+  // Returning to a backgrounded PWA is when a stale-empty picker is most likely to be hit.
+  setInterval(()=>{if(document.hidden)return;loadOrders();if(INSTALLERS_ERR)loadInstallers().then(ok=>{if(ok)render();});},60000);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)return;loadOrders();if(INSTALLERS_ERR)loadInstallers().then(ok=>{if(ok)render();});});
 });
 </script>
 <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>

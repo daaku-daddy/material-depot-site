@@ -606,14 +606,62 @@ let _connErr=false,_retryTid=null;
 function _setConnErr(v){_connErr=v;const b=document.getElementById('connBanner');if(b)b.classList.toggle('show',v);}
 
 /* ============== SUPABASE LOAD ============== */
+/* The auditor roster is loaded ONCE at boot, but the assignment picker renders from it on every
+   drawer open — so a single failed fetch left AUDITORS permanently empty for the life of the tab:
+   the picker came up as a blank gap, "Assign auditor" stayed disabled, and nothing anywhere said
+   why. Failing that way is easy (sbGet aborts after 12s on a flaky connection, and it returns
+   r.json() without checking r.ok, so a PostgREST error object arrives where an array was expected)
+   and in an INSTALLED PWA a tab lives for days — one blip at boot silently broke assignment for
+   every order until the SM force-quit the app. loadOrders() already retries behind the connection
+   banner; the roster now gets the same treatment.
+
+   Two rules make the difference: a non-array response is a FAILED load, not "zero auditors
+   registered", and a failed load KEEPS the last good roster rather than blanking a working picker. */
+let AUDITORS_ERR=false,_audRetryTid=null;
 async function loadAuditors(){
   try{
     const rows=await sbGet('profiles?role=in.(site_auditor,auditor_installer)&select=id,name,email,active_from'+(CITY_ENABLED?',city':'')+(AVAIL_ENABLED?',weekly_off,leave_dates':''));
-    AUDITORS=(Array.isArray(rows)?rows:[]).map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null,city:r.city||'Bengaluru',weeklyOff:(r.weekly_off==null?null:r.weekly_off),leaveDates:Array.isArray(r.leave_dates)?r.leave_dates.slice():[]}));
+    if(!Array.isArray(rows))throw new Error((rows&&(rows.message||rows.error))||'auditor roster unavailable');
+    AUDITORS=rows.map(r=>({id:r.id,name:r.name,email:r.email,zone:'',phone:'',cap:DEFAULT_CAP,activeFrom:r.active_from||null,city:r.city||'Bengaluru',weeklyOff:(r.weekly_off==null?null:r.weekly_off),leaveDates:Array.isArray(r.leave_dates)?r.leave_dates.slice():[]}));
     // snapshot for the Auditors & Caps Save diff (active_from / weekly_off / leave_dates)
     AUDITORS.forEach(a=>{a._orig={activeFrom:a.activeFrom,weeklyOff:a.weeklyOff,leaveDates:a.leaveDates.slice()};});
     AUDITORS.forEach(a=>{if(!CAPS[a.id])CAPS[a.id]={};});
-  }catch(e){console.error('loadAuditors',e);}
+    AUDITORS_ERR=false;
+    if(_audRetryTid){clearTimeout(_audRetryTid);_audRetryTid=null;}
+    _refreshAuditorPickersIfEmpty();
+    return true;
+  }catch(e){
+    console.error('loadAuditors',e);
+    AUDITORS_ERR=true;
+    if(!_audRetryTid)_audRetryTid=setTimeout(()=>{_audRetryTid=null;loadAuditors();},8000);
+    return false;
+  }
+}
+/* Why the picker can be empty, in the SM's words. A picker that renders zero rows says nothing —
+   the SM gets a blank gap and a dead button — so each of the three causes has to name itself.
+   Returns null when there IS someone to pick, i.e. render the list normally. */
+function auditorPoolNotice(){
+  if(auditorsInCity().length)return null;
+  if(AUDITORS_ERR)return `<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">&#9888; <b>Couldn't load the auditor list</b>, so there's nobody to assign — this is a connection problem, not an empty roster. Retrying automatically. <button class="btn ghost sm" data-retry-auditors style="padding:3px 10px;font-size:11.5px;margin-left:4px">Retry now</button></div>`;
+  if(AUDITORS.length)return `<div class="note" style="border-color:var(--amber);color:#7a5800;background:#fff8e6">&#9888; No auditors are registered in <b>${cityFilter}</b>. Switch the CITY toggle in the header to assign someone from another city.</div>`;
+  return `<div class="note" style="border-color:var(--amber);color:#7a5800;background:#fff8e6">&#9888; No auditors are registered yet — add them under <b>Auditors &amp; caps</b> before assigning.</div>`;
+}
+function wireAuditorRetry(box){
+  if(!box)return;
+  box.querySelectorAll('[data-retry-auditors]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;b.textContent='Retrying…';
+    const ok=await loadAuditors();
+    if(currentPI)openOrder(currentPI);
+    if(!ok)toast('Still cannot reach the server — will keep retrying');
+  });
+}
+/* Re-render an open drawer once a background retry lands. Guarded on the error notice actually
+   being on screen (only that branch emits [data-retry-auditors]), so a successful poll can never
+   redraw — and discard — a drawer the SM is part-way through filling in. */
+function _refreshAuditorPickersIfEmpty(){
+  if(!currentPI)return;
+  if(!document.querySelector('[data-retry-auditors]'))return;
+  openOrder(currentPI);
 }
 // Shadower pool = EVERYONE registered (any role can shadow any audit — admins, SMs, auditors,
 // installers, etc.). store_staff excluded (the Store app is open-access with no login session, so a
@@ -1730,6 +1778,8 @@ function wireDrawer(o){
       // set — find & exclude it so assigning the reserved auditor to the real order doesn't self-warn.
       const _nm=o.name?o.name.trim().toLowerCase():null;
       const linkedPre=ORDERS.find(r=>r.id!==o.id&&r.status==='slot_reserved'&&r.slot===o.slot&&r.date===o.date&&((r.po&&r.po.length&&r.po[0]===o.pi)||(_nm&&r.name&&r.name.trim().toLowerCase()===_nm)));
+      const notice=auditorPoolNotice();
+      if(notice){list.innerHTML=notice;wireAuditorRetry(list);return;}
       list.innerHTML=auditorsInCity().map(a=>{
         const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
         const cx=auditorConflictOrder(a.id,o.date,o.slot,o.id,linkedPre?.id);
@@ -1947,7 +1997,9 @@ function wireDrawer(o){
     const _enqId=o.po&&o.po.length?o.po[0]:null;
     const _nm=o.name?o.name.trim().toLowerCase():null;
     const linkedSvc=ORDERS.find(r=>r.id!==o.id&&r.status!=='slot_reserved'&&r.status!=='deleted'&&r.status!=='slot_converted'&&r.slot===o.slot&&r.date===o.date&&((_enqId&&r.pi===_enqId)||(_nm&&r.name&&r.name.trim().toLowerCase()===_nm)));
-    list.innerHTML=auditorsInCity().map(a=>{
+    const _slotResNotice=auditorPoolNotice();
+    if(_slotResNotice)list.innerHTML=_slotResNotice,wireAuditorRetry(list);
+    else list.innerHTML=auditorsInCity().map(a=>{
       const cap=capFor(a.id,o.date);const load=auditorLoad(a.id,o.date,o.id);
       const isLinkedAud=linkedSvc&&linkedSvc.auditor===a.id;
       const cx=isLinkedAud?null:auditorConflictOrder(a.id,o.date,o.slot,o.id,linkedSvc?.id);
@@ -2462,8 +2514,11 @@ async function _drawLiveLocations(m){
 render();
 Promise.all([detectCity(),detectAvail(),loadBmList(),detectBmEmail()]).then(()=>Promise.all([loadAuditors(),loadShadowers(),loadOrders()])).then(()=>{
   renderCityToggle();
-  setInterval(()=>{if(!document.hidden)loadOrders();},30000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadOrders();});
+  // The roster only re-fetches while it is KNOWN to be broken, so the healthy case still costs one
+  // query per tick. Coming back to a backgrounded PWA is the moment an SM is most likely to hit the
+  // stale-empty picker, so retry there too rather than waiting out the 8s timer.
+  setInterval(()=>{if(document.hidden)return;loadOrders();if(AUDITORS_ERR)loadAuditors();},30000);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)return;loadOrders();if(AUDITORS_ERR)loadAuditors();});
 });
 </script>
 <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
