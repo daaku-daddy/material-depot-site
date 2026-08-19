@@ -1794,7 +1794,17 @@ function drawerBody(o){
 }
 
 function renderAssignSection(o,sj,container){
-  const minDate=(o.deliveryDate&&o.deliveryDate>=dstr(today))?o.deliveryDate:dstr(today);
+  // Date pickers start at TODAY, not at the delivery date. A hard `min` of
+  // max(today,deliveryDate) left SMs looking at a picker where tomorrow was simply
+  // greyed out with no explanation (and material routinely lands earlier than the
+  // recorded delivery date). The delivery date is now a soft gate: `delivFloor`
+  // drives the inline amber warning below the Date field plus a confirm + logged
+  // override on save — same shape as the 2-hour auditor conflict override (note 52).
+  // Do NOT fold delivFloor back into `min`.
+  const minDate=dstr(today);
+  const delivFloor=(o.deliveryDate&&o.deliveryDate>minDate)?o.deliveryDate:'';
+  const beforeDeliv=d=>!!(delivFloor&&d&&d<delivFloor);
+  const delivConfirmMsg=d=>fmtDate(d)+" is BEFORE the material delivery date ("+fmtDate(delivFloor)+").\n\nOnly book this if the material is already at site. Continue?";
   const pool=installersInCity().filter(i=>i.type===sj.type);
   let assigns=(sj.assignments&&sj.assignments.length)
     ?sj.assignments.map(a=>({...a}))
@@ -1880,9 +1890,10 @@ function renderAssignSection(o,sj,container){
         html+=`<div class="step-bd">`;
         if(sj.type==='wallpaper')html+=`<div style="font-size:11.5px;color:var(--muted)">${rolls} roll${rolls===1?'':'s'} &rarr; ${slotsN*3}h of work. Choose date &amp; start time.</div>`;
         html+=`<div class="dr-row">
-          <div><label class="lbl-sm">Date</label><input type="date" id="stepDate_${sj.id}" class="inp-sm" min="${minDate}" value="${curDate||dstr(today)}"></div>
+          <div><label class="lbl-sm">Date${delivFloor?` <span style="font-weight:400;color:var(--muted)">&middot; delivery ${fmtDate(delivFloor)}</span>`:''}</label><input type="date" id="stepDate_${sj.id}" class="inp-sm" min="${minDate}" value="${curDate||delivFloor||dstr(today)}"></div>
           <div><label class="lbl-sm">Start time</label><input type="time" id="stepTime_${sj.id}" class="inp-sm" value="${curTime}" style="border:1.5px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);background:#fff"></div>
         </div>`;
+        if(delivFloor)html+=`<div class="note amber" id="delivWarn_${sj.id}" style="margin-top:6px;font-size:11.5px;${beforeDeliv(curDate||delivFloor||dstr(today))?'':'display:none'}">&#9888; Before the material delivery date (${fmtDate(delivFloor)}) &mdash; book it only if the material is already at site.</div>`;
         if(sj.status==='reschedule')html+=`<div><label class="lbl-sm">Reschedule reason <span style="color:var(--red)">*</span></label><textarea id="reschedRemark_${sj.id}" placeholder="Reason for reschedule, customer notes&#8230;" style="width:100%;min-height:56px;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;resize:vertical;box-sizing:border-box;font-family:inherit;margin-top:2px"></textarea></div>`;
         html+=`<button class="btn navy sm" id="bookSlot_${sj.id}" style="width:100%">${sj.status==='reschedule'?'Book new slot':'Book slot'}</button>`;
         if(sj.date||sj.assignments&&sj.assignments.length)html+=`<button class="btn danger sm" id="clearSlot_${sj.id}" style="width:100%;margin-top:4px">Clear slot &amp; release installer</button>`;
@@ -1940,12 +1951,23 @@ function renderAssignSection(o,sj,container){
     const editSlotBtn=container.querySelector('#editSlot_'+sj.id);
     if(editSlotBtn)editSlotBtn.onclick=()=>{container._editingSlot=true;draw();};
 
+    // Live amber warning under the Date field — a date change deliberately does not
+    // re-draw the section, so toggle the note in place instead.
+    const stepDateEl=container.querySelector('#stepDate_'+sj.id);
+    const delivWarnEl=container.querySelector('#delivWarn_'+sj.id);
+    if(stepDateEl&&delivWarnEl)stepDateEl.oninput=()=>{delivWarnEl.style.display=beforeDeliv(stepDateEl.value)?'':'none';};
+
     // Book slot (standard mode Step 1)
     const bookBtn=container.querySelector('#bookSlot_'+sj.id);
     if(bookBtn)bookBtn.onclick=async()=>{
       const d=container.querySelector('#stepDate_'+sj.id).value;
       const t=container.querySelector('#stepTime_'+sj.id).value||'09:00';
       if(!d){toast("Please set a date for the slot");return;}
+      let delivOverride='';
+      if(beforeDeliv(d)){
+        if(!confirm(delivConfirmMsg(d)))return;
+        delivOverride=' · ⚠ booked before delivery ('+fmtDate(delivFloor)+') — SM override';
+      }
       const wasResched=sj.status==='reschedule';
       const remarkEl=container.querySelector('#reschedRemark_'+sj.id);
       const remark=remarkEl?(remarkEl.value||'').trim():'';
@@ -1960,7 +1982,7 @@ function renderAssignSection(o,sj,container){
       sj.status='scheduled';
       syncParent(o);
       const logLabel=wasResched?sj.type+' slot rescheduled'+(remark?' — '+remark:''):sj.type+' slot booked';
-      o.log.push({t:logLabel+': '+fmtDate(d)+' · '+slotLabel(t),d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      o.log.push({t:logLabel+': '+fmtDate(d)+' · '+slotLabel(t)+delivOverride,d:new Date().toISOString(),by:'manual',who:SESSION.name});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       await loadOrders();toast(wasResched?'Slot rescheduled':'Slot booked');openOrder(o.pi);
     };
@@ -2006,10 +2028,18 @@ function renderAssignSection(o,sj,container){
     if(saveBtn)saveBtn.onclick=async()=>{
       const valid=assigns.filter(a=>a.installer_id);
       if(!valid.length){toast("Select at least one installer");return;}
+      let delivOverrideNote='';
       if(customMode){
         const missingDate=valid.find(a=>!a.dates||!a.dates.length);
         if(missingDate){toast("Please set dates for each installer before saving");return;}
         if(sj.type==='wallpaper'){const missingSlots=valid.find(a=>!a.slots||!a.slots.length||!a.slots[0]);if(missingSlots){toast("Please set a start time for each wallpaper installer");return;}}
+        // Same soft delivery gate as Step 1 — custom mode owns its own dates, so it
+        // has to ask here rather than inheriting Step 1's confirm.
+        const early=valid.filter(a=>beforeDeliv((a.dates&&a.dates[0])||a.date));
+        if(early.length){
+          if(!confirm(delivConfirmMsg((early[0].dates&&early[0].dates[0])||early[0].date)))return;
+          delivOverrideNote=' · ⚠ starts before delivery ('+fmtDate(delivFloor)+') — SM override';
+        }
       } else {
         // Standard mode: slot already booked — stamp date/time onto each assignment
         const d=sj.date;const t=sj.slot&&/^\d{1,2}:\d{2}$/.test(sj.slot)?sj.slot:'09:00';
@@ -2054,7 +2084,7 @@ function renderAssignSection(o,sj,container){
       }
       syncParent(o);
       const logLabel=wasResched?sj.type+' rescheduled'+(remark?' — '+remark:''):sj.type+' assigned';
-      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', ')+availOverrideNote,d:new Date().toISOString(),by:'manual',who:SESSION.name});
+      o.log.push({t:logLabel+': '+valid.map(a=>a.installer_name).join(', ')+delivOverrideNote+availOverrideNote,d:new Date().toISOString(),by:'manual',who:SESSION.name});
       if(o.id)await sbPatch('install_orders',o.id,{status:o.status,subjobs:o.subjobs,log:o.log});
       await loadOrders();toast(wasResched?'Rescheduled':'Assignments saved');openOrder(o.pi);
     };
