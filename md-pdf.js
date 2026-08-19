@@ -17,6 +17,11 @@
   // Branded page header: logo top-left, title + optional right-side ref (e.g. PI · date) on the
   // right, and a yellow accent rule. Lays out from the top margin; RETURNS the new y so callers
   // can do  y = mdPdfHeader(doc,{title:'…',right:'…',M}).
+  //
+  // `opts.tag` adds a yellow status pill under the ref — for a card that is NOT the final signed
+  // article (a partially-completed install, say), so nobody reads page 1 as a finished job. It has
+  // to be passed to EVERY mdPdfHeader call in a generator, including the page-break `header:()=>`
+  // handed to mdPdfAuditRoom/mdPdfInstallRoom, or the marker vanishes on continuation pages.
   window.mdPdfHeader=function(doc,opts){
     opts=opts||{}; var M=opts.M||40; var W=doc.internal.pageSize.getWidth(); var y=M;
     var logoW=150, logoH=logoW*window.MD_LOGO_H/window.MD_LOGO_W;
@@ -24,7 +29,19 @@
     catch(e){ doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor.apply(doc,window.MD_INK);doc.text('MATERIAL DEPOT',M,y+18); }
     if(opts.title){ doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor.apply(doc,window.MD_INK);doc.text(String(opts.title).toUpperCase(),W-M,y+15,{align:'right'}); }
     if(opts.right){ doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor.apply(doc,window.MD_MUTED);doc.text(String(opts.right),W-M,y+29,{align:'right'}); }
-    y+=logoH+9;
+    var extra=0;
+    if(opts.tag){
+      // Measured, not fixed-width: the pill has to fit whatever wording a caller passes.
+      doc.setFont('helvetica','bold');doc.setFontSize(8);
+      var tg=String(opts.tag).toUpperCase();
+      var pw=doc.getTextWidth(tg)+14, px=W-M-pw, py=y+34;
+      doc.setFillColor.apply(doc,window.MD_YELLOW);
+      doc.roundedRect(px,py,pw,14,3,3,'F');
+      doc.setTextColor.apply(doc,window.MD_INK);
+      doc.text(tg,px+7,py+9.6);
+      extra=8;   // keeps the yellow rule clear of the pill
+    }
+    y+=logoH+9+extra;
     doc.setDrawColor.apply(doc,window.MD_YELLOW);doc.setLineWidth(2.6);doc.line(M,y,W-M,y);
     return y+17;
   };

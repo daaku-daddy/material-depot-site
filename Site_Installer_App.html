@@ -1382,8 +1382,11 @@ async function genPDF(j){
   const navy=MD_INK,blue=MD_INK,muted=MD_MUTED;
   const rooms=j.jobcard.rooms;
   const isPartial=!!(j.jobcard&&j.jobcard.partial);
-  const cardTitle='Installation Job Card'+(isPartial?' (Partial)':'');
-  function header(){y=mdPdfHeader(doc,{title:cardTitle,right:j.pi,M});}
+  // The status now rides in the header's yellow pill (md-pdf.js `tag`) rather than a "(Partial)"
+  // suffix on the title — same wording in all three install generators.
+  const cardTitle='Installation Job Card';
+  const cardTag=isPartial?'Partially completed':null;
+  function header(){y=mdPdfHeader(doc,{title:cardTitle,right:j.pi,M,tag:cardTag});}
   header();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
     body:[['Proforma Invoice No.',j.pi],['Client Name',j.name],['Client Mobile',j.phone],['Site Address',j.addr],['BM',j.bm],['Installer',ME.name],['Type',mdCategoryFor(j.type).pdfLabel],['Date',fmtDate(j.date)]]});
@@ -1397,7 +1400,7 @@ async function genPDF(j){
     const _cat=mdCategoryFor(r.category||r.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'-'),M,y+10);y+=24;
-    y=await mdPdfInstallRoom(doc,r,y,{M,W,H,header:()=>mdPdfHeader(doc,{title:cardTitle,right:j.pi,M})});
+    y=await mdPdfInstallRoom(doc,r,y,{M,W,H,header:()=>mdPdfHeader(doc,{title:cardTitle,right:j.pi,M,tag:cardTag})});
   }
 
   // consent + signature

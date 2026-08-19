@@ -2934,19 +2934,22 @@ async function genInstallPDFSM(o,sj,jobcard){
   const rooms=jobcard.rooms||[];
   const primaryAssign=sj.assignments&&(sj.assignments.find(a=>a.primary)||sj.assignments[0]);
   const installerName=(primaryAssign&&primaryAssign.installer_name)||(sj.installer&&(installerById(sj.installer)||{}).name)||(sj.installer_email||'—');
-  function hdr(){y=mdPdfHeader(doc,{title:'Installation Job Card',right:o.pi,M});}
+  const isPartial=!!(jobcard&&jobcard.partial);
+  const cardTag=isPartial?'Partially completed':null;
+  function hdr(){y=mdPdfHeader(doc,{title:'Installation Job Card',right:o.pi,M,tag:cardTag});}
   hdr();
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',styles:{fontSize:9,cellPadding:5,lineColor:[210,216,225]},columnStyles:{0:{cellWidth:130,fontStyle:'bold',textColor:navy,fillColor:[238,243,249]}},
     body:[['Proforma Invoice No.',o.pi||''],['Client Name',o.name||''],['Client Mobile',o.phone||''],['Site Address',o.addr||''],['BM',o.bm||''],['Installer',installerName],['Type',mdCategoryFor(sj.type).pdfLabel],['Date',fmtDate(sj.date)]]});
   y=doc.lastAutoTable.finalY+10;
-  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text('Rooms installed',M,y+4);y+=10;
+  if(isPartial&&jobcard.note){doc.setFont('helvetica','italic');doc.setFontSize(9.5);doc.setTextColor(...muted);const nl=doc.splitTextToSize('Partial completion note: '+jobcard.note,W-2*M);doc.text(nl,M,y+4);y+=nl.length*12+6;}
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text(isPartial?'Rooms installed so far':'Rooms installed',M,y+4);y+=10;
   doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',headStyles:{fillColor:navy,fontSize:8.5},styles:{fontSize:8.5,cellPadding:4,lineColor:[210,216,225]},head:[['#','Room','Category','SKU']],body:rooms.map((r,i)=>[String(i+1),r.name||'-',mdCategoryFor(r.category||sj.type).pdfLabel,r.sku||'-'])});
   for(let i=0;i<rooms.length;i++){const r=rooms[i];
     doc.addPage();y=M;hdr();
     const _cat=mdCategoryFor(r.category||sj.type);
     doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Room '+(i+1)+': '+(r.name||'-'),M,y+2);y+=14;
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...muted);doc.text(_cat.pdfLabel+'  ·  SKU: '+(r.sku||'-'),M,y+10);y+=24;
-    y=await mdPdfInstallRoom(doc,r,y,{M,W,H,compress:_compressInst,header:()=>mdPdfHeader(doc,{title:'Installation Job Card',right:o.pi,M})});
+    y=await mdPdfInstallRoom(doc,r,y,{M,W,H,compress:_compressInst,header:()=>mdPdfHeader(doc,{title:'Installation Job Card',right:o.pi,M,tag:cardTag})});
   }
   doc.addPage();y=M;hdr();
   doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
