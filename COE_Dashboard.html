@@ -173,8 +173,8 @@ document.getElementById('signOut').onclick=()=>{if(confirm('Sign out?')){localSt
 
 /* ============== CONFIG ============== */
 const $=s=>document.querySelector(s);
-const AUDIT_COLS='id,pi,po,skus,bm,bm_email,customer_name,phone,addr,status,service,slot,date,auditor_name,log,created_at';
-const INSTALL_COLS='id,pi,po,phone,customer_name,created_at,status,custom_wp,delivery_date';
+const AUDIT_COLS='id,pi,po,skus,bm,bm_email,customer_name,phone,addr,status,service,slot,date,auditor_name,auditor_email,log,created_at';
+const INSTALL_COLS='id,pi,po,phone,customer_name,addr,bm,created_at,status,custom_wp,delivery_date,subjobs,log';
 
 // The three call checkpoints the COE runs, in days after the site audit.
 // d1 always applies (it's a service-quality review, done even for converted clients —
@@ -194,6 +194,14 @@ const OUTCOMES=[
   {k:'not_picked',   l:"Didn't pick the call"},
   {k:'wrong_number', l:'Wrong / unreachable number'},
 ];
+// Shared 1-10 score dropdown used wherever a D+1 review call captures the client's
+// rating (audit d1 checkpoint here, install review checkpoint below) — same three
+// questions the job card used to ask on-site, now asked over the phone instead.
+function _scoreField(id,label){
+  return `<div><label>${esc(label)} (1&ndash;10)</label><select id="${id}">
+    <option value="">Select…</option>${[1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}">${n}</option>`).join('')}
+  </select></div>`;
+}
 const BUCKETS=[
   {k:'overdue',  l:'Overdue',          cls:'s-red'},
   {k:'today',    l:'Due today',        cls:'s-amber'},
@@ -205,6 +213,7 @@ const BUCKETS=[
 ];
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ratingsTxt(r){return r?`⭐ ${r.q1}/10 · 👤 ${r.q2}/10 · 🧹 ${r.q3}/10`:'';}
 function mapUrl(a){return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(a);}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2600);}
 function fmtLog(d){if(!d)return '—';const dt=new Date(d);if(isNaN(dt.getTime()))return '—';return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});}
@@ -306,14 +315,21 @@ let wpBucket='breach', wpSearchQ='', wpVendorFilter='all', _wpDrawerId=null, _wp
 // otherwise you land on "Delayed" with nothing in it and think the tab is broken (which is
 // exactly what happens on day one, when every wallpaper row is imported history and no
 // imported row is ever flagged delayed).
-let fuBucketPicked=false, wpBucketPicked=false;
+let fuBucketPicked=false, wpBucketPicked=false, irBucketPicked=false;
 function firstNonEmpty(order,counts,fallback){
   for(var i=0;i<order.length;i++){if(counts[order[i]])return order[i];}
   return fallback;
 }
-let _pollTid=null, _drawerPi=null;
+let _pollTid=null, _drawerPi=null, _irKey=null;
+let irBucket='overdue', irSearchQ='';
+const BUCKETS_IR=[
+  {k:'overdue',  l:'Overdue',   cls:'s-red'},
+  {k:'today',    l:'Due today', cls:'s-amber'},
+  {k:'upcoming', l:'Upcoming',  cls:''},
+  {k:'done',     l:'Reviewed',  cls:'s-green'},
+];
 
-const VIEWS=[{k:'followups',l:'📞 Follow-ups'},{k:'wallpaper',l:'🖼️ Custom wallpaper'},{k:'insights',l:'📉 Where it stalls'}];
+const VIEWS=[{k:'followups',l:'📞 Audit Follow-ups'},{k:'installreviews',l:'📞 Install Reviews'},{k:'wallpaper',l:'🖼️ Custom wallpaper'},{k:'insights',l:'📉 Where it stalls'}];
 
 async function detectCoe(){
   try{const r=await sbGet('audit_orders?select=coe_track&limit=1');COE_ENABLED=Array.isArray(r);}
@@ -333,13 +349,14 @@ const mapAudit=r=>({
   skus:r.skus||[], bm:r.bm||'—', bmEmail:r.bm_email||null,
   name:r.customer_name||'', phone:r.phone||'', addr:r.addr||'',
   status:r.status||'pending', service:r.service||null, slot:r.slot||null, date:r.date||null,
-  auditorName:r.auditor_name||null, createdAt:r.created_at||null, log:r.log||[],
+  auditorName:r.auditor_name||null, auditorEmail:r.auditor_email||null, createdAt:r.created_at||null, log:r.log||[],
   city:r.city||null, coeTrack:(r.coe_track&&typeof r.coe_track==='object')?r.coe_track:{}
 });
 const mapInstall=r=>({
   id:r.id, pi:r.pi||'', po:r.po?String(r.po).split(',').map(s=>s.trim()).filter(Boolean):[],
-  phone:r.phone||'', name:r.customer_name||'', createdAt:r.created_at||null,
-  status:r.status||'', customWp:!!r.custom_wp, deliveryDate:r.delivery_date||null
+  phone:r.phone||'', name:r.customer_name||'', addr:r.addr||'', bm:r.bm||'—', createdAt:r.created_at||null,
+  status:r.status||'', customWp:!!r.custom_wp, deliveryDate:r.delivery_date||null,
+  subjobs:Array.isArray(r.subjobs)?r.subjobs:[], log:Array.isArray(r.log)?r.log:[]
 });
 
 async function loadData(){
@@ -350,7 +367,7 @@ async function loadData(){
     const cols=AUDIT_COLS+(COE_ENABLED?',coe_track':'')+(CITY_ENABLED?',city':'');
     const [aRes,iRes]=await Promise.allSettled([
       sbGet('audit_orders?select='+cols+'&status=eq.completed&order=date.desc'),
-      sbGet('install_orders?select='+INSTALL_COLS+'&status=neq.deleted&order=created_at.desc')
+      sbGet('install_orders_slim?select='+INSTALL_COLS+'&status=neq.deleted&order=created_at.desc')
     ]);
     const aRows=aRes.status==='fulfilled'?aRes.value:null;
     const iRows=iRes.status==='fulfilled'?iRes.value:null;
@@ -418,6 +435,7 @@ function render(){
   // Each module reports its own setup state — they share one SQL file but are independent.
   if(view==='wallpaper')return renderWallpaper(m);
   if(view==='insights')return renderInsights(m);
+  if(view==='installreviews')return renderInstallReviews(m);
   if(COE_ENABLED===false){
     m.innerHTML=`<div class="pagehead"><h1>Follow-ups</h1></div>
       <div class="setup-note">⏳ This dashboard isn't set up yet — ask an Admin to run <b>docs/coe_dashboard.sql</b> in Supabase, then reload this page.</div>`;
@@ -507,7 +525,7 @@ function exportCsv(rows){
 }
 
 /* ============== DRAWER ============== */
-function closeDrawer(){$("#drawer").classList.remove('show');$("#scrim").classList.remove('show');_drawerPi=null;_wpDrawerId=null;render();}
+function closeDrawer(){$("#drawer").classList.remove('show');$("#scrim").classList.remove('show');_drawerPi=null;_wpDrawerId=null;_irKey=null;render();}
 $("#scrim").onclick=closeDrawer;
 
 function openOrder(pi){
@@ -580,6 +598,11 @@ function drawDrawer(){
           </div>
           <label>Outcome</label>
           <select id="cOutcome">${OUTCOMES.map(x=>`<option value="${x.k}">${x.l}</option>`).join('')}</select>
+          <div id="cRatings" style="display:none">
+            ${_scoreField('cq1','Overall Site Audit experience')}
+            ${_scoreField('cq2','Site auditor and their behaviour')}
+            ${_scoreField('cq3','How clean did the auditor leave the site after the audit?')}
+          </div>
           <label>What they said</label>
           <textarea id="cNote" placeholder="Their review / reason / next step…"></textarea>
           <div class="err" id="cErr"></div>
@@ -605,6 +628,7 @@ function drawDrawer(){
           const oc=OUTCOMES.find(x=>x.k===c.outcome);
           return `<div class="logitem">
             <div class="lt">${cp?esc(cp.label):'Ad-hoc call'} · ${c.who==='bm'?'BM':'Client'}</div>
+            ${c.ratings?`<div style="font-size:12.5px;font-weight:700;margin-top:2px">${ratingsTxt(c.ratings)}</div>`:''}
             ${c.note?`<div style="font-size:12.5px;margin-top:2px">${esc(c.note)}</div>`:''}
             <div class="ls">${oc?esc(oc.l):esc(c.outcome||'')} · ${fmtLog(c.ts)}${c.by&&c.by.name?' · '+esc(c.by.name):''}</div>
           </div>`;}).join('')
@@ -630,7 +654,7 @@ function cpHtml(cp){
     <div class="cp-t">${esc(cp.label)}</div>
     <div class="cp-s">${sub}</div>
     ${cp.state!=='done'?`<div class="cp-s" style="color:var(--muted)">${esc(cp.hint)}</div>`:''}
-    ${cp.calls.map(c=>c.note?`<div class="cp-n">${esc(c.note)}</div>`:'').join('')}
+    ${cp.calls.map(c=>c.ratings?`<div class="cp-n">${ratingsTxt(c.ratings)}${c.note?' — '+esc(c.note):''}</div>`:(c.note?`<div class="cp-n">${esc(c.note)}</div>`:'')).join('')}
   </div></div>`;
 }
 
@@ -638,18 +662,42 @@ function wireDrawer(o){
   $("#dclose").onclick=closeDrawer;
   const on=(id,fn)=>{const el=document.getElementById(id);if(el)el.onclick=fn;};
 
+  // The D+1 checkpoint is the one call that captures the actual service-quality review
+  // (the three questions the job card used to ask on-site) — only ever needed there, and
+  // only when the client was actually reached.
+  const syncRatingsVisibility=()=>{
+    const need=$("#cStage").value==='d1'&&$("#cWho").value==='client'&&$("#cOutcome").value==='reached';
+    $("#cRatings").style.display=need?'':'none';
+  };
+  syncRatingsVisibility();
+  $("#cStage").onchange=syncRatingsVisibility;
+  $("#cWho").onchange=syncRatingsVisibility;
+  $("#cOutcome").onchange=syncRatingsVisibility;
+
   on('cSave',async()=>{
     const stage=$("#cStage").value, who=$("#cWho").value, outcome=$("#cOutcome").value;
     const note=($("#cNote").value||'').trim();
     const err=$("#cErr");err.textContent='';
     if(!note){err.textContent='Add a short note on what they said — that\'s the point of the call log.';return;}
+    const needRatings=stage==='d1'&&who==='client'&&outcome==='reached';
+    let ratings=null;
+    if(needRatings){
+      const q1=$("#cq1").value,q2=$("#cq2").value,q3=$("#cq3").value;
+      if(!q1||!q2||!q3){err.textContent='All three ratings are required when the client was reached for the D+1 review.';return;}
+      ratings={q1:+q1,q2:+q2,q3:+q3};
+    }
     const btn=$("#cSave");btn.disabled=true;btn.textContent='Saving…';
     const cp=CHECKPOINTS.find(x=>x.k===stage);
     try{
       await patchCoe(o,
-        t=>{(t.calls=t.calls||[]).push({id:'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),ts:new Date().toISOString(),stage,who,outcome,note,by:{email:SESSION.email,name:SESSION.name}});return t;},
+        t=>{(t.calls=t.calls||[]).push({id:'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),ts:new Date().toISOString(),stage,who,outcome,note,ratings,by:{email:SESSION.email,name:SESSION.name}});return t;},
         (cp?cp.label:'Ad-hoc call')+' — '+(who==='bm'?'BM':'client')+': '+note
       );
+      if(ratings){
+        try{
+          await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:o.auditorEmail,staff_name:o.auditorName,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:note,customer_name:o.name,customer_phone:o.phone});
+        }catch(e){console.error('ratings write failed',e);}
+      }
       toast('Call logged');drawDrawer();
     }catch(e){err.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='Save call';}
   });
@@ -1188,6 +1236,202 @@ function funnelHtml(steps,total){
   }).join('');
 }
 
+/* ============== INSTALLATION D+1 REVIEW CALLS ============== */
+// Installs have no coe_track-equivalent column, and don't need one — this rides entirely
+// inside the existing subjobs jsonb (same technique note 97 used for sj.shadower_email), so
+// there is zero schema/view change. One checkpoint only (D+1), no sales-conversion chasing
+// like the audit follow-ups above — this is pure service-quality review.
+function installCompletionDate(o,sj){
+  const complKey=(sj.type==='wallpaper'?'Wallpaper':'Flooring')+' installation completed';
+  let cd=null;
+  for(const l of (o.log||[])){
+    if(l.t&&l.d&&l.t.startsWith(complKey)){const d=String(l.d).slice(0,10);if(!cd||d>cd)cd=d;}
+  }
+  return cd;
+}
+function installPrimaryInstaller(sj){
+  const asgns=sj.assignments||[];
+  return asgns.find(a=>a.primary)||asgns[0]||(sj.installer_email?{installer_name:sj.installer,installer_email:sj.installer_email}:null);
+}
+function installReviewRows(){
+  const today=todayStr();
+  const out=[];
+  for(const o of INSTALLS){
+    for(const sj of (o.subjobs||[])){
+      if(sj.status!=='completed')continue;
+      const completedOn=installCompletionDate(o,sj);
+      if(!completedOn)continue; // no completion log entry to anchor D+1 to — nothing to schedule yet
+      const calls=(sj.coe_review&&Array.isArray(sj.coe_review.calls))?sj.coe_review.calls:[];
+      const dueOn=addDays(completedOn,1);
+      const state=calls.length?'done':(dueOn<today?'overdue':dueOn===today?'today':'upcoming');
+      out.push({o,sj,completedOn,dueOn,state,primary:installPrimaryInstaller(sj),calls});
+    }
+  }
+  return out;
+}
+function irSearchFilter(rows){
+  if(!irSearchQ)return rows;
+  const q=irSearchQ.toLowerCase();
+  return rows.filter(r=>[r.o.pi,r.o.name,r.o.phone,r.o.bm,r.primary&&(r.primary.installer_name||r.primary.installer_email)].filter(Boolean).join(' ').toLowerCase().includes(q));
+}
+function irCatLabel(sj){return sj.type==='wallpaper'?'Wallpaper':'Wooden Flooring';}
+
+function renderInstallReviews(m){
+  const all=installReviewRows();
+  const counts={};BUCKETS_IR.forEach(b=>counts[b.k]=0);
+  all.forEach(r=>{counts[r.state]=(counts[r.state]||0)+1;});
+  if(!irBucketPicked&&!counts[irBucket])irBucket=firstNonEmpty(BUCKETS_IR.map(b=>b.k),counts,irBucket);
+  const list=irSearchFilter(all.filter(r=>r.state===irBucket))
+    .sort((a,b)=>String(a.dueOn||'9999').localeCompare(String(b.dueOn||'9999')));
+
+  m.innerHTML=`
+    <div class="pagehead">
+      <div><h1>Installation D+1 review calls</h1>
+        <p>Every completed installation sub-job and whether its D+1 quality-review call has been made.</p></div>
+    </div>
+    <div class="stats">
+      ${BUCKETS_IR.map(b=>`<div class="stat ${b.cls} ${irBucket===b.k?'active':''}" data-ib="${b.k}">
+        <div class="sv">${counts[b.k]||0}</div><div class="sl">${b.l}</div></div>`).join('')}
+    </div>
+    <div class="toolbar">
+      <div class="search"><span class="ico">🔎</span><input id="irSearchInput" placeholder="Search client, phone, ENQ, BM, installer…" value="${esc(irSearchQ)}"></div>
+      <div style="font-size:12px;color:var(--muted)">${all.length} completed sub-job${all.length===1?'':'s'} tracked</div>
+    </div>
+    <div class="card">
+      ${list.length?`<table><thead><tr>
+          <th>Client</th><th>Order</th><th>Category</th><th>BM</th><th>Installer</th><th>Next call</th>
+        </tr></thead><tbody>${list.map(irRow).join('')}</tbody></table>`
+        :`<div class="empty"><div class="e-ico">${counts[irBucket]?'🔎':'✅'}</div>${counts[irBucket]?'No rows match your search.':'Nothing in this bucket.'}</div>`}
+    </div>`;
+
+  $("#irSearchInput").oninput=e=>{irSearchQ=e.target.value;renderInstallReviews($("#main"));const el=$("#irSearchInput");el.focus();el.setSelectionRange(el.value.length,el.value.length);};
+  document.querySelectorAll('[data-ib]').forEach(el=>el.onclick=()=>{irBucket=el.dataset.ib;irBucketPicked=true;render();});
+  document.querySelectorAll('tbody tr[data-irkey]').forEach(tr=>tr.onclick=()=>openInstallReview(tr.dataset.irkey));
+}
+
+function irRow(r){
+  const o=r.o,sj=r.sj;
+  let nextTxt;
+  if(r.state==='done')nextTxt=`<span class="chip c-converted"><span class="dot"></span>Reviewed</span>`;
+  else{
+    const cls=r.state==='overdue'?'c-overdue':r.state==='today'?'c-today':'c-upcoming';
+    const when=r.state==='overdue'?`${daysBetween(r.dueOn,todayStr())}d overdue`:r.state==='today'?'today':fmtDate(r.dueOn);
+    nextTxt=`<span class="chip ${cls}"><span class="dot"></span>D+1 · ${when}</span>`;
+  }
+  return `<tr data-irkey="${esc(o.pi)}|${esc(sj.id)}">
+    <td><div class="tname">${esc(o.name||'—')}</div><div class="tsub">${esc(o.phone||'—')}</div></td>
+    <td><div>${fmtDate(r.completedOn)}</div><div class="tsub">${esc(o.pi)}</div></td>
+    <td><span class="catpill ${sj.type==='wallpaper'?'wp':''}">${irCatLabel(sj)}</span></td>
+    <td>${esc(o.bm||'—')}</td>
+    <td>${esc((r.primary&&(r.primary.installer_name||r.primary.installer_email))||'—')}</td>
+    <td>${nextTxt}</td>
+  </tr>`;
+}
+
+function openInstallReview(key){
+  _irKey=key;
+  drawInstallDrawer();
+  $("#drawer").classList.add('show');$("#scrim").classList.add('show');
+}
+
+function findInstallReviewRow(key){
+  const [pi,sjId]=key.split('|');
+  return installReviewRows().find(r=>r.o.pi===pi&&r.sj.id===sjId)||null;
+}
+
+function drawInstallDrawer(){
+  const r=findInstallReviewRow(_irKey);if(!r){closeDrawer();return;}
+  const o=r.o,sj=r.sj;
+  const calls=r.calls.slice().sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
+  $("#drawer").innerHTML=`
+    <div class="dhead">
+      <div><h2>${esc(o.name||'—')}</h2>
+        <div class="sub">${esc(o.pi)} · ${irCatLabel(sj)} · installed ${fmtDate(r.completedOn)}</div></div>
+      <button class="dclose" id="dclose">✕</button>
+    </div>
+    <div class="dbody">
+      <div class="sec"><h3>Who to call</h3><div class="kv">
+        <div class="k">Client</div><div><a href="tel:${esc(o.phone)}">${esc(o.phone||'—')}</a></div>
+        <div class="k">BM</div><div>${esc(o.bm||'—')}</div>
+        <div class="k">Installer</div><div>${esc((r.primary&&(r.primary.installer_name||r.primary.installer_email))||'—')}</div>
+        <div class="k">Category</div><div>${esc(irCatLabel(sj))}</div>
+        <div class="k">Address</div><div>${o.addr?`<a href="${mapUrl(o.addr)}" target="_blank" rel="noopener">📍 ${esc(o.addr)}</a>`:'—'}</div>
+      </div></div>
+
+      <div class="sec"><h3>D+1 review call</h3>
+        <div class="cp">${r.state==='done'?'<div class="cp-ico done">✓</div>':r.state==='overdue'?'<div class="cp-ico over">!</div>':r.state==='today'?'<div class="cp-ico due">•</div>':'<div class="cp-ico">•</div>'}
+          <div style="flex:1;min-width:0">
+            <div class="cp-t">D+1 · Client installation review</div>
+            <div class="cp-s">${r.state==='done'?'Called '+fmtLog(calls[0]&&calls[0].ts):r.state==='overdue'?`Due ${fmtDate(r.dueOn)} · ${daysBetween(r.dueOn,todayStr())} days overdue`:r.state==='today'?'Due today':`Due ${fmtDate(r.dueOn)}`}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec"><h3>Log a call</h3>
+        <div class="form">
+          <label>Outcome</label>
+          <select id="icOutcome">${OUTCOMES.map(x=>`<option value="${x.k}">${x.l}</option>`).join('')}</select>
+          <div id="icRatings" style="display:none">
+            ${_scoreField('icq1','Overall installation experience')}
+            ${_scoreField('icq2','Site installer rating')}
+            ${_scoreField('icq3','How clean did the installer leave the site after the installation?')}
+          </div>
+          <label>What they said</label>
+          <textarea id="icNote" placeholder="Their review / reason / next step…"></textarea>
+          <div class="err" id="icErr"></div>
+          <button class="btn navy" id="icSave">Save call</button>
+        </div>
+      </div>
+
+      <div class="sec"><h3>Call history</h3>
+        ${calls.length?calls.map(c=>{
+          const oc=OUTCOMES.find(x=>x.k===c.outcome);
+          return `<div class="logitem">
+            ${c.ratings?`<div style="font-size:12.5px;font-weight:700">${ratingsTxt(c.ratings)}</div>`:''}
+            ${c.note?`<div style="font-size:12.5px;margin-top:2px">${esc(c.note)}</div>`:''}
+            <div class="ls">${oc?esc(oc.l):esc(c.outcome||'')} · ${fmtLog(c.ts)}${c.by&&c.by.name?' · '+esc(c.by.name):''}</div>
+          </div>`;}).join('')
+        :'<div style="color:var(--muted);font-size:12.5px">No calls logged yet.</div>'}
+      </div>
+    </div>`;
+  wireInstallDrawer(o,sj);
+}
+
+function wireInstallDrawer(o,sj){
+  $("#dclose").onclick=closeDrawer;
+  const syncRatingsVisibility=()=>{$("#icRatings").style.display=$("#icOutcome").value==='reached'?'':'none';};
+  syncRatingsVisibility();
+  $("#icOutcome").onchange=syncRatingsVisibility;
+
+  $("#icSave").onclick=async()=>{
+    const outcome=$("#icOutcome").value;
+    const note=($("#icNote").value||'').trim();
+    const err=$("#icErr");err.textContent='';
+    if(!note){err.textContent='Add a short note on what they said — that\'s the point of the call log.';return;}
+    const needRatings=outcome==='reached';
+    let ratings=null;
+    if(needRatings){
+      const q1=$("#icq1").value,q2=$("#icq2").value,q3=$("#icq3").value;
+      if(!q1||!q2||!q3){err.textContent='All three ratings are required when the client was reached for the D+1 review.';return;}
+      ratings={q1:+q1,q2:+q2,q3:+q3};
+    }
+    const btn=$("#icSave");btn.disabled=true;btn.textContent='Saving…';
+    try{
+      const primary=installPrimaryInstaller(sj);
+      await patchInstallReview(o,sj.id,
+        s=>{s.coe_review=s.coe_review||{};(s.coe_review.calls=s.coe_review.calls||[]).push({id:'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),ts:new Date().toISOString(),outcome,note,ratings,by:{email:SESSION.email,name:SESSION.name}});return s;},
+        'D+1 · Client installation review — '+irCatLabel(sj)+': '+note
+      );
+      if(ratings&&primary){
+        try{
+          await sbPost('ratings',{order_type:'install',pi:o.pi,order_id:o.id,staff_email:primary.installer_email,staff_name:primary.installer_name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:note,customer_name:o.name,customer_phone:o.phone});
+        }catch(e){console.error('ratings write failed',e);}
+      }
+      toast('Call logged');drawInstallDrawer();
+    }catch(e){err.textContent='Failed — '+e.message;btn.disabled=false;btn.textContent='Save call';}
+  };
+}
+
 /* ============== WRITES ============== */
 // Always re-fetches coe_track AND log immediately before merging, then writes both in one
 // PATCH. Same fresh-fetch-then-append pattern as BM_Dashboard's pushJourneyEntry — coe_track
@@ -1209,6 +1453,25 @@ async function patchCoe(o,mutate,logText){
   await sbPatch('audit_orders',o.id,body);
   o.coeTrack=next;
   return next;
+}
+
+// Install-side equivalent of patchCoe — same fresh-fetch-then-append discipline, but the
+// mutation lives inside one subjob object within the shared `subjobs` jsonb array (no
+// coe_track-equivalent column on install_orders, and none needed — see note above).
+async function patchInstallReview(o,sjId,mutate,logText){
+  const rows=await sbGet('install_orders?id=eq.'+o.id+'&select=subjobs,log');
+  if(!Array.isArray(rows)||!rows[0])throw new Error('could not re-read this order');
+  const subjobs=Array.isArray(rows[0].subjobs)?rows[0].subjobs:[];
+  const sj=subjobs.find(s=>s.id===sjId);
+  if(!sj)throw new Error('sub-job not found — it may have changed');
+  mutate(sj);
+  const body={subjobs};
+  const log=Array.isArray(rows[0].log)?rows[0].log:[];
+  log.push({t:logText,d:new Date().toISOString(),by:'manual',who:SESSION.name});
+  body.log=log;
+  o.log=log;
+  await sbPatch('install_orders',o.id,body);
+  return subjobs;
 }
 
 /* ============== BOOT ============== */

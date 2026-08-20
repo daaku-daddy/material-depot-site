@@ -675,7 +675,7 @@ async function openJobCard(o){
     jcHadSign=true;
     rooms=signedTicked.rooms;
     // Backfill safety net: covers orders completed before audit_ticked_history existed, or any
-    // completion whose archive write (above, at signAndComplete time) itself failed.
+    // completion whose archive write (above, at finishAudit time) itself failed.
     _archiveAuditTicked(o.id,signedTicked,'backfill-on-reopen');
     o.log=o.log||[];o.log.push({t:"Reopened signed job card for edit — signature kept on file until re-signed",d:new Date().toISOString(),by:"manual",who:ME.name});
     if(o.id){try{await sbPatch('audit_orders',o.id,{log:o.log});}catch(e){}}
@@ -1044,8 +1044,6 @@ function reviewAndSign(o){
   $("#proceedSign").onclick=()=>showPassToClientAudit(o);
 }
 
-function _starRow(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
-
 function showPassToClientAudit(o){
   clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
   $("#jcFooter").classList.add("hide");
@@ -1056,8 +1054,7 @@ function showPassToClientAudit(o){
       <p style="font-size:13.5px;color:var(--muted);margin:0 0 24px">The client will now complete the final steps:</p>
       <div style="text-align:left;background:var(--bg);border-radius:12px;padding:14px 18px;margin-bottom:28px;line-height:2.2;font-size:13.5px">
         <div><b>Step 1</b> &nbsp; Read &amp; agree to the Terms &amp; Conditions</div>
-        <div><b>Step 2</b> &nbsp; Rate the service (3 questions)</div>
-        <div><b>Step 3</b> &nbsp; Sign the job card</div>
+        <div><b>Step 2</b> &nbsp; Sign the job card</div>
       </div>
       <button class="btn green" id="clientReadyBtn" style="width:100%;justify-content:center;font-size:15px;padding:14px">Client is ready &#8594;</button>
       <button class="btn ghost" id="backToReviewBtn" style="margin-top:10px;width:100%;justify-content:center">&#8592; Back to job card</button>
@@ -1093,54 +1090,10 @@ function showTCsAudit(o){
     </div>`;
   $("#tcAgree").onchange=()=>{$("#tcProceed").disabled=!$("#tcAgree").checked;};
   $("#tcBack").onclick=()=>showPassToClientAudit(o);
-  $("#tcProceed").onclick=()=>signAndComplete(o);
+  $("#tcProceed").onclick=()=>showAuditSignature(o);
 }
 
-function signAndComplete(o){
-  let _ratings={q1:0,q2:0,q3:0,comments:''};
-  function renderRatings(){
-    $("#jcBody").innerHTML=`
-      <div class="card"><h2 style="margin:0 0 14px">Client feedback</h2>
-        <p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Please rate your experience. Tap a number from 1 (lowest) to 10 (highest).</p>
-        <div style="margin-bottom:18px">
-          <label style="font-weight:700;font-size:14px">1. How would you rate the overall Site Audit experience?</label>
-          ${_starRow('q1',_ratings.q1)}
-        </div>
-        <div style="margin-bottom:18px">
-          <label style="font-weight:700;font-size:14px">2. How would you rate your site auditor and their behaviour?</label>
-          ${_starRow('q2',_ratings.q2)}
-        </div>
-        <div style="margin-bottom:18px">
-          <label style="font-weight:700;font-size:14px">3. How clean did the site auditor leave the site after the audit?</label>
-          ${_starRow('q3',_ratings.q3)}
-        </div>
-        <div style="margin-bottom:8px">
-          <label style="font-weight:700;font-size:14px">Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
-          <textarea id="ratingComments" placeholder="Any feedback or comments…" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;min-height:80px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
-        </div>
-      </div>
-      <div class="actions" style="margin-bottom:24px">
-        <button class="btn ghost" id="backFromRatings">&#8592; Back to terms</button>
-        <button class="btn navy" id="proceedToSign">Next: Signature &#8594;</button>
-      </div>`;
-    document.querySelectorAll("[data-star-id]").forEach(btn=>btn.onclick=()=>{
-      const id=btn.getAttribute('data-star-id');const val=+btn.getAttribute('data-star-val');
-      _ratings[id]=val;renderRatings();
-    });
-    $("#ratingComments").oninput=e=>_ratings.comments=e.target.value;
-    $("#backFromRatings").onclick=()=>showTCsAudit(o);
-    $("#proceedToSign").onclick=()=>{
-      if(!_ratings.q1){toast("Please rate the overall experience");return;}
-      if(!_ratings.q2){toast("Please rate the site auditor");return;}
-      if(!_ratings.q3){toast("Please rate the site cleanliness");return;}
-      _ratings.comments=$("#ratingComments").value;
-      showAuditSignature(o,_ratings);
-    };
-  }
-  renderRatings();
-}
-
-function showAuditSignature(o,ratings){
+function showAuditSignature(o){
   const roomSummary=jcRooms.map((r,i)=>{const cat=mdCategoryFor(r.category);const n=(r.segments||[]).length;const segTxt=(cat.segment&&cat.segment.model==='multi')?' &middot; '+n+' '+(cat.segment.segLabel||'wall')+(n===1?'':'s'):'';return `<div class="kv" style="margin-bottom:8px"><div class="k">Room ${i+1}</div><div class="v">${r.name||'(unnamed)'} &middot; ${cat.pdfLabel}${r.variant?' ('+r.variant+')':''} &middot; SKU ${r.sku||'NA'}${segTxt}</div></div>`;}).join("");
   $("#jcBody").innerHTML=`
    <div class="card"><h2>Summary</h2><div class="kv">
@@ -1164,7 +1117,7 @@ function showAuditSignature(o,ratings){
    </div>`;
   const sc=$("#signCanvas");jcSignPad=new SignPad(sc);setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
-  $("#backToPreview").onclick=()=>signAndComplete(o);
+  $("#backToPreview").onclick=()=>showTCsAudit(o);
   $("#finishAudit").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please capture the client's signature");return;}
     clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
@@ -1173,7 +1126,7 @@ function showAuditSignature(o,ratings){
     // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
     let sigImg=jcSignPad.export();
     try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
-    jcSign={img:sigImg,name:$("#signName").value,ratings};
+    jcSign={img:sigImg,name:$("#signName").value};
     o.jobcard={rooms:collectRooms(),sign:jcSign};
     o.status="completed";
     o.log=o.log||[];o.log.push({t:"Site audit completed · JobCard signed",d:new Date().toISOString(),by:"auto",who:ME.name});
@@ -1199,10 +1152,6 @@ function showAuditSignature(o,ratings){
       }catch(e){
         toast("Job card save failed — will retry automatically on next open");
         try{localStorage.setItem('md_audit_pjc_'+o.pi,JSON.stringify({id:o.id,ticked}));}catch(e2){}
-      }
-      // Write ratings
-      try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e){
-        try{await sbPost('ratings',{order_type:'audit',pi:o.pi,order_id:o.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:o.name,customer_phone:o.phone});}catch(e2){console.error('ratings write failed',e2);}
       }
     }
     btn.textContent="Building PDF…";

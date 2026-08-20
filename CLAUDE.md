@@ -34,7 +34,7 @@ Role-based web app for Material Depot's field operations. Plain HTML/CSS/JS, no 
 | `manifest_shadower.json` | PWA manifest for Site_Shadower_App (`start_url: /Site_Shadower_App.html`) |
 | `BM_Dashboard.html` | Business Manager dashboard — read-only "My Orders" (site-audit customer journey) scoped to `bm_email`, plus (once each phase ships) per-segment material selection and a detailed downstream journey timeline. See note 99. |
 | `manifest_bm.json` | PWA manifest for BM_Dashboard (`start_url: /BM_Dashboard.html`) |
-| `COE_Dashboard.html` | Category Operations Executive dashboard — the site audit → order conversion call queue (D+1/D+3/D+14) and the custom wallpaper production tracker. See note 102. |
+| `COE_Dashboard.html` | Category Operations Executive dashboard — the site audit → order conversion call queue (D+1/D+3/D+14, see note 102), the D+1 install review-call queue (see note 117), and the custom wallpaper production tracker. |
 | `manifest_coe.json` | PWA manifest for COE_Dashboard (`start_url: /COE_Dashboard.html`) |
 | `md-cat-analytics.js` | **Shared** category/commercial analytics module behind Admin → Analytics' non-Execution tabs — `window.MD_AN_CATEGORIES` (the analytics category registry), `MD_AN_STORES` (store register + maturity), `MD_AN_SHEET` (the Jun–Aug 2026 workbook figures), the dummy order/cart generator, the compute layer (`mdAnAggregate`/`mdAnWeeks`/`mdAnPenetration`), the target model (`mdAnTargetDefaults`/`mdAnProrate`/`mdAnEvaluate`), the SVG chart primitives and the four tab renderers. **`MD_AN_SOURCE` is the single swap point for going live on Metabase.** Loaded only by Admin.html — see note 111 |
 | `md-wp-track.js` | **Shared** custom-wallpaper production registry — `window.MD_WP_VENDORS`, `MD_WP_STAGES`, `MD_WP_DECISIONS`, `MD_WP_BUCKETS` + the stage/SLA helpers (`mdWpNext`/`mdWpSla`/`mdWpBucket`/`mdWpStageAt`) and the read-only renderer `mdWpLadderHtml`. Single source of truth behind the `wp_production` table. Loaded in COE_Dashboard, SM_Install_Dashboard, BM_Dashboard and Admin — see note 102 |
@@ -171,15 +171,15 @@ Also re-run `docs/supabase_slim_views.sql` (`install_orders_slim` view was exten
   ```
 - Legacy subjobs: use `sj.installer`, `sj.installer_email`, `sj.date`, `sj.slot` directly
 - `sj.shadower_email`/`sj.shadower_name` (note 97): optional per-sub-job shadower (anyone registered, any role) — set in the SM Install assign section alongside the installer, saved inside the `subjobs` jsonb (no schema/view change). Cleared whenever the sub-job's assignments are cleared (reschedule / clear-slot / revert-to-created). Read client-side by `Site_Shadower_App.html`.
+- `sj.coe_review` (note 117): `{calls:[{id,ts,outcome,note,ratings:{q1,q2,q3}|null,by}]}` — the D+1 client-review-call log for this sub-job, written by `COE_Dashboard.html`'s "📞 Install Reviews" tab via `patchInstallReview`. Same zero-schema-change technique as `sj.shadower_email` above. A non-empty `calls[]` means the D+1 review has been done for this sub-job.
 - `primary` flag: first installer defaults to primary. `sj.status` only follows primary's status.
 - `service.audit_by`: `'material_depot'` = MD did pre-audit; `'customer'` = customer-provided measurement
 - **⚠️ POLL NOTE**: SM_Install_Dashboard polls `install_orders_slim` with `status=neq.deleted`. Site_Installer_App polls `install_orders_slim` with `status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)`. The slim view strips `photos` from all `rooms[]` inside each `subjob.jobcard` — this dramatically reduces poll payload. On-demand fetches (PDF download, opening order detail drawer) use the full `install_orders` table directly. SQL for the slim view: `docs/supabase_slim_views.sql`.
 
 ### Table: `ratings`
 - Columns: `id` (uuid), `created_at`, `order_type` ('audit'|'install'), `pi`, `order_id` (uuid), `staff_email`, `staff_name`, `q1_score` (1-10), `q2_score` (1-10), `q3_score` (1-10, added 2026-06-19), `comments`, `customer_name`, `customer_phone`
-- Written after every completed job (after client signs)
-- `q1` = overall experience, `q2` = staff person rating, `q3` = site cleanliness after work
-- Ratings also stored in `audit_ticked.sign.ratings` / `subjobs[i].jobcard.sign.ratings`
+- `q1` = overall experience, `q2` = staff person rating, `q3` = site cleanliness after work. `staff_email`/`staff_name` is always the auditor/installer being rated, never whoever is logging the call.
+- **Writer changed 2026-08-20 (note 117)**: previously written by the field app itself right after client sign-off (and duplicated into `audit_ticked.sign.ratings`/`subjobs[i].jobcard.sign.ratings`). Now written by `COE_Dashboard.html` from a D+1 phone call, 1+ days after completion — `sign.ratings` no longer exists on job cards completed after this date. Table schema itself is unchanged; see note 117 for why Analytics needed no changes despite the write timing shifting. Pre-2026-08-20 rows and their `sign.ratings` mirror are untouched historical data.
 - **DB column to add**: `ALTER TABLE ratings ADD COLUMN IF NOT EXISTS q3_score int CHECK (q3_score BETWEEN 1 AND 10);`
 - Create SQL: `CREATE TABLE ratings (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, created_at timestamptz DEFAULT now(), order_type text CHECK (order_type IN ('audit','install')), pi text NOT NULL, order_id uuid, staff_email text, staff_name text, q1_score int CHECK (q1_score BETWEEN 1 AND 10), q2_score int CHECK (q2_score BETWEEN 1 AND 10), q3_score int CHECK (q3_score BETWEEN 1 AND 10), comments text DEFAULT '', customer_name text, customer_phone text);`
 
@@ -407,13 +407,14 @@ Location is "somewhat mandatory" for field workers — see note 58. Identical lo
 - **Poll query**: explicit column list without `audit_ticked`; `audit_ticked` fetched on-demand in `openJobCard` and PDF download
 - `autoFlip()` flips `scheduled → callpending` 3 hours before slot start; guards against unknown slot IDs
 
-#### Job Card Completion Flow (auditor app, new as of 2026-06-19):
+#### Job Card Completion Flow (auditor app; ratings screen removed 2026-08-20, see note 117):
 1. Auditor fills room cards (photos, measurements, sketches)
 2. Auditor clicks **"Proceed to client →"** → `showPassToClientAudit(o)`
 3. **Handover screen**: "Please hand the phone to the client" with step list. Back = return to review.
-4. **Terms & Conditions screen** (`showTCsAudit(o)`): T&C text (constant `MD_TC`) + mandatory checkbox. Agree → `signAndComplete(o)`.
-5. **Ratings screen** (`signAndComplete(o)`): 3 mandatory questions (Q1 overall, Q2 auditor, Q3 cleanliness) + optional comments. All 3 required before proceeding.
-6. **Signature screen** (`showAuditSignature(o, ratings)`): sign canvas + client name. "Generate PDF & complete".
+4. **Terms & Conditions screen** (`showTCsAudit(o)`): T&C text (constant `MD_TC`) + mandatory checkbox. Agree → `showAuditSignature(o)`.
+5. **Signature screen** (`showAuditSignature(o)`): sign canvas + client name. "Generate PDF & complete".
+
+No ratings are collected here anymore — see "Ratings — Q1/Q2/Q3 Questions" below for where that moved.
 
 #### Critical: autosave race condition fix (2026-06-23 — two-layer defence)
 The seq counter alone is insufficient. The seq check runs before `await sbPatch(draft)`, but once the fetch is in-flight it cannot be cancelled. If the completion write resolves first and THEN the draft fetch resolves, the draft silently overwrites photos, sign, and ratings. Confirmed on ENQ2026062175756 (June 23): completion log entry at 07:14:21Z but DB still had `draft:true, photos:[]`.
@@ -429,14 +430,15 @@ The seq counter alone is insufficient. The seq check runs before `await sbPatch(
 - **Poll query**: `install_orders?select=*&status=not.in.(pending,deliv_ontime,deliv_delayed,deleted)`
 - `isPrimary` field: from `myAssign.primary === true`, or first assignment if no flag set
 
-#### Job Card Completion Flow (installer app, new as of 2026-06-19):
+#### Job Card Completion Flow (installer app; ratings screen removed 2026-08-20, see note 117):
 Primary installer flow:
 1. Fill room cards → **"Proceed to client →"** → `showPassToClientInst(j)`
-2. **Handover screen** → **T&C screen** (`showTCsInst(j)`, constant `MD_TC_INSTALL`) → `signAndFinish(j)`
-3. **Ratings screen** (`signAndFinish(j)`): Q1 overall, Q2 installer, Q3 cleanliness — all mandatory
-4. **Signature screen** (`showInstallSignature(j, ratings)`) → save + PDF
+2. **Handover screen** → **T&C screen** (`showTCsInst(j)`, constant `MD_TC_INSTALL`) → `showInstallSignature(j)`
+3. **Signature screen** (`showInstallSignature(j)`) → save + PDF
 
-Additional installer: marks own assignment complete via `markAdditionalComplete(j)` — no ratings/signature.
+No ratings are collected here anymore — see "Ratings — Q1/Q2/Q3 Questions" below for where that moved.
+
+Additional installer: marks own assignment complete via `markAdditionalComplete(j)` — no ratings/signature (unchanged).
 
 #### Critical: autosave race condition fix (2026-06-23 — same two-layer defence)
 Same fix as auditor app. `showPassToClientInst(j)` does the early cancel. `_completionWrite` is set before `sbPatch` in `reallyDone`, storing `{subjobs, status:parentStatus, log:j.parentLog}`. Autosave re-issues after draft write. `markAdditionalComplete` also does early cancel. Installer autosave is more dangerous (read-modify-write: `sbGet` → mutate → `sbPatch`) — seq checks placed after `sbGet` and before `sbPatch`, plus `_completionWrite` catches the post-write race.
@@ -482,13 +484,29 @@ Same fix as auditor app. `showPassToClientInst(j)` does the early cancel. `_comp
   - **Known limitation**: install order `phone` (used by Material Depot Audit % and Site Audit → Order Conversion %) is only populated for orders created on/after 2026-07-01 (merged in via a separate `installLogRes` query scoped to that date) — conversions/matches involving earlier install orders won't be detected. Documented in the Analytics footer.
 
 ## Ratings — Q1/Q2/Q3 Questions
-| Question | Auditor app | Installer app |
+
+**Collected via a D+1 phone call run by the Category Ops Executive, not on-site, as of 2026-08-20
+(note 117).** The job card no longer asks these — collecting them right before the client signs,
+handed the phone by the very person being rated, structurally biased every score upward. COE
+calls the client the day after audit/installation completion instead:
+- **Audit**: `COE_Dashboard.html`'s pre-existing `coe_track` **D+1 "Client audit review"**
+  checkpoint (📞 Audit Follow-ups tab) — the questions below appear in that checkpoint's "Log a
+  call" form when the outcome is "Spoke to them."
+- **Install**: new `COE_Dashboard.html` **📞 Install Reviews** tab, one D+1 checkpoint per
+  completed sub-job, same questions.
+
+| Question | Audit | Install |
 |---|---|---|
 | Q1 | Overall Site Audit experience | Overall site installation experience |
 | Q2 | Site auditor and their behaviour | Site installer rating |
 | Q3 | How clean did the auditor leave the site after the audit? | How clean did the installer leave the site after the installation? |
 
-All 3 are mandatory (1–10 scale). Comments optional. Stored in `sign.ratings` and `ratings` table.
+All 3 are mandatory (1–10 scale) whenever the client was actually reached. Written straight to
+the `ratings` table (unchanged schema — `staff_email`/`staff_name` is the auditor/installer who
+did the job, not the COE caller); no longer stored in `sign.ratings` (that key no longer exists on
+job cards completed after 2026-08-20 — see note 117). Historical job cards completed before that
+date still carry `sign.ratings` and continue to display/PDF correctly wherever already guarded on
+its truthiness.
 
 ## Job Card Data Shapes
 
@@ -1051,7 +1069,7 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
     - **How to apply**: if resuming this work, re-read the plan file for the full schema/phasing rationale (why `segment.material` is co-located rather than a parallel structure, why `bm_journey` is a flat array with a human-overridable `round` number, why material-entry should be restricted to `status==='completed'` orders with its own fresh-fetch-before-write guard against `audit_ticked`'s well-documented race history — notes 2/64/66/72). Before deploying Phase 1, run the two pending SQL blocks above (profiles role constraint, audit_orders `bm_email`+index) — Phase 1 is otherwise fully inert without them (routes to a "not set up" page, no BM accounts can be created). Each phase gets its own explicit deploy go-ahead, per this repo's standing convention.
 
 102. **Category Operations Executive (COE) Dashboard — the calling/coordination role, 2026-08-12** (plan file `~/.claude/plans/rosy-moseying-pinwheel.md`). The COE chases an order across every other stakeholder (client, BM, vendor, warehouse, SM) and records what it found. The whole role ran on two spreadsheets: a site-audit→order conversion sheet (ENQ / client / categories / auditor / BM / audit date / Order Placed Y-N / `D+1 (Audit Review)` / `D+3 (BM review in case a new cart is not made)` / Result + free-text customer & BM reviews) and a per-vendor custom-wallpaper sheet (`indura updates.xlsx`, one row per **MD ID / PO**). New role `coe` (login gate also admits `admin`), new `COE_Dashboard.html`, new shared `md-wp-track.js`, new `wp_production` table + `audit_orders.coe_track`. SQL: `docs/coe_dashboard.sql`.
-    - **Follow-up queue (`coe_track` jsonb on `audit_orders`, 1:1 — rides the row like `bm_journey`)**: shape is an **append-only `calls[]` log with every checkpoint derived from it** (`{calls:[{id,ts,stage,who,outcome,note,by}], order_placed, result, lost_reason, snooze_until}`) — deliberately no second "is D+1 done" copy that could fall out of sync. `CHECKPOINTS` = D+1 client review (**always applies**, even to converted clients — the source sheet fills it in for them too), D+3 BM chase and D+14 BM+client, both of which drop away the moment an order exists. `bucketFor` is action-first and mutually exclusive (lost → snoozed → overdue → due today → converted → upcoming → open), so the stat tiles always sum to the total (note 82's lesson). Only `status='completed'` audits enter the queue.
+    - **Follow-up queue (`coe_track` jsonb on `audit_orders`, 1:1 — rides the row like `bm_journey`)**: shape is an **append-only `calls[]` log with every checkpoint derived from it** (`{calls:[{id,ts,stage,who,outcome,note,ratings:{q1,q2,q3}|null,by}], order_placed, result, lost_reason, snooze_until}` — `ratings` added 2026-08-20, note 117, present only on `d1`/reached calls) — deliberately no second "is D+1 done" copy that could fall out of sync. `CHECKPOINTS` = D+1 client review (**always applies**, even to converted clients — the source sheet fills it in for them too), D+3 BM chase and D+14 BM+client, both of which drop away the moment an order exists. `bucketFor` is action-first and mutually exclusive (lost → snoozed → overdue → due today → converted → upcoming → open), so the stat tiles always sum to the total (note 82's lesson). Only `status='completed'` audits enter the queue.
     - **`orderPlacedFor(order, installsByPhone)` is THE swappable conversion signal** — a manual COE tick wins, else an install order with the **same phone created on or after that audit's date**. Scoped **per audit**, unlike `Admin.html`'s analytics Conversion % (note 58/67, `aConvertedPhones`) which asks "did this phone ever order" — a repeat client would otherwise show a fresh audit as already converted off an older order. The user's stated plan is to move this workflow to another internal system where carts/product-only orders are visible; **when that happens this one function is the only thing that changes**. Until then the manual tick covers what this app cannot see (carts, product-only orders — `/api/pos` only exposes site-audit and installation POs).
     - **Every COE write mirrors into the order's own `log[]`** in the same PATCH, so COE activity shows up in the SM, Admin and BM timelines with zero changes to those files.
     - **Custom wallpaper production (`wp_production` table, one row per PO — NOT per order)**: the same ENQ legitimately has several MD IDs in the real sheet (e.g. `ENQ2026072882498` under both `MD7202676723` and `MD8202677763`), and a PO can exist before the install order is ever created in this app — which is why this cannot hang off `install_orders`. Unique index on `(pi, md_id)`. 11 stages from `MD_WP_STAGES`. **Only the first five carry a target** (6h/6h/2h/2h/1day, straight from the vendor sheet's own bracketed headers) and read as **"SLA breached"**. **The six post-approval steps deliberately have NO `slaH` at all** — see the "measured, not policed" decision below.
@@ -1236,6 +1254,16 @@ SM schedule calendar: `.calschedwrap`, `.caldays`, `.daycol`, `.daycol.sel`, `.d
     - **This is a real, NEW instance of the note-112 preview-identity bug, caught before shipping, not just a copy-paste of the fix**: `COE_Dashboard.html`'s new link is a real `<a href>`, and it is reached from an app the Role Viewer can preview inline. So all THREE touched files (not just the two SM dashboards) needed `rvPreviewSession()` — `COE_Dashboard.html` itself needed it too, for the return trip: preview a COE → click into the SM view (now guarded) → click "← My dashboard" back to `COE_Dashboard.html`, which reads `getSession()` alone would show the ADMIN's own account. **The rule from note 112 generalizes cleanly: any file reachable by a real href from inside a previewed app needs the guard, and that set grows every time a new inter-app link is added — grep for new `<a href="*.html">`s whenever one is.**
     - **Verified in real Chrome** against both a local static serve and the live production URL, with the real COE account (`tarun.ranjan@materialdepot.com`, Tarun Ranjan): COE → Service Manager dashboard → Installations → back to My dashboard, full round trip, zero console errors, correct role label at every step. Confirmed a real `service_mgr` session is unaffected (still "Service Manager", no back-link). SHA-256 byte-diffed all three files against `material-depot-site.vercel.app` post-deploy.
     - **How to apply**: if a future "COE/role X still can't see Y" report comes in and a fix already shipped in `materialdepot-crm`, check THIS repo too before assuming it's done — the two are separate codebases with separate deploys (see [[project_crm_migration]] and the "Three overlapping role models" section there), and this repo is the one with the live SM/COE apps this note's user actually meant.
+
+117. **Review/NPS/cleanliness ratings moved from on-site (job card) to a D+1 phone call run by COE (`Site_Auditor_App.html`, `Site_Installer_App.html`, `COE_Dashboard.html`, 2026-08-20)**. Taking Q1/Q2/Q3 right before the client signs — with the auditor/installer who did the work handing over the phone — structurally biased every score upward. The whole flow moved to a call made the day after (D+1), by the Category Ops Executive, never by the field worker being rated.
+    - **Field apps**: the ratings screen (`signAndComplete`/`signAndFinish`, between the T&C screen and the signature screen) is deleted from both apps' completion flow — client acknowledgement now goes T&C → signature directly, with no ratings step and no `sbPost('ratings',...)` at completion. `jcSign`/`jobcard.sign` no longer carries a `ratings` key for any order completed from this point on.
+    - **`ratings` table schema is completely unchanged** — same columns, same shape — only *who* writes to it and *when* changed. This works because `Admin.html`'s `_anAttachAuditRatings`/`_anAttachInstallRatings` (Analytics NPS/Q1/Q2/Q3) join on `order_id` (install: + installer-email/nearest-timestamp disambiguation), never on `ratings.created_at` — so a rating written a day or more after completion still attaches to the order's original completion-date bucket. **Analytics needed zero code changes.**
+    - **Do NOT touch PDF/history display code** (`genPDF` in both field apps, `genAuditPDF`/`genInstallPDF` and the `⭐/👤/🧹` badges in `Admin.html`) — all of it is already guarded on `sign.ratings` truthiness, so it silently stops rendering for new orders (which never get a `ratings` key again) while still correctly showing every pre-existing historical job card/PDF. Stripping these blocks would be a regression against old records, not a cleanup.
+    - **Audit side**: extends the pre-existing `coe_track` **`d1` · "Client audit review"** checkpoint (note 102) in `COE_Dashboard.html` — that checkpoint already existed as a generic call-log-only follow-up; the "Log a call" form now shows 3 mandatory 1–10 score dropdowns (`_scoreField`) whenever stage is `d1` and outcome is `reached`, and on save also posts to `ratings` (`staff_email`/`staff_name` = the order's actual `auditor_email`/`auditor_name`, newly added to `AUDIT_COLS`/`mapAudit` — previously only the name was fetched). Scores are stored on the call entry itself (`{...call, ratings:{q1,q2,q3}}`) so call history/`cpHtml` show what was given. No other checkpoint (`d3`/`d14`) involves ratings.
+    - **Install side is entirely new** (installs had no `coe_track`-equivalent and COE didn't even fetch `subjobs` before this). New **"📞 Install Reviews"** tab, one D+1 checkpoint per **completed sub-job** (not per order — a mixed order's flooring and wallpaper sub-jobs review independently). Completion date is derived the same way `Admin.html`'s `_anInstallCanon` already does (scan `o.log[]` for `(type==='wallpaper'?'Wallpaper':'Flooring')+' installation completed'`); primary installer via `sj.assignments.find(a=>a.primary)||sj.assignments[0]`. Calls are stored as `sj.coe_review.calls[]` **inside the existing `subjobs` jsonb** (same zero-schema-change technique note 97 used for `sj.shadower_email`) via new `patchInstallReview` (mirrors `patchCoe`'s fresh-fetch-then-append discipline exactly, just against `install_orders`'s `subjobs`/`log` instead of `coe_track`/`log`). The install fetch switched from raw `install_orders` to `install_orders_slim` (to safely add `subjobs` to the poll without reintroducing the photo-bloat problem notes 96/113 already fixed) and now also selects `addr`/`bm`/`log`. **Zero SQL required for either side of this whole feature.**
+    - **Expected day-one characteristic, not a bug**: every historical completed install sub-job shows "Overdue" immediately (D+1 has already passed for all of them) — mirrors exactly what happened when the audit follow-up queue first shipped (227 overdue on day one, see [[project_coe_dashboard]]).
+    - Renamed the "📞 Follow-ups" tab label to "📞 Audit Follow-ups" (cosmetic) now that a sibling "📞 Install Reviews" tab exists.
+    - **How to apply**: if a future ask touches the on-site job card ratings again, remember they no longer exist there — collection lives exclusively in `COE_Dashboard.html`'s two review-call tabs now. If NPS/Q1/Q2/Q3 numbers in Admin Analytics ever look "delayed" or wrong, check the `ratings` table's `created_at` vs the call log's `ts` before assuming a bug — a multi-day lag between order completion and the rating being written is now normal, by design.
 
 ## Deployment Workflow
 ```bash

@@ -1189,8 +1189,6 @@ async function _writePartial(j,note,sign){
   toast("Saved as partially completed");
 }
 
-function _starRowInst(id,val){return `<div class="star-row">${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="star-btn${val===n?' on':''}" data-star-id="${id}" data-star-val="${n}">${n}</button>`).join('')}</div>`;}
-
 function showPassToClientInst(j){
   clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
   document.querySelector(".footer").classList.add("hide");
@@ -1201,8 +1199,7 @@ function showPassToClientInst(j){
       <p style="font-size:14px;color:var(--muted);margin:0 0 24px">The customer will now complete the final steps:</p>
       <div style="text-align:left;background:var(--bg);border-radius:12px;padding:14px 18px;margin-bottom:28px;line-height:2.2;font-size:14px">
         <div><b>Step 1</b> &nbsp; Read &amp; agree to the Terms &amp; Conditions</div>
-        <div><b>Step 2</b> &nbsp; Rate the service (3 questions)</div>
-        <div><b>Step 3</b> &nbsp; Provide their signature</div>
+        <div><b>Step 2</b> &nbsp; Provide their signature</div>
       </div>
       <button class="bigbtn green" id="clientReadyBtnInst">Customer is ready &#8594;</button>
       <button class="bigbtn ghost" id="backToReviewBtnInst" style="margin-top:10px">&#8592; Back to job card</button>
@@ -1236,52 +1233,10 @@ function showTCsInst(j){
     <button class="bigbtn ghost" id="tcBackInst" style="margin-top:10px">&#8592; Back</button>`;
   $("#tcAgreeInst").onchange=()=>{$("#tcProceedInst").disabled=!$("#tcAgreeInst").checked;};
   $("#tcBackInst").onclick=()=>showPassToClientInst(j);
-  $("#tcProceedInst").onclick=()=>signAndFinish(j);
+  $("#tcProceedInst").onclick=()=>showInstallSignature(j);
 }
 
-function signAndFinish(j){
-  let _ratings={q1:0,q2:0,q3:0,comments:''};
-  function renderRatings(){
-    $("#jcBody").innerHTML=`
-      <div class="panel"><h2 style="margin:0 0 14px">Customer feedback</h2>
-        <p style="font-size:14px;color:var(--muted);margin:0 0 20px">Please rate your experience. Tap a number from 1 (lowest) to 10 (highest).</p>
-        <div style="margin-bottom:20px">
-          <label style="font-weight:700;font-size:15px">1. How would you rate the overall site installation experience?</label>
-          ${_starRowInst('q1',_ratings.q1)}
-        </div>
-        <div style="margin-bottom:20px">
-          <label style="font-weight:700;font-size:15px">2. How would you rate your site installer?</label>
-          ${_starRowInst('q2',_ratings.q2)}
-        </div>
-        <div style="margin-bottom:20px">
-          <label style="font-weight:700;font-size:15px">3. How clean did the site installer leave the site after the installation?</label>
-          ${_starRowInst('q3',_ratings.q3)}
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-weight:700;font-size:15px">Comments <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
-          <textarea id="ratingComments" placeholder="Any feedback or comments…" style="width:100%;margin-top:10px;padding:12px;border:1.5px solid var(--line);border-radius:12px;font-size:14px;min-height:90px;resize:vertical;font-family:inherit;box-sizing:border-box">${_ratings.comments}</textarea>
-        </div>
-      </div>
-      <button class="bigbtn navy" id="proceedToSignInst">Next: Customer signature &#8594;</button>
-      <button class="bigbtn ghost" id="backFromRatingsInst" style="margin-top:10px">&#8592; Back to terms</button>`;
-    document.querySelectorAll("[data-star-id]").forEach(btn=>btn.onclick=()=>{
-      const id=btn.getAttribute('data-star-id');const val=+btn.getAttribute('data-star-val');
-      _ratings[id]=val;renderRatings();
-    });
-    $("#ratingComments").oninput=e=>_ratings.comments=e.target.value;
-    $("#backFromRatingsInst").onclick=()=>showTCsInst(j);
-    $("#proceedToSignInst").onclick=()=>{
-      if(!_ratings.q1){toast("Please rate the overall experience");return;}
-      if(!_ratings.q2){toast("Please rate the installer");return;}
-      if(!_ratings.q3){toast("Please rate the site cleanliness");return;}
-      _ratings.comments=$("#ratingComments").value;
-      showInstallSignature(j,_ratings);
-    };
-  }
-  renderRatings();
-}
-
-function showInstallSignature(j,ratings){
+function showInstallSignature(j){
   $("#jcBody").innerHTML=`
     <div class="panel"><h2>Customer signature <span class="reqstar">★</span></h2>
       <div class="note">Show the phone to the customer. Ask them to sign that the installation is done and they are happy.</div>
@@ -1293,7 +1248,7 @@ function showInstallSignature(j,ratings){
     <button class="bigbtn ghost" id="backToPreviewFromSign" style="margin-top:10px">&#8592; Back</button>`;
   jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
-  $("#backToPreviewFromSign").onclick=()=>signAndFinish(j);
+  $("#backToPreviewFromSign").onclick=()=>showTCsInst(j);
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
     const btn=$("#reallyDone");btn.disabled=true;btn.textContent="Saving…";
@@ -1304,7 +1259,7 @@ function showInstallSignature(j,ratings){
     try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
     const finRooms=collectRooms();
     try{await _finalizeRoomPhotos(finRooms);}catch(e){/* best-effort — never block completion on this */}
-    j.jobcard={rooms:finRooms,sign:{img:sigImg,name:$("#signName").value,ratings}};
+    j.jobcard={rooms:finRooms,sign:{img:sigImg,name:$("#signName").value}};
     j.status="completed";
     j.parentLog=j.parentLog||[];
     j.parentLog.push({t:jTypeLabel(j.type)+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
@@ -1357,10 +1312,6 @@ function showInstallSignature(j,ratings){
       }catch(e){
         toast("Job saved on your phone — will finish syncing automatically");
         try{localStorage.setItem('md_install_pjc_'+j.pi+'_'+j.sjId,JSON.stringify({id:j.id,sjId:j.sjId,jobcard:j.jobcard}));}catch(e2){}
-      }
-      // Write ratings to dedicated table for reporting/NPS (best-effort, unrelated to the retry queue)
-      try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,q3_score:ratings.q3,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e){
-        try{await sbPost('ratings',{order_type:'install',pi:j.pi,order_id:j.id,staff_email:ME.email,staff_name:ME.name,q1_score:ratings.q1,q2_score:ratings.q2,comments:ratings.comments||'',customer_name:j.name,customer_phone:j.phone});}catch(e2){console.error('ratings write failed',e2);}
       }
     }
     // The job is already saved to the DB above — a PDF failure (jsPDF OOM on a low-end phone, a
