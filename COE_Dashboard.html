@@ -129,6 +129,7 @@
   <div><div class="t">MATERIAL DEPOT</div><div class="h">Category Operations</div></div>
   <div class="right">
     <a href="Site_Shadower_App.html">👁 My shadowing</a>
+    <a href="SM_Audit_Dashboard.html" title="Read-only: orders, timeline logs, ops/perf/analytics" style="background:#efe9fb;color:var(--purple);font-weight:800;padding:5px 10px;border-radius:8px">Service Manager dashboard &rarr;</a>
     <div class="who"><b id="coeName"></b><div>Category Ops</div></div>
     <div class="avatar" id="signOut" title="Sign out"></div>
   </div>
@@ -150,8 +151,19 @@ async function sbGet(q){const ctrl=new AbortController();const tid=setTimeout(()
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),15000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),15000);try{const r=await fetch(SB_URL+'/rest/v1/'+t,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.error||'DB error '+r.status);return j;}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+/* Role Viewer preview identity — see the matching helper in Admin.html (note 112). The
+   SM dashboards' new "← My dashboard" link back to here is a real href, so returning from
+   a preview of a COE's Service Manager view needs this exactly like the other inbound
+   preview-link targets already do. */
+function rvPreviewSession(){
+  try{
+    if(window.top===window.self)return null;
+    const p=window.parent&&window.parent.__mdRolePreview;
+    return (p&&p.role)?{name:p.name,email:p.email,role:p.role}:null;
+  }catch(e){return null;}   /* cross-origin parent — not one of our previews */
+}
 
-const SESSION=getSession();
+const SESSION=rvPreviewSession()||getSession();
 if(!SESSION||!['coe','admin'].includes(SESSION.role)){window.location.href='Login.html';}
 history.replaceState(null,'',location.href);
 window.addEventListener('popstate',()=>history.pushState(null,'',location.href));

@@ -285,7 +285,8 @@
   <div class="right">
     <span id="cityToggle" style="display:none"></span>
     <a id="myShadowing" href="Site_Shadower_App.html" title="Sites you're assigned to shadow" style="align-self:center;margin-right:12px;background:#efe9fb;color:var(--purple);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&#128064; My shadowing</a>
-    <div class="who"><b id="smName">…</b><br>Service Manager</div>
+    <a id="backToCoe" href="COE_Dashboard.html" style="display:none;align-self:center;margin-right:12px;background:#efe9fb;color:var(--purple);font-weight:800;font-size:13px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap">&larr; My dashboard</a>
+    <div class="who"><b id="smName">…</b><br><span id="smRoleLabel">Service Manager</span></div>
     <div class="avatar" id="signOut" title="Sign out" style="cursor:pointer" id="smAvatar">SM</div>
   </div>
 </header>
@@ -480,12 +481,32 @@ async function sbPost(t,b){const ac=new AbortController();const tid=setTimeout((
 async function sbPatch(t,id,b){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(b),signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 async function sbDel(t,id){const ac=new AbortController();const tid=setTimeout(()=>ac.abort(),12000);try{const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:H,signal:ac.signal});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.message||j.error||'DB error '+r.status);}}finally{clearTimeout(tid);}}
 function getSession(){try{return JSON.parse(localStorage.getItem('md_user')||'null');}catch{return null;}}
+/* Role Viewer preview identity — see the matching helper in Admin.html. A COE's own
+   "Service Manager dashboard →" link (COE_Dashboard.html) is a real href, so previewing a
+   COE from the Role Viewer and clicking it needs this exactly like Admin.html/
+   Site_Shadower_App.html already do for their own inbound preview links (note 112). */
+function rvPreviewSession(){
+  try{
+    if(window.top===window.self)return null;
+    const p=window.parent&&window.parent.__mdRolePreview;
+    return (p&&p.role)?{name:p.name,email:p.email,role:p.role}:null;
+  }catch(e){return null;}   /* cross-origin parent — not one of our previews */
+}
 
-const SESSION=getSession();
-if(!SESSION||!['service_mgr','admin'].includes(SESSION.role)){window.location.href='Login.html';}
+const SESSION=rvPreviewSession()||getSession();
+if(!SESSION||!['service_mgr','admin','coe'].includes(SESSION.role)){window.location.href='Login.html';}
 history.replaceState(null,'',location.href);
 window.addEventListener('popstate',()=>history.pushState(null,'',location.href));
 document.getElementById('smName').textContent=SESSION?SESSION.name:'';
+/* A COE reaches this dashboard via their own "Service Manager dashboard →"
+   toggle (COE_Dashboard.html) for full site-audit/install visibility — same
+   read-only-in-spirit pattern as the training-era role switcher (note 85).
+   The role label and the back-link both reflect that without touching
+   anything a real service_mgr/admin session sees. */
+if(SESSION&&SESSION.role==='coe'){
+  document.getElementById('smRoleLabel').textContent='Category Ops Executive';
+  document.getElementById('backToCoe').style.display='inline-block';
+}
 (function(){const av=document.getElementById('signOut');if(av&&SESSION)av.textContent=SESSION.name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();})();
 
 /* ============== CONFIG ============== */
