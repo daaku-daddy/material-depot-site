@@ -122,9 +122,9 @@
       var adjRows=isV2?(window.mdAdjRows?window.mdAdjRows(cat,nroom,seg.adjust):[]):[];
       if(adjRows.length){ ensure(34+adjRows.length*20);
         doc.autoTable(window.mdBrandGrid({startY:y, margin:{left:M,right:M},
-          head:[['Area adjustment','Size','sq.ft','Reason']],
-          body:adjRows.map(function(a){return [a.label, a.size, a.area, a.reason||'—'];}),
-          columnStyles:{0:{cellWidth:78,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL},1:{cellWidth:104},2:{cellWidth:52}}}));
+          head:[['Area adjustment','Shape','Size','sq.ft','Reason']],
+          body:adjRows.map(function(a){return [a.label, a.shape, a.size, a.area, a.reason||'—'];}),
+          columnStyles:{0:{cellWidth:78,fontStyle:'bold',textColor:window.MD_INK,fillColor:window.MD_LABELFILL},1:{cellWidth:64},2:{cellWidth:96},3:{cellWidth:48}}}));
         y=doc.lastAutoTable.finalY+8;
       }
       if(isV2 && seg.prereq && cat.prerequisites){

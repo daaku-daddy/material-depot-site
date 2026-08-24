@@ -753,10 +753,12 @@ function addRoom(restore){
     vs.onchange=()=>{
       const prev=room.variant, next=vs.value||null;
       const unitFlips=mdUnitFor(cat,{v:room.v,variant:prev})!==mdUnitFor(cat,{v:room.v,variant:next});
-      const hasData=room.segments.some(s=>['height','width','length'].some(k=>String(s.fields&&s.fields[k]||'')!=='')||(s.adjust||[]).some(a=>String(a.h||'')!==''||String(a.w||'')!==''));
+      const hasData=room.segments.some(s=>['height','width','length'].some(k=>String(s.fields&&s.fields[k]||'')!=='')||(s.fields&&s.fields.areaMode==='Custom'&&String(s.fields.area||'')!=='')||(s.adjust||[]).some(a=>String(a.h||'')!==''||String(a.w||'')!==''||String(a.area||'')!==''));
       if(prev&&next&&unitFlips&&hasData&&!confirm('Switching to '+next+' changes the measurement unit from '+mdUnitFor(cat,{v:room.v,variant:prev})+' to '+mdUnitFor(cat,{v:room.v,variant:next})+'.\n\nThe measurements already entered will be cleared so they can be re-taken in the new unit. Continue?')){vs.value=prev;return;}
       room.variant=next;
-      if(prev&&next&&unitFlips)room.segments.forEach(s=>{['height','width','length','area','adjArea','netArea','areaW','rolls'].forEach(k=>{delete s.fields[k];});s.adjust=[];});
+      // A Custom-mode area is a direct sq.ft entry with no unit of its own, so a unit flip doesn't
+      // make it wrong the way a height/width typed in the old unit would be — leave it in place.
+      if(prev&&next&&unitFlips)room.segments.forEach(s=>{(s.fields&&s.fields.areaMode==='Custom'?['height','width','length','adjArea','netArea','areaW','rolls']:['height','width','length','area','adjArea','netArea','areaW','rolls']).forEach(k=>{delete s.fields[k];});s.adjust=[];});
       renderSegments();autosave();
     };
     varRow.appendChild(vs);}else room.variant=null;}
@@ -819,7 +821,8 @@ function addRoom(restore){
       const wrap=el('div');wrap.appendChild(el('label',null,f.label));let inp;
       if(f.input==='select'){inp=document.createElement('select');(f.opts||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;inp.appendChild(op);});if(seg.fields[f.k]===undefined||seg.fields[f.k]===null)seg.fields[f.k]=(f.opts&&f.opts[0])||'';inp.value=seg.fields[f.k];}
       else{inp=document.createElement('input');if(f.input==='decimal')inp.setAttribute('inputmode','decimal');inp.value=(seg.fields[f.k]!==undefined&&seg.fields[f.k]!==null)?seg.fields[f.k]:'';}
-      if(f.derived){inp.readOnly=true;inp.style.background='#f4f6f8';inp.style.color='var(--muted)';derivedNodes[f.k]=inp;}
+      const overrideEditable=f.derived&&f.editableIf&&f.editableIf(seg.fields);
+      if(f.derived&&!overrideEditable){inp.readOnly=true;inp.style.background='#f4f6f8';inp.style.color='var(--muted)';derivedNodes[f.k]=inp;}
       else if(f.input==='select'){inp.addEventListener('change',()=>{seg.fields[f.k]=inp.value;mdComputeDerived(cat,seg.fields,room);autosave();renderFields(seg,box);});}
       else{const upd=()=>{seg.fields[f.k]=inp.value;recalc();autosave();};inp.addEventListener('input',upd);inp.addEventListener('change',upd);}
       wrap.appendChild(inp);grid.appendChild(wrap);
@@ -827,37 +830,64 @@ function addRoom(restore){
     renderAdjust(seg,box,recalc,()=>renderFields(seg,box));
     recalc();
   }
-  // ---- per-segment area adjustments (note 109): add or subtract a small area that belongs to THIS
-  // wall/floor rather than to a room of its own — a door or window to deduct, a niche to add — each
-  // with the reason it was taken. Dimensions are in the segment's own unit; the signed sq.ft total
-  // lands in fields.adjArea and flows through net area -> wastage -> rolls. ----
+  // ---- per-segment area adjustments (note 109, extended): add or subtract a small area that
+  // belongs to THIS wall/floor rather than to a room of its own — a door or window to deduct, a
+  // niche to add — each with a shape (Rectangle/Triangle compute from dimensions; Other skips
+  // dimensions and takes a typed area directly), a reason and a photo. Dimensions are in the
+  // segment's own unit; the signed sq.ft total lands in fields.adjArea and flows through net
+  // area -> wastage -> rolls. A shape change re-renders the row (different fields shown) rather
+  // than updating in place, same as any other structural toggle in this form (variant/skirtKind). ----
   function renderAdjust(seg,box,recalc,rerender){
     const cat=MD_CATEGORIES[room.category],u=mdUnitFor(cat,room),segLabel=(cat.segment&&cat.segment.segLabel||'segment').toLowerCase();
     seg.adjust=seg.adjust||[];
     const hl=el('div');hl.style.cssText='font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 2px';hl.textContent='Area adjustments (optional)';box.appendChild(hl);
-    const hint=el('div',null,'Add or subtract a small area for this '+segLabel+' — e.g. subtract a door or window opening. Give a reason for each one.');
+    const hint=el('div',null,'Add or subtract a small area for this '+segLabel+' — e.g. subtract a door or window opening. Give a reason and a photo for each one.');
     hint.style.cssText='font-size:12px;color:var(--muted);margin-bottom:4px';box.appendChild(hint);
     seg.adjust.forEach((a,ai)=>{
+      const shape=a.shape||'Rectangle', isOther=shape==='Other';
       const c=el('div');c.style.cssText='border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:8px;background:#fff';
       // Label-left / input-right, one field per line — the same vertical layout the install SKU rows
       // use, so two short number fields can never be confused for one another.
       const gr=el('div');gr.style.cssText='display:grid;grid-template-columns:minmax(88px,40%) 1fr;gap:7px 10px;align-items:center';
       const mk=(labelText,node)=>{const l=el('div',null,labelText);l.style.cssText='font-size:12.5px;color:var(--muted);font-weight:600';gr.appendChild(l);gr.appendChild(node);};
       const sign=document.createElement('select');[['-','Subtract'],['+','Add']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];if((a.sign||'-')===o[0])op.selected=true;sign.appendChild(op);});
-      const hI=document.createElement('input');hI.setAttribute('inputmode','decimal');hI.value=a.h||'';
-      const wI=document.createElement('input');wI.setAttribute('inputmode','decimal');wI.value=a.w||'';
-      const aI=document.createElement('input');aI.readOnly=true;aI.style.background='#f4f6f8';aI.style.color='var(--muted)';
+      const shapeSel=document.createElement('select');[['Rectangle','Rectangle'],['Triangle','Triangle'],['Other','Other (type area directly)']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];if(shape===o[0])op.selected=true;shapeSel.appendChild(op);});
       const rI=document.createElement('input');rI.placeholder='e.g. Door opening';rI.value=a.reason||'';
-      const paint=()=>{const v=mdAdjSum(cat,room,[a]);aI.value=v?((v>0?'+':'')+v):'';rI.style.borderColor=(v&&!String(rI.value).trim())?'var(--red)':'';};
-      const upd=()=>{a.sign=sign.value;a.h=hI.value;a.w=wI.value;a.reason=rI.value;paint();recalc();autosave();};
-      [sign,hI,wI,rI].forEach(n=>{n.addEventListener('input',upd);n.addEventListener('change',upd);});
-      mk('Add or subtract',sign);mk('Height ('+u+')',hI);mk('Width ('+u+')',wI);mk('Area (sq.ft)',aI);mk('Reason',rI);
+      const upd=()=>{a.sign=sign.value;a.reason=rI.value;paint();recalc();autosave();};
+      shapeSel.addEventListener('change',()=>{
+        a.shape=shapeSel.value;
+        if(a.shape==='Other'){a.h='';a.w='';} else {a.area='';}
+        rerender();autosave();
+      });
+      [sign,rI].forEach(n=>{n.addEventListener('input',upd);n.addEventListener('change',upd);});
+      mk('Add or subtract',sign);mk('Shape',shapeSel);
+      let aI,paint;
+      if(isOther){
+        aI=document.createElement('input');aI.setAttribute('inputmode','decimal');aI.value=a.area||'';
+        paint=()=>{rI.style.borderColor=(parseFloat(a.area)&&!String(rI.value).trim())?'var(--red)':'';};
+        aI.addEventListener('input',()=>{a.area=aI.value;paint();recalc();autosave();});
+        aI.addEventListener('change',()=>{a.area=aI.value;paint();recalc();autosave();});
+        mk('Area (sq.ft)',aI);
+      }else{
+        const dim1=shape==='Triangle'?'Base':'Height', dim2=shape==='Triangle'?'Height':'Width';
+        const hI=document.createElement('input');hI.setAttribute('inputmode','decimal');hI.value=a.h||'';
+        const wI=document.createElement('input');wI.setAttribute('inputmode','decimal');wI.value=a.w||'';
+        aI=document.createElement('input');aI.readOnly=true;aI.style.background='#f4f6f8';aI.style.color='var(--muted)';
+        const upd2=()=>{a.h=hI.value;a.w=wI.value;paint();recalc();autosave();};
+        [hI,wI].forEach(n=>{n.addEventListener('input',upd2);n.addEventListener('change',upd2);});
+        paint=()=>{const v=mdAdjSum(cat,room,[a]);aI.value=v?((v>0?'+':'')+v):'';rI.style.borderColor=(v&&!String(rI.value).trim())?'var(--red)':'';};
+        mk(dim1+' ('+u+')',hI);mk(dim2+' ('+u+')',wI);mk('Area (sq.ft)',aI);
+      }
+      mk('Reason',rI);
       c.appendChild(gr);
+      a.photos=a.photos||[];
+      const photoHl=el('div');photoHl.style.cssText='font-size:11.5px;color:var(--muted);font-weight:600;margin-top:8px';photoHl.textContent='Photo';
+      c.appendChild(photoHl);c.appendChild(mkPhotos(a.photos));
       const del=el('button','btn warn sm','Remove adjustment');del.style.marginTop='8px';del.onclick=()=>{seg.adjust.splice(ai,1);rerender();autosave();};
       c.appendChild(del);box.appendChild(c);paint();
     });
     const add=el('button','btn ghost sm','+ Add adjustment');add.style.marginTop='8px';
-    add.onclick=()=>{seg.adjust.push({sign:'-',h:'',w:'',reason:''});rerender();autosave();};
+    add.onclick=()=>{seg.adjust.push({sign:'-',shape:'Rectangle',h:'',w:'',area:'',reason:'',photos:[]});rerender();autosave();};
     box.appendChild(add);
   }
   // ---- per-segment prerequisite checklist (OK / Not OK / N/A + optional note) ----
@@ -920,8 +950,8 @@ function collectRooms(){return jcRooms.map(r=>({v:r.v||MD_ROOM_V,category:r.cate
   sketchStrokes:r._sketch?r._sketch.strokes:(r._sketchStrokes||[]),
   segments:(r.segments||[]).map(s=>({id:s.sid,facing:s.facing||null,fields:Object.assign({},s.fields),photos:(s.photos||[]).slice(),prereq:Object.assign({},s.prereq),
     // Adjustment rows are stored verbatim (note 109) — including a half-typed one, so a resumed
-    // draft never loses a row mid-entry. Every renderer drops rows with no height x width.
-    adjust:(s.adjust||[]).map(a=>({sign:a.sign||'-',h:a.h||'',w:a.w||'',reason:a.reason||''})),
+    // draft never loses a row mid-entry. Every renderer drops rows with no computed/typed area.
+    adjust:(s.adjust||[]).map(a=>({sign:a.sign||'-',shape:a.shape||'Rectangle',h:a.h||'',w:a.w||'',area:a.area||'',reason:a.reason||'',photos:(a.photos||[]).slice()})),
     flagged:mdPrereqFlagged({prereq:s.prereq})}))}));}
 // One last upload attempt for any segment photo still stuck as a base64 fallback (weak
 // connectivity when it was taken, note 96) — runs right before the completion write so
@@ -985,18 +1015,26 @@ function showSaveStatus(state){
 /* ============== REVIEW + SIGN ============== */
 function reviewAndSign(o){
   if(jcRooms.length===0){toast("Add at least one room");return;}
-  // Soft gate (note 109): an area adjustment without a stated reason is the whole point of the
-  // feature missing, but a field auditor mid-visit is never hard-blocked over it — acknowledge and
-  // the job card records it as given (matching this app's soft-gate convention for field workers).
+  // Soft gate (note 109, extended): a missing adjustment reason/photo, or a missing photo on a
+  // custom-measured wall/floor, is never a hard block on a field auditor mid-visit — acknowledge
+  // once and the job card records it as given (matching this app's soft-gate convention).
   const _noReason=jcRooms.some(r=>(r.segments||[]).some(s=>mdAdjMissingReason(mdCategoryFor(r.category),r,s.adjust)));
-  if(_noReason&&!confirm('One or more area adjustments have no reason written against them.\n\nThe reason is what tells the office why the area was added or subtracted. Continue without it?'))return;
+  const _noAdjPhoto=jcRooms.some(r=>(r.segments||[]).some(s=>mdAdjMissingPhoto(mdCategoryFor(r.category),r,s.adjust)));
+  const _noCustomPhoto=jcRooms.some(r=>(r.segments||[]).some(s=>s.fields&&s.fields.areaMode==='Custom'&&!(s.photos&&s.photos.length)));
+  if(_noReason||_noAdjPhoto||_noCustomPhoto){
+    const issues=[];
+    if(_noReason)issues.push('a reason for an area adjustment');
+    if(_noAdjPhoto)issues.push('a photo for an area adjustment');
+    if(_noCustomPhoto)issues.push('a photo for a custom-measured wall/floor');
+    if(!confirm('Missing: '+issues.join(', ')+'.\n\nThese help the office understand what was measured/adjusted and why. Continue without them?'))return;
+  }
   $("#jcFooter").classList.add("hide");
   const roomCards=jcRooms.map((r,i)=>{
     const cat=mdCategoryFor(r.category);const multi=cat.segment&&cat.segment.model==='multi';
     const segHtml=(r.segments||[]).map((s,si)=>{
       const meas=mdFieldsFor(cat,r).filter(f=>{const v=s.fields&&s.fields[f.k];return v!==undefined&&v!==null&&String(v)!=='';}).map(f=>`<div class="k">${f.label}</div><div class="v">${s.fields[f.k]}</div>`).join('');
       const adjRows=mdAdjRows(cat,r,s.adjust);
-      const adj=adjRows.length?`<div class="kv" style="margin-top:6px">${adjRows.map(a=>`<div class="k">${a.label} ${a.size}</div><div class="v" style="color:${a.neg?'var(--red)':'var(--green)'}">${a.area} sq.ft${a.reason?` <span style="color:var(--muted)">- ${a.reason}</span>`:' <i style="color:var(--red)">- no reason given</i>'}</div>`).join('')}</div>`:'';
+      const adj=adjRows.length?`<div class="kv" style="margin-top:6px">${adjRows.map(a=>`<div class="k">${a.label} ${a.size}</div><div class="v" style="color:${a.neg?'var(--red)':'var(--green)'}">${a.area} sq.ft${a.reason?` <span style="color:var(--muted)">- ${a.reason}</span>`:' <i style="color:var(--red)">- no reason given</i>'}${a.photos.length?'':' <i style="color:var(--red)">- no photo</i>'}</div>`).join('')}</div>`:'';
       const prq=(cat.prerequisites||[]).filter(p=>s.prereq&&s.prereq[p.k]&&s.prereq[p.k].status).map(p=>{const st=s.prereq[p.k].status;const col=st==='Not OK'?'var(--red)':(st==='OK'?'var(--green)':'var(--muted)');return `<div class="k">${p.label}</div><div class="v" style="color:${col}">${st}${s.prereq[p.k].note?' - '+s.prereq[p.k].note:''}</div>`;}).join('');
       const photos=(s.photos||[]).map(p=>`<img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex:0 0 auto;">`).join('');
       const flagged=mdPrereqFlagged({prereq:s.prereq});

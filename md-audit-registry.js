@@ -33,6 +33,19 @@
      Order of the derived chain: gross area -> ± adjustments -> net area -> + wastage -> rolls. */
   // Effective (post-adjustment) area a wastage/roll calculation should work from.
   var effArea=function(v){ var a=_n(v.adjArea); return a? r2(_n(v.area)+a) : _n(v.area); };
+  /* ---- MANUAL AREA MODE (irregular walls/floors) -----------------------------------------
+     Some walls/floors can't be generalised as one length x height. `fields.areaMode` (absent
+     = 'Normal', today's behaviour) lets the auditor switch a segment to 'Custom' and type the
+     total area directly instead. `showIf`/`skipIf`/`editableIf` below are the three hooks that
+     make this work with zero changes to any renderer: `showIf` (already a generic mechanism —
+     see the skirting fields) hides height/width when Custom; `skipIf` (new, honoured by
+     mdComputeDerived) stops the area formula from overwriting a manually-typed value; `editableIf`
+     (new, honoured by the auditor form) turns the normally read-only area field into a plain
+     input. mdAuditRoomHtml/mdPdfAuditRoom need no changes — both already render fields generically
+     from "does this field have a non-blank value", so a hidden height/width just stays blank. */
+  var AREA_MODE_FIELD=function(){ return {k:'areaMode', group:'Measurements',
+    label:'How to measure this wall/floor', input:'select', opts:['Normal','Custom']}; };
+  var _skipDim=function(v){ return v.areaMode==='Custom'; };
   // `adjArea` is `derived` (read-only in the form, shown by every renderer) but has NO compute —
   // mdComputeDerived skips it and the capture form maintains it from the adjustment rows.
   var ADJ_FIELD=function(){ return {k:'adjArea', group:'Measurements', label:'Adjustments (± sq.ft)', derived:true}; };
@@ -51,9 +64,10 @@
   var WALL_FIELDS=function(u,opts){
     opts=opts||{};
     var f=[
-      {k:'height', group:'Measurements', label:'Wall height ('+u+')', input:'decimal'},
-      {k:'width',  group:'Measurements', label:'Wall width ('+u+')',  input:'decimal'},
-      {k:'area',   group:'Measurements', label:'Area (sq.ft)', derived:true,
+      AREA_MODE_FIELD(),
+      {k:'height', group:'Measurements', label:'Wall height ('+u+')', input:'decimal', showIf:function(v){return !_skipDim(v);}},
+      {k:'width',  group:'Measurements', label:'Wall width ('+u+')',  input:'decimal', showIf:function(v){return !_skipDim(v);}},
+      {k:'area',   group:'Measurements', label:'Area (sq.ft)', derived:true, input:'decimal', skipIf:_skipDim, editableIf:_skipDim,
         compute:function(v){ return r2((_n(v.height)*_n(v.width))/UNIT_DIV[u]); }},
       ADJ_FIELD(), NET_FIELD()
     ];
@@ -84,9 +98,11 @@
       variants:null, rollCoverage:null,
       unitNote:'Room length & width are entered in FEET (ft). Area is shown in sq.ft.',
       fields:[
-        {k:'length',    group:'Measurements', label:'Room length (ft)', input:'decimal'},
-        {k:'width',     group:'Measurements', label:'Room width (ft)',  input:'decimal'},
-        {k:'area',      group:'Measurements', label:'Area (sq.ft)', derived:true, compute:function(v){return r2(_n(v.length)*_n(v.width));}},
+        AREA_MODE_FIELD(),
+        {k:'length',    group:'Measurements', label:'Room length (ft)', input:'decimal', showIf:function(v){return !_skipDim(v);}},
+        {k:'width',     group:'Measurements', label:'Room width (ft)',  input:'decimal', showIf:function(v){return !_skipDim(v);}},
+        {k:'area',      group:'Measurements', label:'Area (sq.ft)', derived:true, input:'decimal', skipIf:_skipDim, editableIf:_skipDim,
+          compute:function(v){return r2(_n(v.length)*_n(v.width));}},
         ADJ_FIELD(), NET_FIELD()
       ].concat(WASTAGE_FIELDS()).concat([
         {k:'skirtKind', group:'Skirting', label:'Skirting type', input:'select', opts:['None','Normal','Step']},
@@ -166,7 +182,7 @@
   // out ~300x too small, so every caller that has a room must pass it.
   window.mdComputeDerived=function(cat,values,room){
     if(!cat||!values)return values;
-    window.mdFieldsFor(cat,room).forEach(function(f){ if(f.derived&&typeof f.compute==='function'){ try{ values[f.k]=f.compute(values,cat); }catch(e){} } });
+    window.mdFieldsFor(cat,room).forEach(function(f){ if(f.derived&&typeof f.compute==='function'&&!(f.skipIf&&f.skipIf(values))){ try{ values[f.k]=f.compute(values,cat); }catch(e){} } });
     return values;
   };
 
@@ -198,29 +214,46 @@
     if(cat.variantNote && room && room.variant && _roomV(room)>=3) return cat.variantNote[room.variant]||'';
     return cat.unitNote||'';
   };
+  // Unsigned sq.ft magnitude of one adjustment row. `shape` absent is treated as 'Rectangle',
+  // reproducing the pre-shape h*w formula exactly (every live production row has no `shape`).
+  // 'Other' skips the unit conversion entirely — the auditor types the area straight in sq.ft.
+  var _adjArea=function(a,div){
+    if(!a)return 0;
+    if(a.shape==='Other')return _n(a.area);
+    var mult=(a.shape==='Triangle')?0.5:1;
+    var raw=_n(a.h)*_n(a.w)*mult;
+    return raw? r2(raw/div) : 0;
+  };
   // Signed sq.ft total of a segment's area adjustments. The capture form writes this into
   // `fields.adjArea` so every read-only consumer only ever reads a plain field.
   window.mdAdjSum=function(cat,room,adjust){
     var div=UNIT_DIV[window.mdUnitFor(cat,room)]||1, t=0;
     (adjust||[]).forEach(function(a){
-      if(!a)return; var ar=(_n(a.h)*_n(a.w))/div; if(!ar)return;
+      var ar=_adjArea(a,div); if(!ar)return;
       t+=(a.sign==='-'? -ar : ar);
     });
     return r2(t);
   };
-  // Display rows for a segment's adjustments — {label,size,area,reason}. Empty rows (no h x w)
-  // are dropped so a half-typed adjustment never reaches a job card.
+  // Display rows for a segment's adjustments — {label,shape,size,area,reason,photos}. Empty rows
+  // (no computed/typed area) are dropped so a half-typed adjustment never reaches a job card.
   window.mdAdjRows=function(cat,room,adjust){
     var u=window.mdUnitFor(cat,room), div=UNIT_DIV[u]||1;
-    return (adjust||[]).filter(function(a){return a&&(_n(a.h)*_n(a.w));}).map(function(a){
-      var neg=a.sign==='-', ar=r2((_n(a.h)*_n(a.w))/div);
-      return {label:neg?'Subtract':'Add', size:_n(a.h)+' × '+_n(a.w)+' '+u,
-              area:(neg?'-':'+')+ar, reason:(a.reason||'').trim(), neg:neg};
-    });
+    return (adjust||[]).map(function(a){ return a?{a:a,ar:_adjArea(a,div)}:null; })
+      .filter(function(x){return x&&x.ar;}).map(function(x){
+        var a=x.a, shape=a.shape||'Rectangle', neg=a.sign==='-';
+        var size=shape==='Other' ? 'manual entry' : (_n(a.h)+' × '+_n(a.w)+' '+u+(shape==='Triangle'?' (triangle)':''));
+        return {label:neg?'Subtract':'Add', shape:shape, size:size,
+                area:(neg?'-':'+')+x.ar, reason:(a.reason||'').trim(),
+                photos:(a.photos||[]).slice(), neg:neg};
+      });
   };
   // Any adjustment carrying an area but no stated reason — the capture form soft-gates on this.
   window.mdAdjMissingReason=function(cat,room,adjust){
     return window.mdAdjRows(cat,room,adjust).some(function(r){return !r.reason;});
+  };
+  // Any adjustment carrying an area but no photo — the capture form soft-gates on this too.
+  window.mdAdjMissingPhoto=function(cat,room,adjust){
+    return window.mdAdjRows(cat,room,adjust).some(function(r){return !r.photos||!r.photos.length;});
   };
   // Category template for a category key / legacy `type` string. Falls back to flooring for display.
   window.mdCategoryFor=function(type){ return (type&&window.MD_CATEGORIES[type])||window.MD_CATEGORIES.flooring; };
@@ -262,7 +295,8 @@
         +adjRows.map(function(a){return '<div style="font-size:12.5px;display:flex;gap:8px;flex-wrap:wrap">'
           +'<span style="font-weight:700;color:'+(a.neg?'var(--red)':'var(--green)')+'">'+esc(a.area)+' sq.ft</span>'
           +'<span style="color:var(--muted)">'+esc(a.label)+' '+esc(a.size)+'</span>'
-          +'<span>'+(a.reason?esc(a.reason):'<i style="color:var(--red)">no reason given</i>')+'</span></div>';}).join('')
+          +'<span>'+(a.reason?esc(a.reason):'<i style="color:var(--red)">no reason given</i>')+'</span>'
+          +'<span>'+(a.photos.length?esc(a.photos.length+' photo'+(a.photos.length>1?'s':'')):'<i style="color:var(--red)">no photo attached</i>')+'</span></div>';}).join('')
         +'</div>'):'';
       var prq=isV2?(cat.prerequisites||[]).filter(function(p){return s.prereq&&s.prereq[p.k]&&s.prereq[p.k].status;}).map(function(p){var st=s.prereq[p.k].status;var col=st==='Not OK'?'var(--red)':(st==='OK'?'var(--green)':'var(--muted)');return krow(p.label,esc(st)+(s.prereq[p.k].note?' - '+esc(s.prereq[p.k].note):''),col);}).join(''):'';
       var photos=(s.photos||[]).filter(Boolean).map(function(p){return '<img src="'+esc(p)+'" style="width:60px;height:60px;object-fit:cover;border-radius:7px;border:1px solid var(--line)">';}).join('');
