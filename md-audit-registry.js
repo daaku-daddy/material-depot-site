@@ -124,6 +124,14 @@
       installFields:[
         {k:'installedArea', group:'Installed', label:'Area installed (sq.ft)', input:'decimal'},
         {k:'batch',         group:'Installed', label:'Batch / lot no.', input:'text'}
+      ],
+      installTerms:[
+        'Floor must be clean, dry, level & free from dust/seepage.',
+        "Any levelling, repair, waterproofing or moisture treatment is customer's scope.",
+        'Flooring should be acclimatised for 24–48 hours before installation.',
+        "Door trimming, skirting removal/reinstallation and major carpentry work are customer's scope unless included.",
+        'Site must be ready and furniture cleared before installation.',
+        '1-year installation warranty applies to workmanship, subject to all site requirements being fulfilled.'
       ]
     },
     wallpaper:{
@@ -149,6 +157,14 @@
       installFields:[
         {k:'installedRolls', group:'Installed', label:'Rolls used', input:'decimal'},
         {k:'batch',          group:'Installed', label:'Batch / lot no.', input:'text'}
+      ],
+      installTerms:[
+        'Oil-based primer is mandatory for the 1-year installation warranty; primer & application are customer\'s scope.',
+        '2 coats of oil primer compulsory on MDF/HDHMR/Plywood.',
+        "Ladder/scaffolding for higher heights is customer's scope.",
+        'Surface must be smooth, dry, clean & dust-free, with no seepage/dampness.',
+        "Existing wallpaper removal & surface repairs are customer's scope unless specifically booked.",
+        'Installation may be rescheduled if the site is not ready.'
       ]
     },
     cnc:{
@@ -159,7 +175,9 @@
       fields:WALL_FIELDS('mm'),
       prerequisites:WALL_PREREQ([{k:'structural', label:'Wall structurally sound for CNC panel fixing'}],'Wall cleanliness (no dust / debris)'),
       legacyFields:[],
-      installFields:[]
+      installFields:[],
+      // Pending — to be supplied. Contributes nothing to mdInstallTermsBlock until filled in.
+      installTerms:[]
     },
     wallpanel:{
       id:'wallpanel', label:'Wall Panels', pdfLabel:'Wall Panels', unit:'in',
@@ -169,6 +187,8 @@
       fields:WALL_FIELDS('in',{wastage:true,extra:PROFILE_FIELDS()}),
       prerequisites:WALL_PREREQ([{k:'structural', label:'Wall structurally sound to bear panel weight'}]),
       legacyFields:[],
+      // Pending — to be supplied. Contributes nothing to mdInstallTermsBlock until filled in.
+      installTerms:[],
       installFields:[
         {k:'installedArea', group:'Installed', label:'Area installed (sq.ft)', input:'decimal'},
         {k:'batch',         group:'Installed', label:'Batch / lot no.', input:'text'}
@@ -257,6 +277,18 @@
   };
   // Category template for a category key / legacy `type` string. Falls back to flooring for display.
   window.mdCategoryFor=function(type){ return (type&&window.MD_CATEGORIES[type])||window.MD_CATEGORIES.flooring; };
+  // Formatted installation-terms block for the category keys actually involved (audit: every
+  // distinct room category in the job card; install: the single subjob category). Categories
+  // with no installTerms yet (cnc/wallpanel) are silently skipped — no branching needed elsewhere.
+  // Shared by both apps' on-screen T&C screens and the branded PDF consent page.
+  window.mdInstallTermsBlock=function(categoryKeys){
+    var seen={};
+    var blocks=(categoryKeys||[]).filter(function(k){ if(!k||seen[k])return false; seen[k]=true; return true; })
+      .map(function(k){ return window.MD_CATEGORIES[k]; })
+      .filter(function(cat){ return cat&&cat.installTerms&&cat.installTerms.length; })
+      .map(function(cat){ return cat.label+':\n'+cat.installTerms.map(function(t){return '• '+t;}).join('\n'); });
+    return blocks.join('\n\n');
+  };
   // v>=2 rooms expose segments; legacy rooms return null (caller uses the legacy path).
   window.mdSegmentsOf=function(room){ return (room&&room.v>=2&&room.segments)?room.segments:null; };
   // Any 'Not OK' prerequisite in a segment flags it (soft flag, informational only).

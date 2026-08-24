@@ -1208,7 +1208,11 @@ function showPassToClientInst(j){
   $("#backToReviewBtnInst").onclick=()=>{document.querySelector(".footer").classList.remove("hide");finishCard(j);};
 }
 
-const MD_TC_INSTALL=`Material Depot — Customer Acknowledgement
+// `termsBlock` (from mdInstallTermsBlock) fills what used to be a literal, never-written-in
+// placeholder — the installation terms for this job's category, so the customer is confirming the
+// work was carried out per those terms, not just that it happened.
+function buildInstallTC(termsBlock){
+  return `Material Depot — Customer Acknowledgement
 
 By ticking the box and signing below, I confirm that:
 
@@ -1216,14 +1220,18 @@ By ticking the box and signing below, I confirm that:
 • The rooms, materials and details recorded are accurate and correct.
 • I am satisfied with the service provided by the Material Depot team.
 • I consent to being contacted for quality feedback purposes if required.
+• I have read, understood and agree to the installation terms & conditions below.
 
-[Full terms and conditions will be provided by Material Depot]`;
+`+(termsBlock||'[Full terms and conditions will be provided by Material Depot]');
+}
 
 function showTCsInst(j){
+  const tcCats=[j.type];
+  const termsBlock=mdInstallTermsBlock(tcCats);
   $("#jcBody").innerHTML=`
     <div class="panel" style="margin-top:12px">
       <h2 style="margin:0 0 12px">Terms &amp; Conditions</h2>
-      <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px;max-height:200px;overflow-y:auto;font-size:13.5px;line-height:1.7;color:var(--ink);white-space:pre-line">${MD_TC_INSTALL}</div>
+      <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px;max-height:200px;overflow-y:auto;font-size:13.5px;line-height:1.7;color:var(--ink);white-space:pre-line">${buildInstallTC(termsBlock)}</div>
       <label style="display:flex;align-items:flex-start;gap:12px;margin-top:20px;cursor:pointer">
         <input type="checkbox" id="tcAgreeInst" style="margin-top:3px;width:22px;height:22px;accent-color:var(--navy);flex-shrink:0">
         <span style="font-size:14px;font-weight:600;line-height:1.4">I have read and agree to the terms and conditions above</span>
@@ -1233,10 +1241,10 @@ function showTCsInst(j){
     <button class="bigbtn ghost" id="tcBackInst" style="margin-top:10px">&#8592; Back</button>`;
   $("#tcAgreeInst").onchange=()=>{$("#tcProceedInst").disabled=!$("#tcAgreeInst").checked;};
   $("#tcBackInst").onclick=()=>showPassToClientInst(j);
-  $("#tcProceedInst").onclick=()=>showInstallSignature(j);
+  $("#tcProceedInst").onclick=()=>showInstallSignature(j,tcCats);
 }
 
-function showInstallSignature(j){
+function showInstallSignature(j,tcCats){
   $("#jcBody").innerHTML=`
     <div class="panel"><h2>Customer signature <span class="reqstar">★</span></h2>
       <div class="note">Show the phone to the customer. Ask them to sign that the installation is done and they are happy.</div>
@@ -1244,7 +1252,7 @@ function showInstallSignature(j){
       <button class="bigbtn ghost" id="signClear" style="margin-top:10px">Clear signature</button>
       <div class="fieldgap" style="margin-top:12px"><label>Customer name</label><input id="signName" value="${j.name}"></div>
     </div>
-    <button class="bigbtn green" id="reallyDone">Save &amp; finish job</button>
+    <button class="bigbtn green" id="reallyDone">Next: installer confirmation &#8594;</button>
     <button class="bigbtn ghost" id="backToPreviewFromSign" style="margin-top:10px">&#8592; Back</button>`;
   jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
   $("#signClear").onclick=()=>jcSignPad.clear();
@@ -1252,14 +1260,39 @@ function showInstallSignature(j){
   $("#reallyDone").onclick=async()=>{
     if(jcSignPad.isEmpty()){toast("Please take the customer's signature");return;}
     const btn=$("#reallyDone");btn.disabled=true;btn.textContent="Saving…";
-    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
     // Signature uploaded to Storage (same job-photos bucket as room photos) instead of embedded
     // as base64 in the jsonb column — falls back to the base64 dataURL if the upload fails.
     let sigImg=jcSignPad.export();
     try{sigImg=await _uploadPhoto(sigImg);}catch(e){}
+    showInstallerSignoff(j,{img:sigImg,name:$("#signName").value,tcCategories:tcCats||[]});
+  };
+}
+
+// Installer's own confirmation + signature — customer signs first (phone handed back), then the
+// installer confirms the work matches the installation T&Cs shown to the customer. Signing IS the
+// confirmation, no separate checkbox (matches this app's lightweight field-worker UX elsewhere).
+function showInstallerSignoff(j,customerSign){
+  $("#jcBody").innerHTML=`
+    <div class="panel"><h2>Installer confirmation <span class="reqstar">★</span></h2>
+      <div class="note">I confirm this installation was carried out in line with Material Depot's installation terms &amp; conditions for the categories involved.</div>
+      <canvas class="sign" id="signCanvas"></canvas>
+      <button class="bigbtn ghost" id="signClear" style="margin-top:10px">Clear signature</button>
+      <div class="fieldgap" style="margin-top:12px"><label>Installer name</label><input id="installerSignName" value="${ME.name}"></div>
+    </div>
+    <button class="bigbtn green" id="reallyDone">Save &amp; finish job</button>
+    <button class="bigbtn ghost" id="backToSignFromInstaller" style="margin-top:10px">&#8592; Back</button>`;
+  jcSignPad=new SignPad($("#signCanvas"));setTimeout(()=>jcSignPad.fit(),60);
+  $("#signClear").onclick=()=>jcSignPad.clear();
+  $("#backToSignFromInstaller").onclick=()=>showInstallSignature(j,customerSign.tcCategories);
+  $("#reallyDone").onclick=async()=>{
+    if(jcSignPad.isEmpty()){toast("Please add the installer's signature");return;}
+    const btn=$("#reallyDone");btn.disabled=true;btn.textContent="Saving…";
+    clearTimeout(_autosaveTimer);_autosaveTimer=null;_autosaveSeq++;clearTimeout(_localSaveTimer);
+    let installerSigImg=jcSignPad.export();
+    try{installerSigImg=await _uploadPhoto(installerSigImg);}catch(e){}
     const finRooms=collectRooms();
     try{await _finalizeRoomPhotos(finRooms);}catch(e){/* best-effort — never block completion on this */}
-    j.jobcard={rooms:finRooms,sign:{img:sigImg,name:$("#signName").value}};
+    j.jobcard={rooms:finRooms,sign:customerSign,installerSign:{img:installerSigImg,name:$("#installerSignName").value}};
     j.status="completed";
     j.parentLog=j.parentLog||[];
     j.parentLog.push({t:jTypeLabel(j.type)+" installation completed",d:new Date().toISOString(),by:"auto",who:ME.name});
@@ -1354,12 +1387,8 @@ async function genPDF(j){
     y=await mdPdfInstallRoom(doc,r,y,{M,W,H,header:()=>mdPdfHeader(doc,{title:cardTitle,right:j.pi,M,tag:cardTag})});
   }
 
-  // consent + signature
+  // consent + signature (shared mdPdfConsent — see md-pdf.js)
   doc.addPage();y=M;header();
-  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
-  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
-  const consent="I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided.";
-  doc.text(doc.splitTextToSize(consent,W-2*M),M,y);y+=56;
   const R=j.jobcard.sign&&j.jobcard.sign.ratings;
   if(R){
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...navy);doc.text('Client Feedback',M,y);y+=14;
@@ -1367,11 +1396,12 @@ async function genPDF(j){
       body:[['Overall installation experience',String(R.q1||'—')+' / 10'],['Site Installer rating',String(R.q2||'—')+' / 10'],['Site cleanliness after installation',String(R.q3||'—')+' / 10'],...(R.comments?[['Comments',R.comments]]:[])]});
     y=doc.lastAutoTable.finalY+12;
   }
-  doc.setFontSize(10);doc.setTextColor(...muted);doc.text('Client name: '+((j.jobcard.sign&&j.jobcard.sign.name)||j.name),M,y);y+=18;doc.text('Date: '+fmtDate(j.date),M,y);
-  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(j.jobcard.sign&&j.jobcard.sign.img){const si=await compress(j.jobcard.sign.img,800,0.88);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
-  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
-  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+  await mdPdfConsent(doc,{y,M,W,H,compress,
+    consentText:"I confirm that the installation for the above order has been carried out by the Material Depot installer, the rooms and products listed in this Job Card have been installed, and that I am satisfied with the service provided, and that the installation was carried out in line with the installation terms & conditions below.",
+    termsBlock:mdInstallTermsBlock([j.type]),
+    personName:(j.jobcard.sign&&j.jobcard.sign.name)||j.name, personDate:fmtDate(j.date),
+    sign:j.jobcard.sign, installerSign:j.jobcard.installerSign,
+    header:()=>mdPdfHeader(doc,{title:cardTitle,right:j.pi,M,tag:cardTag})});
 
   const fn=('Installation_'+(j.name||'client')+'_'+(j.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_');doc.save(fn);
 }
@@ -1411,15 +1441,12 @@ async function genAuditPDF(){
     y=await mdPdfAuditRoom(doc,r,y,{M,W,H,sketchImg,header:()=>mdPdfHeader(doc,{title:'Site Audit Job Card',right:o.pi,M})});
   }
   doc.addPage();y=M;header();
-  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...navy);doc.text('Client Acknowledgement',M,y+4);y+=26;
-  doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
-  doc.text(doc.splitTextToSize("I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided.",W-2*M),M,y);y+=70;
-  doc.setFontSize(10);doc.setTextColor(...muted);
-  doc.text('Client name: '+((a.sign&&a.sign.name)||o.name),M,y);y+=18;doc.text('Date: '+fmtDate(o.date),M,y);
-  const sigW=200,sigH=80,sx=W-M-sigW,sy=H-M-sigH-24;
-  if(a.sign&&a.sign.img){const si=await compress(a.sign.img,800,0.88);if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){}}
-  doc.setDrawColor(...muted);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
-  doc.setFontSize(9.5);doc.setTextColor(...muted);doc.text('Client signature',sx,sy+sigH+10);
+  await mdPdfConsent(doc,{y,M,W,H,compress,
+    consentText:"I confirm that the site audit for the above order has been carried out by the Material Depot auditor, that the rooms, measurements and details recorded in this Job Card are correct, and that I am satisfied with the service provided, and that I have read, understood and agree to the installation terms & conditions below.",
+    termsBlock:mdInstallTermsBlock([...new Set(rooms.map(r=>r.category||r.type))]),
+    personName:(a.sign&&a.sign.name)||o.name, personDate:fmtDate(o.date),
+    sign:a.sign,
+    header:()=>mdPdfHeader(doc,{title:'Site Audit Job Card',right:o.pi,M})});
   doc.save(('SiteAudit_'+(o.name||'client')+'_'+(o.pi||'')+'.pdf').replace(/[^a-z0-9_\-\.]/gi,'_'));
 }
 

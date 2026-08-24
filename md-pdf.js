@@ -181,4 +181,53 @@
       doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);var cls=doc.splitTextToSize(comments,W-2*M);doc.text(cls,M,y);y+=cls.length*12+6; }
     return y;
   };
+
+  // Shared "Client Acknowledgement" page — consent paragraph, optional per-category installation
+  // terms block (from mdInstallTermsBlock), and one signature per signature supplied. Every one of
+  // this app's 7 PDF generators (audit + install, across the auditor/installer apps and the
+  // SM/Admin dashboards) used to hand-roll this page; a new feature touching it once here reaches
+  // all 7 with no per-generator changes, the same reason mdPdfAuditRoom/mdPdfInstallRoom exist.
+  // opts: {y,M,W,H,consentText,termsBlock,personName,personDate,sign,installerSign,compress,header}.
+  // `sign`/`installerSign` are {img,name} or falsy. Always the last page of a job-card PDF.
+  window.mdPdfConsent=async function(doc, opts){
+    opts=opts||{};
+    var M=opts.M||40, W=opts.W||doc.internal.pageSize.getWidth(), H=opts.H||doc.internal.pageSize.getHeight();
+    var compress=opts.compress||window.mdCompress;
+    var y=opts.y||M;
+    function ensure(space){ if(y+space>H-M){ doc.addPage(); y=opts.header?opts.header():M; } }
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor.apply(doc,window.MD_INK);
+    doc.text('Client Acknowledgement',M,y+4);y+=26;
+    doc.setFont('helvetica','normal');doc.setFontSize(10.5);doc.setTextColor(40,40,40);
+    var cl=doc.splitTextToSize(opts.consentText||'',W-2*M);
+    ensure(cl.length*13);doc.text(cl,M,y);y+=cl.length*13+16;
+    if(opts.termsBlock){
+      ensure(24);
+      doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor.apply(doc,window.MD_INK);
+      doc.text('Installation Terms & Conditions',M,y);y+=14;
+      doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(40,40,40);
+      String(opts.termsBlock).split('\n').forEach(function(line){
+        if(!line){ y+=6; return; }
+        var wrapped=doc.splitTextToSize(line,W-2*M);
+        ensure(wrapped.length*12);
+        doc.text(wrapped,M,y);y+=wrapped.length*12;
+      });
+      y+=10;
+    }
+    ensure(40);
+    doc.setFontSize(10);doc.setTextColor.apply(doc,window.MD_MUTED);
+    doc.text((opts.installerSign?'Client name: ':'Client name: ')+(opts.personName||''),M,y);y+=18;
+    doc.text('Date: '+(opts.personDate||''),M,y);
+    // One signature block per signature supplied — installer on the left, client on the right —
+    // so a customer-only page (audit) looks exactly as it always has.
+    var sigs=[]; if(opts.installerSign)sigs.push({label:'Installer signature',sign:opts.installerSign});
+    if(opts.sign)sigs.push({label:'Client signature',sign:opts.sign});
+    var sigW=200,sigH=80,sy=H-M-sigH-24;
+    ensure(0); // sy is computed against the CURRENT page's H; a mid-block page break would misplace it
+    for(var i=0;i<sigs.length;i++){
+      var sx=sigs.length===1?(W-M-sigW):(i===0?M:W-M-sigW);
+      if(sigs[i].sign&&sigs[i].sign.img){ var si=await compress(sigs[i].sign.img,800,0.88); if(si)try{doc.addImage(si,'JPEG',sx,sy-10,sigW,sigH);}catch(e){} }
+      doc.setDrawColor.apply(doc,window.MD_MUTED);doc.setLineWidth(.8);doc.line(sx,sy+sigH-6,sx+sigW,sy+sigH-6);
+      doc.setFontSize(9.5);doc.setTextColor.apply(doc,window.MD_MUTED);doc.text(sigs[i].label,sx,sy+sigH+10);
+    }
+  };
 })();
