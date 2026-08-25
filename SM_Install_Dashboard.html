@@ -2952,10 +2952,20 @@ async function loadPendingPOs(search){
   }catch(e){body.innerHTML=`<div class="note" style="border-color:var(--red);color:var(--red);background:var(--redbg)">Could not load pending POs: ${e.message}</div>`;}
 }
 
+/* The PO string to store for an imported job: the allotment number ops recognises (MD8…, what the
+   card shows) plus, for an OMS service leg, the ref built from the same row's sales_order_id /
+   stage_id. Both ride one comma-separated field because that is what this app already saves, and the
+   ref is what identifies the leg to OMS when the job is completed. A legacy PO row has no stage and
+   contributes only its own number. */
+function poFieldFor(r){
+  const ref=r&&r.stage_id&&r.sales_order_id?`SO${r.sales_order_id}-S${r.stage_id}`:'';
+  return [r&&r.po_number,ref].filter(Boolean).join(', ');
+}
+
 function usePORow(r){
   closeKylasSheet();
   document.getElementById('ao-pi').value=r.estimate_lead_id||'';
-  document.getElementById('ao-po').value=r.po_number||'';
+  document.getElementById('ao-po').value=poFieldFor(r);
   document.getElementById('ao-name').value=r.customer&&r.customer.name||'';
   document.getElementById('ao-phone').value=r.customer&&r.customer.contact?String(r.customer.contact):'';
   document.getElementById('ao-bm').value=r.bm&&r.bm.name||'';
