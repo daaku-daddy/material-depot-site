@@ -744,6 +744,13 @@ function slotLabel(id){if(!id)return "—";const found=[...SLOTS_FL,...SLOTS_WP]
 const auditorById=id=>AUDITORS.find(a=>a.id===id);
 function getAuditorName(o){if(!o.auditor)return null;const a=auditorById(o.auditor);return a?a.name:(o.auditorName||'?');}
 const initials=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+// Search haystack for the Orders search box — enq id/phone/name/SKUs (original) plus
+// address, assigned-to (auditor), status label, and date (raw + display format).
+function orderSearchHay(o){
+  return [o.pi,o.name,o.phone,o.bm,o.skus.map(s=>s.c).join(),o.addr,
+    getAuditorName(o)||'Unassigned',(STATUS[o.status]||{}).l||o.status,
+    o.date,fmtDate(o.date)].filter(Boolean).join(' ').toLowerCase();
+}
 // Optional "Shadowed by" — pool is EVERYONE (any role, cross-role). MULTIPLE shadowers per audit.
 // Stored comma-joined in the existing shadower_email/shadower_name text columns (no schema change, same
 // pattern as the po column) — parseShadowers/joinShadowers convert between the string form and an array.
@@ -937,7 +944,7 @@ function ordersView(){
       if(o.status!==filterStatus)return false;
     }
     if(filterDate&&o.date!==filterDate)return false;
-    if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
+    if(searchQ){const q=searchQ.toLowerCase();return orderSearchHay(o).includes(q);}
     return true;
   }).map(o=>{
     const skupills=o.skus.map(s=>`<span class="skupill ${s.audit?'audit':''}">${s.c}</span>`).join("");
@@ -965,7 +972,7 @@ function ordersView(){
   ${stats}
   ${slotResBanner}
   ${prebookTabNote}
-  <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
+  <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, address, auditor, status, date…" value="${searchQ}"/></div>
     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
       <input type="date" id="dateFilter" value="${filterDate}" title="Filter by audit date" style="border:1.5px solid ${filterDate?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${filterDate?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
       ${filterDate?`<button onclick="setDateFilter('')" style="border:0;background:var(--redbg);color:var(--red);border-radius:7px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap">✕ Clear date</button>`:''}

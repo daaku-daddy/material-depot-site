@@ -1072,6 +1072,17 @@ function sjEffectiveAssignments(sj){
   return[];
 }
 function installOrderHasDate(o,ds){return(o.subjobs||[]).some(sj=>sjEffectiveAssignments(sj).some(a=>(a.mode==='custom'?(a.dates||[]):(a.date?[a.date]:[])).includes(ds)));}
+// Search haystack for the Orders search box — enq id/phone/name/SKUs (original) plus
+// address, assigned-to (installer per sub-job), status labels (order + sub-jobs), and dates.
+function orderSearchHay(o){
+  const subjobBits=(o.subjobs||[]).flatMap(sj=>{
+    const names=sjEffectiveAssignments(sj).map(a=>a.installer_name||'Unassigned');
+    return [...names,(STATUS[sj.status]||{}).l||sj.status,sj.date,fmtDate(sj.date)];
+  });
+  return [o.pi,o.name,o.phone,o.bm,o.skus.map(s=>s.c).join(),o.addr,
+    (STATUS[o.status]||{}).l||o.status,o.deliveryDate,fmtDate(o.deliveryDate),
+    ...subjobBits].filter(Boolean).join(' ').toLowerCase();
+}
 
 /* ============== COUNTS ============== */
 function needActionCount(){
@@ -1177,7 +1188,7 @@ function ordersView(){
       if(o.status!==filterStatus)return false;
     }
     if(filterDate&&!installOrderHasDate(o,filterDate))return false;
-    if(searchQ){const q=searchQ.toLowerCase();return (o.pi+o.name+o.phone+o.bm+o.skus.map(s=>s.c).join()).toLowerCase().includes(q);}
+    if(searchQ){const q=searchQ.toLowerCase();return orderSearchHay(o).includes(q);}
     return true;
   }).sort((a,b)=>{
     const da=(isMixedOrder(a)?mixedEarliestDelivery(a):a.deliveryDate)||'';
@@ -1206,7 +1217,7 @@ function ordersView(){
   <div class="pagehead"><div><h1>Installation orders</h1><p>Every confirmed order containing the Installation SKU (${INSTALL_SKU}). Delivery is confirmed before service creation.</p></div>
     <div class="actions"><button class="btn ghost sm" onclick="openKylasSheet()">&#128203; Pending POs</button><button class="btn navy sm" onclick="openAddOrder()">+ Add New Order</button></div></div>
   ${stats}${banner}
-  <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, SKU…" value="${searchQ}"/></div>
+  <div class="toolbar"><div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search PI, customer, phone, address, installer, status, date…" value="${searchQ}"/></div>
     <button class="btn gray sm" id="toggleSort" style="white-space:nowrap;flex:0 0 auto">Delivery date ${sortDelivery==="asc"?"↑":"↓"}</button>
     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
       <input type="date" id="dateFilter" value="${filterDate}" title="Filter by install date" style="border:1.5px solid ${filterDate?'var(--blue)':'var(--line)'};border-radius:9px;padding:6px 10px;font-size:13px;font-weight:600;color:${filterDate?'var(--navy)':'var(--muted)'};background:#fff;cursor:pointer;outline:none">
