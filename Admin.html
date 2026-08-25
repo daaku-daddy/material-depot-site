@@ -1012,7 +1012,12 @@ function getFilteredJobs(){
   }).filter(j=>{
     if(!jobsSearch)return true;
     const q=jobsSearch.toLowerCase();
-    return j.id.toLowerCase().includes(q)||j.customer.toLowerCase().includes(q);
+    // Enq ID/customer (original) plus address, assigned-to, status label, and date(s) —
+    // mirrors the same search extension already shipped on the SM/BM dashboards.
+    const dates=[j.date,...(j.installDates||[])].filter(Boolean).join(' ');
+    const hay=[j.id,j.customer,j.addr,j.assignee,JOB_STATUS[j.status]?.l||j.status,dates]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
   }).sort((a,b)=>_hhmmVal(a.time)-_hhmmVal(b.time));
 }
 function _csvEscape(v){const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
@@ -1056,7 +1061,7 @@ function drawJobs(m){
       <div class="toolbar">
         <div class="search-wrap" style="max-width:280px;min-width:180px;flex-shrink:0">
           <span class="search-ico">🔍</span>
-          <input id="jobsSearchInput" type="text" placeholder="Search Enquiry ID or customer…" value="${jobsSearch}" oninput="jobsSearch=this.value;drawJobs(document.getElementById('main'))">
+          <input id="jobsSearchInput" type="text" placeholder="Search Enquiry ID, customer, address, assigned to, status, date…" value="${jobsSearch}" oninput="jobsSearch=this.value;drawJobs(document.getElementById('main'))">
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${['all','audit','install'].map(t=>`
