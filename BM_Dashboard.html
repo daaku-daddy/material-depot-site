@@ -209,13 +209,18 @@ function startPoll(){
 }
 
 /* ============== RENDER: list ============== */
+// Search haystack — enq id/phone/name/PO (original) plus address, assigned auditor,
+// status label, and date (raw + display format), mirroring the SM dashboards' search.
+function orderSearchHay(o){
+  return [o.pi,o.name,o.phone,...(o.po||[]),o.addr,o.auditorName||'Unassigned',
+    (STATUS[o.status]||{}).l||o.status,o.date,fmtDateOnly(o.date)].filter(Boolean).join(' ').toLowerCase();
+}
 function getFilteredOrders(){
   return ORDERS.filter(o=>{
     if(filterStatus!=='all'&&o.status!==filterStatus)return false;
     if(searchQ){
       const q=searchQ.toLowerCase();
-      const hay=[o.pi,o.name,o.phone,...(o.po||[])].join(' ').toLowerCase();
-      if(!hay.includes(q))return false;
+      if(!orderSearchHay(o).includes(q))return false;
     }
     return true;
   });
@@ -238,7 +243,7 @@ function render(){
   m.innerHTML=`
     <div class="pagehead"><h1>My Orders</h1><p>Every site audit / customer journey linked to you as the BM.</p></div>
     <div class="toolbar">
-      <div class="search"><span class="ico">🔎</span><input id="searchInput" placeholder="Search name, phone, PI…" value="${searchQ}"></div>
+      <div class="search"><span class="ico">🔎</span><input id="searchInput" placeholder="Search name, phone, PI, address, auditor, status, date…" value="${searchQ}"></div>
       <div class="filt">${tabs.map(k=>`<button class="${filterStatus===k?'active':''}" data-f="${k}">${k==='all'?'All':(STATUS[k]?STATUS[k].l:k)} ${k==='all'?'('+ORDERS.length+')':'('+statusCounts[k]+')'}</button>`).join('')}</div>
     </div>
     <div class="card">
