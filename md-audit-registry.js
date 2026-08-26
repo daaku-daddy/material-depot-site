@@ -96,6 +96,14 @@
       id:'flooring', label:'Wooden Flooring', pdfLabel:'Wooden Flooring', unit:'ft',
       segment:{model:'single', segLabel:'Floor', facing:false, facingOpts:null, addLabel:null},
       variants:null, rollCoverage:null,
+      // First dimension of a RECTANGLE area adjustment, in this category's own
+      // vocabulary. A wall has a height; a FLOOR does not — the adjustments
+      // auditors actually raise on a floor are furniture footprints ("Bed",
+      // "Cupboard"), i.e. length x width, the same pair the floor's own
+      // measurement fields use. Absent => 'Height', right for every wall
+      // category. (Triangle keeps Base x Height: there `h` is the perpendicular
+      // altitude in the ½·base·height formula, which reads fine on a floor.)
+      adjDim1:'Length',
       unitNote:'Room length & width are entered in FEET (ft). Area is shown in sq.ft.',
       fields:[
         AREA_MODE_FIELD(),

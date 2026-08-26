@@ -869,7 +869,8 @@ function addRoom(restore){
         aI.addEventListener('change',()=>{a.area=aI.value;paint();recalc();autosave();});
         mk('Area (sq.ft)',aI);
       }else{
-        const dim1=shape==='Triangle'?'Base':'Height', dim2=shape==='Triangle'?'Height':'Width';
+        // Registry-driven, not hardcoded — a floor has a length, not a height. See md-audit-registry.js.
+        const dim1=shape==='Triangle'?'Base':(cat.adjDim1||'Height'), dim2=shape==='Triangle'?'Height':'Width';
         const hI=document.createElement('input');hI.setAttribute('inputmode','decimal');hI.value=a.h||'';
         const wI=document.createElement('input');wI.setAttribute('inputmode','decimal');wI.value=a.w||'';
         aI=document.createElement('input');aI.readOnly=true;aI.style.background='#f4f6f8';aI.style.color='var(--muted)';
